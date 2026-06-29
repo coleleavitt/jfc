@@ -1,7 +1,68 @@
 /target/
 target/
-/references/*
-!/references/wgpui/
+node_modules/
+apps/*/node_modules/
+apps/*/dist/
+apps/*/.vite/
+*.tsbuildinfo
+/.research/
 .env
 .env.*
 !.env.example
+.claude/
+CLAUDE.local.md
+.jfc-worktrees/
+.sisyphus/
+dhat-heap.json
+profiling-results/
+
+# Local tool state
+.antigravitycli/
+.codegraph/
+.idea/
+*.bak
+core
+core.*
+
+# jfc runtime state (caches, task store, pending learning, skills usage,
+# audit ledgers, change-sets, …) is all per-run noise — ignore the whole
+# .jfc/ tree by default, then re-include only the deliberately-tracked
+# project config dirs (agents, workflows, plans). This catches new
+# runtime subdirs (e.g. .jfc/skills/) automatically without growing the list.
+.jfc/*
+!.jfc/agents/
+!.jfc/workflows/
+!.jfc/plans/
+# Per-crate runtime state dirs created when running jfc from a subdir.
+crates/**/.jfc/
+crates/**/jfc-handover.md
+crates/**/jfc-transcript.md
+
+# Agent runtime state (exec-call captures)
+.code/
+.omo/boulder.json
+.omo/run-continuation/
+.opencode/magic-context/
+.playwright-mcp/
+
+# Local research/source dumps belong under ignored research/ or outside the repo.
+/AutoCompressor.pdf
+/AutoCompressor.txt
+
+# Generated Coq/Rocq build outputs.
+rcoq-tests/Makefile.coq.conf
+rcoq-tests/.Makefile.coq.d
+rcoq-tests/.lia.cache
+rcoq-tests/.nia.cache
+rcoq-tests/**/*.aux
+rcoq-tests/**/*.glob
+rcoq-tests/**/*.vo
+rcoq-tests/**/*.vok
+rcoq-tests/**/*.vos
+
+# Local agent skills and runtime config (machine-specific, not project config)
+.agents/skills/jfc-design/
+.agents/skills/js-bundle-audit/
+.agents/skills/source-command-feature-development/
+.agents/skills/source-command-refactoring/
+.agents/skills/source-command-submodule-update-wgpui/

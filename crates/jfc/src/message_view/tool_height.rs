@@ -1,0 +1,62 @@
+use crate::app::App;
+
+use super::tool_blocks::{
+    bash_continuation_lines, tool_body_line_count, tool_body_line_count_with_diagnostics,
+};
+use super::*;
+
+/// Exact visual height for one tool block at `inner_w`.
+///
+/// This is deliberately a pure layout query. The old implementation kept a
+/// whole-tool height LRU keyed by a full hash of the input/output payload; that
+/// avoided some repeated work, but it also made every frame hash large tool
+/// output just to ask for height. Row counting now mirrors the body producers
+/// directly and delegates only the truly expensive primitive, syntax
+/// highlighting, to `jfc_markdown::highlight_code_line_count`.
+pub(super) fn tool_block_height(tool: &ToolCall, inner_w: usize) -> usize {
+    tool_block_height_with_app(tool, inner_w, None)
+}
+
+pub(super) fn tool_block_height_with_app(
+    tool: &ToolCall,
+    inner_w: usize,
+    app: Option<&App>,
+) -> usize {
+    let diagnostics = app
+        .map(|app| app.engine.diagnostics.as_slice())
+        .unwrap_or(&[]);
+    tool_block_height_with_diagnostics(tool, inner_w, diagnostics)
+}
+
+pub(super) fn tool_block_height_with_diagnostics(
+    tool: &ToolCall,
+    inner_w: usize,
+    diagnostics: &[jfc_engine::diagnostics::DiagnosticEntry],
+) -> usize {
+    if tool.display.is_collapsed() {
+        return 1;
+    }
+
+    let content_w = inner_w.saturating_sub(2);
+    let cont = bash_continuation_lines(tool, content_w).len();
+    1 + cont + tool_content_height_with_tool_and_diagnostics(tool, content_w, diagnostics)
+}
+pub fn tool_block_height_pub(tool: &ToolCall, inner_w: usize) -> usize {
+    tool_block_height(tool, inner_w)
+}
+
+/// Body-only row count for a tool. Title and Bash continuation rows are handled
+/// by `tool_block_height`; this function mirrors `tool_body_lines_themed` for
+/// the body itself.
+#[allow(dead_code)]
+pub(super) fn tool_content_height_with_tool(tool: &ToolCall, content_w: usize) -> usize {
+    tool_body_line_count(tool, content_w)
+}
+
+pub(super) fn tool_content_height_with_tool_and_diagnostics(
+    tool: &ToolCall,
+    content_w: usize,
+    diagnostics: &[jfc_engine::diagnostics::DiagnosticEntry],
+) -> usize {
+    tool_body_line_count_with_diagnostics(tool, content_w, diagnostics)
+}

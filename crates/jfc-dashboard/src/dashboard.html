@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>jfc · token audit</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #11161d; --border: #222b36; --fg: #c9d1d9;
+    --muted: #6e7781; --accent: #58a6ff; --accent2: #a371f7; --ok: #3fb950;
+    --warn: #d29922; --err: #f85149; --dim: #2d333b; --in: #58a6ff; --out: #d29922;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 13px/1.5 ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, monospace;
+    padding: 18px 22px 40px;
+  }
+  h1 { font-size: 14px; font-weight: 600; margin: 0; letter-spacing: .04em; }
+  h2 { font-size: 11px; font-weight: 600; color: var(--muted); margin: 0 0 8px;
+       text-transform: uppercase; letter-spacing: .08em; }
+  .top { display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap;
+         border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 18px; }
+  .top .meta { color: var(--muted); }
+  .top .cost { margin-left: auto; color: var(--ok); font-weight: 600; }
+  .gauge-wrap { margin-bottom: 20px; }
+  .gauge-label { display: flex; justify-content: space-between; color: var(--muted);
+                 font-size: 12px; margin-bottom: 5px; }
+  .bar { display: flex; height: 16px; border-radius: 3px; overflow: hidden;
+         background: var(--dim); border: 1px solid var(--border); }
+  .bar > span { height: 100%; }
+  .panel { background: var(--panel); border: 1px solid var(--border);
+           border-radius: 6px; padding: 14px 16px; margin-bottom: 20px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+  table { width: 100%; border-collapse: collapse; }
+  td, th { text-align: right; padding: 3px 0; }
+  td:first-child, th:first-child { text-align: left; }
+  th { color: var(--muted); font-weight: 500; font-size: 11px;
+       border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+  .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px;
+            margin-right: 7px; vertical-align: baseline; }
+  .num { color: var(--fg); } .pct { color: var(--muted); }
+  .tiers { display: flex; gap: 16px; flex-wrap: wrap; color: var(--muted); margin-top: 6px; }
+  .tiers b { color: var(--fg); }
+  .foot { color: var(--muted); font-size: 11px; margin-top: 22px; }
+  .stale { color: var(--warn); }
+  .rsi-stats { display: flex; gap: 30px; align-items: baseline; flex-wrap: wrap; }
+  .rsi-stat { display: flex; flex-direction: column; }
+  .rsi-stat b { font-size: 22px; color: var(--accent2); font-weight: 600; line-height: 1.15; }
+  .rsi-stat span { color: var(--muted); font-size: 11px; }
+  .rsi-spark-wrap { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; }
+  .rsi-spark-label { color: var(--muted); font-size: 11px; margin-bottom: 4px; }
+  #rsi-spark svg { width: 320px; height: 42px; display: block; }
+  @media (max-width: 720px) { .rsi-spark-wrap { margin-left: 0; align-items: flex-start; } }
+  .rsi-funnel { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border, #2a2a2a); }
+  .rsi-funnel-stage { display: flex; flex-direction: column; min-width: 92px; }
+  .rsi-funnel-stage b { font-size: 20px; font-weight: 600; line-height: 1.15; color: var(--accent2); }
+  .rsi-funnel-stage span { color: var(--muted); font-size: 11px; }
+  .rsi-funnel-arrow { color: var(--muted); font-size: 18px; }
+  .rsi-funnel-bykind { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; max-width: 50%; }
+  .rsi-kind { background: var(--chip, #1d1d1d); border: 1px solid var(--border, #2a2a2a); border-radius: 6px; padding: 2px 7px; font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .rsi-kind b { color: var(--fg, #ddd); font-weight: 600; }
+  .rsi-funnel-note { color: var(--muted); font-size: 11px; margin-top: 10px; font-style: italic; }
+  .legend { display: flex; gap: 16px; font-size: 11px; color: var(--muted); margin: 4px 0 10px; }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; }
+  .chart svg { width: 100%; height: 170px; display: block; }
+  .chart rect:hover { opacity: .8; cursor: crosshair; }
+  .summary { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+  .summary b { color: var(--fg); }
+  .flag { color: var(--err); font-size: 11px; }
+  .rewrite { color: var(--warn); font-size: 11px; }
+  .prompt-cell { max-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  tr.flagged td:first-child { border-left: 2px solid var(--err); padding-left: 6px; }
+</style>
+</head>
+<body>
+  <div class="top">
+    <h1>jfc · token audit</h1>
+    <span class="meta" id="model">—</span>
+    <span class="meta" id="session"></span>
+    <span class="cost" id="cost">$0.00</span>
+  </div>
+
+  <div class="gauge-wrap">
+    <div class="gauge-label"><span>Context window</span><span id="ctx-nums">0 / 0</span></div>
+    <div class="bar" id="ctx-bar"></div>
+  </div>
+
+  <section class="panel" id="rsi-panel">
+    <h2>RSI — recursive self-improvement</h2>
+    <div class="rsi-stats">
+      <div class="rsi-stat"><b id="rsi-sections">0</b><span>prompt sections (active)</span></div>
+      <div class="rsi-stat"><b id="rsi-rules">0</b><span>tool-visibility rules</span></div>
+      <div class="rsi-spark-wrap">
+        <div class="rsi-spark-label">active sections / request — improving →</div>
+        <div id="rsi-spark"></div>
+      </div>
+    </div>
+    <div class="rsi-funnel" id="rsi-funnel">
+      <div class="rsi-funnel-stage">
+        <b id="rsi-fn-candidates">0</b><span>candidates staged</span>
+      </div>
+      <div class="rsi-funnel-arrow">→</div>
+      <div class="rsi-funnel-stage">
+        <b id="rsi-fn-verified">0</b><span>verified (promotable)</span>
+      </div>
+      <div class="rsi-funnel-arrow">→</div>
+      <div class="rsi-funnel-stage">
+        <b id="rsi-fn-active">0</b><span>active (in prompt)</span>
+      </div>
+      <div class="rsi-funnel-bykind" id="rsi-fn-bykind"></div>
+    </div>
+    <div class="rsi-funnel-note" id="rsi-fn-note"></div>
+  </section>
+
+  <section class="panel chart">
+    <h2>Timeline — tokens &amp; cost per request</h2>
+    <div class="summary" id="tl-summary">no requests yet</div>
+    <div class="legend">
+      <span><i style="background:var(--in)"></i>input</span>
+      <span><i style="background:var(--out)"></i>output</span>
+      <span><i style="background:var(--ok)"></i>cost</span>
+      <span><i style="background:var(--err)"></i>flagged for review</span>
+      <span><i style="background:var(--warn)"></i>cache rewrite</span>
+    </div>
+    <div id="tl-chart"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Prompts — cost per prompt you sent</h2>
+    <table id="prompts-table">
+      <thead><tr><th>prompt</th><th>reqs</th><th>in</th><th>out</th><th>hit</th><th>cost</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <section class="panel" id="profile-panel" style="display:none">
+    <h2>Pipeline — phase timings (linkscope)</h2>
+    <table id="profile-table">
+      <thead><tr><th>phase</th><th>total ms</th><th>spans</th><th>avg ms</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <div class="grid">
+    <section class="panel">
+      <h2>Composition</h2>
+      <div class="bar" id="comp-bar" style="margin-bottom:12px"></div>
+      <table id="comp-table"><tbody></tbody></table>
+    </section>
+
+    <section class="panel">
+      <h2>Usage by model</h2>
+      <table id="usage-table">
+        <thead><tr><th>model</th><th>in</th><th>out</th><th>cache rd</th><th>cache wr</th><th>hit</th><th>cost</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <h2 style="margin-top:18px">Compartments</h2>
+      <div id="compartments" class="tiers"><span>none yet</span></div>
+    </section>
+  </div>
+
+  <div class="foot" id="foot">connecting…</div>
+
+<script>
+const COLORS = {
+  "builtin.system": "#58a6ff", "builtin.docs": "#a371f7",
+  "builtin.compartments": "#8b949e", "builtin.memories": "#3fb950",
+  "builtin.conversation": "#f85149", "builtin.tool-calls": "#d29922",
+  "builtin.tool-defs": "#ec6cb9",
+};
+const fmt = n => Math.round(n || 0).toLocaleString("en-US");
+const pct = (n, d) => d > 0 ? (100 * n / d) : 0;
+const cur = n => "$" + (n || 0).toFixed((n || 0) < 1 ? 4 : 2);
+const esc = s => (s || "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+
+function render(s) {
+  document.getElementById("model").textContent = s.model || "—";
+  document.getElementById("session").textContent = s.session_id ? "· " + s.session_id : "";
+  document.getElementById("cost").textContent = cur(s.total_cost_usd);
+
+  const used = s.context_used_tokens || 0, win = s.context_window_tokens || 0;
+  document.getElementById("ctx-nums").textContent =
+    fmt(used) + " / " + (win ? fmt(win) : "?") + (win ? "  (" + pct(used, win).toFixed(0) + "%)" : "");
+  const ctxBar = document.getElementById("ctx-bar");
+  ctxBar.innerHTML = "";
+  if (win > 0) {
+    const p = Math.min(100, pct(used, win));
+    const fill = document.createElement("span");
+    fill.style.width = p + "%";
+    fill.style.background = p > 85 ? "var(--err)" : p > 65 ? "var(--warn)" : "var(--accent)";
+    ctxBar.appendChild(fill);
+  }
+
+  document.getElementById("rsi-sections").textContent = fmt(s.rsi_prompt_sections);
+  document.getElementById("rsi-rules").textContent = fmt(s.rsi_tool_visibility_rules);
+  renderRsiFunnel(s.rsi_funnel || {});
+  renderRsiSpark(s.timeline || []);
+
+  renderTimeline(s.timeline || []);
+  renderPrompts(s.timeline || []);
+  renderProfile(s.profile || []);
+
+  // Composition
+  const rows = (s.account && s.account.contributors) || [];
+  const total = rows.reduce((a, r) => a + (r.tokens || 0), 0) || 1;
+  const compBar = document.getElementById("comp-bar");
+  compBar.innerHTML = "";
+  rows.filter(r => r.tokens > 0).forEach(r => {
+    const seg = document.createElement("span");
+    seg.style.width = (100 * r.tokens / total) + "%";
+    seg.style.background = COLORS[r.id] || "#888";
+    seg.title = r.label + " · " + fmt(r.tokens);
+    compBar.appendChild(seg);
+  });
+  const body = document.querySelector("#comp-table tbody");
+  body.innerHTML = "";
+  rows.forEach(r => {
+    const tr = document.createElement("tr");
+    const sw = `<span class="swatch" style="background:${COLORS[r.id] || "#888"}"></span>`;
+    tr.innerHTML = `<td>${sw}${r.label}</td><td class="num">${fmt(r.tokens)}</td>` +
+      `<td class="pct">${pct(r.tokens, total).toFixed(1)}%</td>`;
+    body.appendChild(tr);
+  });
+
+  // Usage by model
+  const ut = document.querySelector("#usage-table tbody");
+  ut.innerHTML = "";
+  (s.usage_by_model || []).forEach(u => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${esc(u.model)}</td><td class="num">${fmt(u.input_tokens)}</td>` +
+      `<td class="num">${fmt(u.output_tokens)}</td><td class="num">${fmt(u.cache_read_tokens)}</td>` +
+      `<td class="num">${fmt(u.cache_write_tokens)}</td>` +
+      `<td class="pct">${(u.cache_hit_pct || 0).toFixed(0)}%</td><td class="num">${cur(u.cost_usd)}</td>`;
+    ut.appendChild(tr);
+  });
+  if (!(s.usage_by_model || []).length) ut.innerHTML = `<tr><td colspan="7" class="pct">no requests yet</td></tr>`;
+
+  // Compartments
+  const c = s.compartments || {};
+  const el = document.getElementById("compartments");
+  el.innerHTML = c.count > 0
+    ? `<span>total <b>${c.count}</b></span><span>recent <b>${c.recent}</b></span>` +
+      `<span>warm <b>${c.warm}</b></span><span>cold <b>${c.cold}</b></span>` +
+      `<span>archived <b>${c.archived}</b></span><span><b>${fmt(c.total_tokens)}</b> tok</span>`
+    : `<span>none yet — compartments appear after the first compaction</span>`;
+
+  const age = Math.max(0, Math.floor(Date.now() / 1000) - (s.generated_at_unix || 0));
+  document.getElementById("foot").innerHTML = `updated ${age}s ago · polling /api/snapshot`;
+}
+
+function renderTimeline(tl) {
+  const sum = document.getElementById("tl-summary");
+  const host = document.getElementById("tl-chart");
+  if (!tl.length) { sum.textContent = "no requests yet"; host.innerHTML = ""; return; }
+
+  const tin = tl.reduce((a, x) => a + x.input_delta, 0);
+  const tout = tl.reduce((a, x) => a + x.output_delta, 0);
+  const tcost = tl.reduce((a, x) => a + x.cost_delta_usd, 0);
+  const flagged = tl.filter(x => (x.flags || []).some(f => f !== "cache_rewrite")).length;
+  const rewrites = tl.filter(x => (x.flags || []).includes("cache_rewrite")).length;
+  sum.innerHTML = `<b>${tl.length}</b> requests · <b>${fmt(tin)}</b> in · <b>${fmt(tout)}</b> out · ` +
+    `<b>${cur(tcost)}</b>` +
+    (flagged ? ` · <span class="flag">${flagged} flagged</span>` : "") +
+    (rewrites ? ` · <span class="rewrite">${rewrites} cache rewrite</span>` : "");
+
+  const W = 1000, H = 170, padB = 16, padT = 8;
+  const n = tl.length, bw = Math.max(1, Math.min(28, W / n));
+  const maxTok = Math.max(1, ...tl.map(x => x.input_delta + x.output_delta));
+  const maxCost = Math.max(1e-9, ...tl.map(x => x.cost_delta_usd));
+  const usable = H - padB - padT;
+  const y = v => padT + usable - (v / maxTok) * usable;
+
+  let bars = "", costPts = [];
+  tl.forEach((x, i) => {
+    const cx = i * bw, inner = Math.max(0, bw - 1);
+    const ih = (x.input_delta / maxTok) * usable;
+    const oh = (x.output_delta / maxTok) * usable;
+    const flags = x.flags || [];
+    const alarm = flags.some(f => f !== "cache_rewrite");
+    const rewrite = flags.includes("cache_rewrite");
+    const tip = `#${i + 1}  ${x.model}\nin ${fmt(x.input_delta)}  out ${fmt(x.output_delta)}  ` +
+      `cache rd ${fmt(x.cache_read_delta)} / wr ${fmt(x.cache_write_delta)} (${(x.cache_hit_pct||0).toFixed(0)}% hit)\n` +
+      `${cur(x.cost_delta_usd)}  ctx ${fmt(x.context_used_tokens)}/${fmt(x.context_window_tokens)}\n` +
+      `RSI ${fmt(x.rsi_prompt_sections)} sections / ${fmt(x.rsi_tool_visibility_rules)} rules` +
+      (flags.length ? `\n⚑ ${flags.join(", ")}` : "") + (x.prompt ? `\n“${x.prompt}”` : "");
+    const inColor = alarm ? "var(--err)" : "var(--in)";
+    const marker = alarm ? "var(--err)" : (rewrite ? "var(--warn)" : null);
+    bars += `<g><title>${esc(tip)}</title>` +
+      `<rect x="${cx}" y="${padT + usable - ih}" width="${inner}" height="${ih}" fill="${inColor}"/>` +
+      `<rect x="${cx}" y="${padT + usable - ih - oh}" width="${inner}" height="${oh}" fill="var(--out)"/>` +
+      (marker ? `<rect x="${cx}" y="${padT - 6}" width="${inner}" height="4" fill="${marker}"/>` : "") +
+      `</g>`;
+    costPts.push(`${cx + inner / 2},${padT + usable - (x.cost_delta_usd / maxCost) * usable}`);
+  });
+  const costLine = n > 1
+    ? `<polyline points="${costPts.join(" ")}" fill="none" stroke="var(--ok)" stroke-width="1.2" opacity="0.85"/>`
+    : "";
+  host.innerHTML =
+    `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">` +
+    `<line x1="0" y1="${padT + usable}" x2="${W}" y2="${padT + usable}" stroke="var(--border)"/>` +
+    bars + costLine + `</svg>`;
+}
+
+function renderPrompts(tl) {
+  const body = document.querySelector("#prompts-table tbody");
+  body.innerHTML = "";
+  if (!tl.length) { body.innerHTML = `<tr><td colspan="6" class="pct">no prompts yet</td></tr>`; return; }
+
+  // Group consecutive samples sharing a prompt into one prompt-turn.
+  const groups = [];
+  tl.forEach(x => {
+    const key = x.prompt || "(no prompt)";
+    const last = groups[groups.length - 1];
+    if (last && last.key === key) {
+      last.reqs++; last.in += x.input_delta; last.out += x.output_delta;
+      last.cache += x.cache_read_delta; last.cost += x.cost_delta_usd;
+      (x.flags || []).forEach(f => last.flags.add(f));
+    } else {
+      groups.push({ key, reqs: 1, in: x.input_delta, out: x.output_delta,
+        cache: x.cache_read_delta, cost: x.cost_delta_usd, flags: new Set(x.flags || []) });
+    }
+  });
+  groups.reverse().forEach(g => {
+    const tr = document.createElement("tr");
+    if ([...g.flags].some(f => f !== "cache_rewrite")) tr.className = "flagged";
+    const hit = (g.in + g.cache) > 0 ? (100 * g.cache / (g.in + g.cache)).toFixed(0) + "%" : "—";
+    tr.innerHTML = `<td class="prompt-cell" title="${esc(g.key)}">${esc(g.key)}</td>` +
+      `<td class="num">${g.reqs}</td><td class="num">${fmt(g.in)}</td><td class="num">${fmt(g.out)}</td>` +
+      `<td class="pct">${hit}</td><td class="num">${cur(g.cost)}</td>`;
+    body.appendChild(tr);
+  });
+}
+
+function renderRsiFunnel(f) {
+  const c = f.candidates || 0, v = f.verified || 0, a = f.active || 0;
+  document.getElementById("rsi-fn-candidates").textContent = fmt(c);
+  document.getElementById("rsi-fn-verified").textContent = fmt(v);
+  document.getElementById("rsi-fn-active").textContent = fmt(a);
+  const host = document.getElementById("rsi-fn-bykind");
+  host.innerHTML = (f.by_kind || []).map(k =>
+    `<span class="rsi-kind">${esc(k.kind)} <b>${fmt(k.candidates)}</b>` +
+    (k.active ? `/<b style="color:var(--accent2)">${fmt(k.active)}</b>` : "") + `</span>`
+  ).join("");
+  // Diagnostic note: name the stuck state so the panel explains itself.
+  const note = document.getElementById("rsi-fn-note");
+  if (c === 0 && a === 0) {
+    note.textContent = "No self-improvement candidates staged yet — run a few sessions or /dream to generate proposals.";
+  } else if (c > 0 && v === 0 && a === 0) {
+    note.textContent = `${fmt(c)} candidates staged but 0 verified and 0 active — the loop is generating proposals but the curator hasn't proven any (run the dreamer/curator to attach fixture+research evidence).`;
+  } else if (a > 0) {
+    note.textContent = `${fmt(a)} self-improvement${a === 1 ? "" : "s"} live in the prompt — RSI is closing the loop.`;
+  } else {
+    note.textContent = `${fmt(v)} candidate${v === 1 ? "" : "s"} verified and awaiting promotion.`;
+  }
+}
+
+function renderRsiSpark(tl) {
+  const host = document.getElementById("rsi-spark");
+  const vals = tl.map(x => x.rsi_prompt_sections || 0);
+  if (!vals.length) { host.innerHTML = `<span class="pct">no requests yet</span>`; return; }
+  const W = 320, H = 42, pad = 5, n = vals.length, max = Math.max(1, ...vals);
+  const x = i => n > 1 ? pad + (i / (n - 1)) * (W - 2 * pad) : W / 2;
+  const y = v => H - pad - (v / max) * (H - 2 * pad);
+  const pts = vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`);
+  const area = `M${x(0).toFixed(1)},${H - pad} L${pts.join(" L")} L${x(n - 1).toFixed(1)},${H - pad} Z`;
+  const dots = vals.map((v, i) =>
+    `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="2" fill="var(--accent2)"/>`).join("");
+  host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">` +
+    `<path d="${area}" fill="var(--accent2)" opacity="0.15"/>` +
+    `<polyline points="${pts.join(" ")}" fill="none" stroke="var(--accent2)" stroke-width="1.5"/>` +
+    dots + `</svg>`;
+}
+
+function renderProfile(profile) {
+  const panel = document.getElementById("profile-panel");
+  const body = document.querySelector("#profile-table tbody");
+  if (!profile.length) { panel.style.display = "none"; return; }
+  panel.style.display = "";
+  body.innerHTML = "";
+  profile.forEach(p => {
+    const avg = p.spans > 0 ? (p.ms / p.spans) : 0;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${esc(p.name)}</td><td class="num">${(p.ms||0).toFixed(1)}</td>` +
+      `<td class="num">${fmt(p.spans)}</td><td class="pct">${avg.toFixed(2)}</td>`;
+    body.appendChild(tr);
+  });
+}
+
+async function tick() {
+  try {
+    const r = await fetch("/api/snapshot", { cache: "no-store" });
+    render(await r.json());
+  } catch (e) {
+    document.getElementById("foot").innerHTML = `<span class="stale">disconnected — jfc may have exited</span>`;
+  }
+}
+tick();
+setInterval(tick, 1500);
+</script>
+</body>
+</html>

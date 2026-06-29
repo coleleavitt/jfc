@@ -1,0 +1,767 @@
+                                          Gated Sparse Attention: Combining Computational Efficiency
+                                           with Training Stability for Long-Context Language Models
+
+                                                               Alfred Shen                           Aaron Shen
+                                                          alfreshe@amazon.com                 aaron.shen@berkeley.edu
+
+
+                                                                                      Abstract
+
+
+
+
+arXiv:2601.15305v1 [cs.AI] 12 Jan 2026
+                                                  The computational burden of attention in long-context language models has motivated
+                                              two largely independent lines of work: sparse attention mechanisms that reduce complexity
+                                              by attending to selected tokens, and gated attention variants that improve training sta-
+                                              bility while mitigating the attention sink phenomenon. We observe that these approaches
+                                              address complementary weaknesses and propose Gated Sparse Attention (GSA), an archi-
+                                              tecture that realizes the benefits of both. GSA incorporates a gated lightning indexer with
+                                              sigmoid activations that produce bounded, interpretable selection scores, an adaptive spar-
+                                              sity controller that modulates the number of attended tokens based on local uncertainty,
+                                              and dual gating at the value and output stages. We establish theoretical foundations for
+                                              the approach, including complexity analysis, expressiveness results, and convergence guar-
+                                              antees. In experiments with 1.7B parameter models trained on 400B tokens, GSA matches
+                                              the efficiency of sparse-only baselines (12–16× speedup at 128K context) while achieving
+                                              the quality gains associated with gated attention: perplexity improves from 6.03 to 5.70,
+                                              RULER scores at 128K context nearly double, and attention to the first token—a proxy for
+                                              attention sinks—drops from 47% to under 4%. Training stability improves markedly, with
+                                              loss spikes reduced by 98%.
+
+
+                                         Keywords: attention mechanism, sparse attention, gating, long-context, language models, ef-
+                                         ficiency
+
+                                         Code is available at https://github.com/alfredcs/Gated-Sparse-Attention.
+
+
+
+                                         1    Introduction
+
+                                         Attention mechanisms lie at the heart of modern language models [Vaswani et al., 2017], enabling
+                                         the dynamic aggregation of contextual information that underlies capabilities from in-context
+                                         learning to long-document reasoning [Brown et al., 2020, OpenAI, 2023, Anthropic, 2024]. Yet
+                                         standard attention carries well-known liabilities. Its O(L2 d) cost in sequence length L and
+                                         model dimension d renders long-context inference expensive, and at training time, unbounded
+                                         activations can trigger loss spikes that destabilize optimization [Chowdhery et al., 2022]. A
+                                         subtler issue, documented by Xiao et al. [2024], is the attention sink phenomenon: models learn
+                                         to park excess probability mass on early tokens—often over 40% on the first position alone—
+                                         wasting capacity on semantically vacuous anchors.
+
+                                         Two recent lines of work offer partial remedies. DeepSeek-V3.2 [DeepSeek-AI, 2025] introduced
+                                         a sparse attention scheme built around a lightweight “lightning indexer” that scores all tokens
+                                         cheaply, then restricts full attention to the top-k candidates. This reduces the dominant attention
+
+                                                                                          1
+cost to O(Lk) but leaves training stability and attention sinks unaddressed. Independently, Qiu
+et al. [2025] showed that element-wise sigmoid gating after scaled dot-product attention (SDPA)
+mitigates sinks, dampens activation magnitudes, and permits higher learning rates—benefits
+compelling enough that the approach earned the NeurIPS 2025 Best Paper Award and has since
+been adopted in production systems such as Qwen3-Next. The catch is that gated attention
+retains full quadratic cost.
+
+A natural question is whether these techniques can be combined. We argue that they are not
+merely compatible but mutually reinforcing: gating supplies bounded, well-behaved scores that
+improve the indexer’s token selection, while sparsity frees parameter budget for richer gating
+without increasing wall-clock cost.
+
+This paper introduces Gated Sparse Attention (GSA), an architecture that realizes this synthesis.
+The design rests on three components. First, a gated lightning indexer replaces the original
+ReLU scoring with sigmoid units, yielding importance scores in (0, H I ) that admit a probabilistic
+interpretation and respond smoothly to gradient updates. Second, an adaptive sparsity controller
+modulates the selection budget kt according to score variance: high variance signals confident
+discrimination and permits aggressive pruning, whereas low variance suggests ambiguity and
+warrants a larger context window. Third, dual gating—applied both to values before aggregation
+(G2) and to outputs after SDPA (G1)—injects non-linearity that breaks the rank bottleneck of
+standard attention while providing an alternative pathway for suppressing irrelevant information,
+obviating the need for sink tokens.
+
+We ground these design choices in theory, establishing complexity bounds (Theorem 1), an
+expressiveness separation from ungated attention (Theorem 3), a formal account of sink mitiga-
+tion (Theorem 4), gradient norm bounds (Theorem 5), and convergence guarantees (Theorem 6).
+Empirically, GSA matches the throughput of sparse-only baselines—12–16× faster than dense
+attention at 128K tokens—while delivering quality gains on par with or exceeding gated atten-
+tion: perplexity drops from 6.03 to 5.70 on WikiText-103, RULER scores at 128K context rise
+from 32 to 62, and first-token attention falls from 47% to 4%. Training stability improves in
+lockstep, with loss spikes nearly eliminated and maximum activations reduced by an order of
+magnitude.
+
+
+
+2     Preliminaries
+
+We briefly review the components on which GSA builds: standard multi-head attention, DeepSeek’s
+sparse attention variant, and gated attention.
+
+
+2.1   Multi-Head Attention
+
+Let H = [h1 , . . . , hL ] ∈ RL×d denote a sequence of hidden states. Multi-head attention (MHA)
+projects these into queries, keys, and values,
+
+                            Q = HWQ ,      K = HWK ,      V = HWV ,                            (1)
+
+with WQ ∈ Rd×nh dk and WK , WV ∈ Rd×nkv dk , where nh is the number of query heads, nkv the
+number of key–value heads (possibly fewer under grouped-query attention), and dk = d/nh the
+head dimension. Each head h at position t computes a convex combination of values weighted
+
+
+
+                                                2
+by softmax attention scores:
+                                                                √
+                                            X    exp(Qht · Ksh / dk )
+                           h
+                      Attn (Qt , K, V ) =     P                    √ V h.
+                                                           h · K h/ d ) s
+                                                                                               (2)
+                                          s≤t   j≤t exp(Q  t    j     k
+
+Concatenating across heads and projecting by WO yields the layer output. The cost is dominated
+by the L × L attention computation, giving O(L2 d) complexity overall.
+
+
+2.2   DeepSeek Sparse Attention
+
+DeepSeek-V3.2 [DeepSeek-AI, 2025] sidesteps the quadratic bottleneck with a two-stage design.
+A lightweight lightning indexer first scores every token using low-dimensional projections (dI ≪
+d):
+                                        XHI
+                                              I          I
+                                 It,s =     wt,j · ReLU(qt,j · ksI ),                         (3)
+                                         j=1
+
+where H I indexer heads (typically 4) each produce a scalar contribution modulated by query-
+                   I . Full attention is then restricted to the top-k positions:
+dependent weights wt,j
+                   St = {s : It,s ∈ Top-k(It,: )},       ut = Attn(ht , {cs : s ∈ St }).       (4)
+Because dI is small, the indexer’s O(L2 dI H I ) cost is modest, and the main attention computation
+drops to O(Lkd).
+
+
+2.3   Gated Attention
+
+Qiu et al. [2025] augment SDPA with element-wise sigmoid gates:
+                                        Y ′ = Y ⊙ σ(XWθ ),                                     (5)
+where Y is the tensor to be modulated and X supplies the gating signal. Their extensive
+ablations identify two effective placements: after the output projection (G1) and after the value
+projection (G2). Gating yields sparse activation patterns (mean gate value ≈ 0.12), reduces first-
+token attention from 47% to under 5%, and permits higher learning rates without instability.
+The mechanism has since been integrated into Qwen3-Next and related production models.
+
+
+2.4   Desiderata
+
+An ideal long-context attention mechanism would satisfy four properties: (i) sub-quadratic scal-
+ing in sequence length, (ii) immunity to attention sinks, (iii) bounded activations that stabilize
+training, and (iv) sufficient expressiveness to capture complex token interactions. Existing meth-
+ods achieve subsets of these goals; our aim is an architecture that realizes all four.
+
+
+
+3     Gated Sparse Attention
+
+3.1   Design Rationale
+
+Sparse attention and gated attention each address a subset of the challenges outlined above, and
+their mechanisms are largely orthogonal. DSA’s lightning indexer must still touch every token to
+
+                                                     3
+produce selection scores, but because the indexer operates in a low-dimensional space, its O(L2 )
+cost carries a small constant factor and does not dominate wall-clock time. The real savings come
+from restricting full-dimensional attention to k ≪ L tokens. Gated attention, meanwhile, leaves
+complexity unchanged but regularizes activations and provides an output-suppression pathway
+that eliminates sink tokens. Our thesis is that combining the two yields benefits neither achieves
+alone: gating furnishes bounded, smooth scores that stabilize the indexer, while sparsity frees
+compute budget for the additional gating parameters.
+
+
+3.2   Architecture at a Glance
+
+GSA augments a standard transformer layer as follows. After projecting hidden states into
+queries, keys, and values, we apply a value gate (G2). The gated lightning indexer then scores
+all positions and selects the top-k (with k itself adapted per query). Sparse SDPA aggregates
+information from the selected tokens, and a final output gate (G1) modulates the result:
+  ht −→ [Q,K,V] −→ [G2] −→ [Indexer] −→ [Top-k] −→ [SDPA] −→ [G1] −→ ut . (6)
+
+
+3.3   Gated Lightning Indexer
+
+We replace DSA’s ReLU activations with sigmoids, yielding bounded importance scores:
+                                      HI
+                                      X
+                                            σ ht WjIw · σ qt,j
+                                                           I
+                                                               · ksI + bIj ,
+                                                                         
+                             It,s =                                                           (7)
+                                      j=1
+
+        I = h W Iq and k I = h W Ik are low-dimensional projections, W Iw produces a query-
+where qt,j      t j           s     s                                         j
+dependent head weight, and bIj is a learnable bias. Because each sigmoid factor lies in (0, 1),
+scores satisfy It,s ∈ (0, H I ), which admits a natural interpretation as a soft count of how many
+indexer heads consider position s relevant. The bias term allows the model to learn per-head
+thresholds, while the multiplicative head weights let queries emphasize different indexer heads
+depending on context.
+
+
+3.4   Adaptive Sparsity
+
+A fixed budget k may be suboptimal: some queries have clear targets (high score variance), while
+others face genuine ambiguity (low variance). We therefore modulate the selection budget:
+                                                                    
+                                             Var(It,: )
+                        kt = clamp kbase ·                , kmin , kmax ,                    (8)
+                                                V̄
+where V̄ is an exponential moving average of score variance across the batch. When the indexer is
+confident, kt shrinks and computation is saved; when scores are diffuse, more context is retained
+for robustness. In practice we set kbase = 2048, kmin = 256, and kmax = 4096.
+
+
+3.5   Dual Gating
+
+Following the recommendations of Qiu et al. [2025], we gate at two points. The value gate (G2)
+modulates values before aggregation,
+                                        Vs′ = Vs ⊙ σ(hs WVg ),                                (9)
+
+                                                     4
+               Table 1: Default GSA hyperparameters (7B-class configuration).
+                        Symbol          Meaning                 Value
+                        d               Model dimension         4096
+                        nh              Query heads             32
+                        nkv             Key–value heads         8
+                        dk              Head dimension          128
+                        dI              Indexer dimension       64
+                        HI              Indexer heads           4
+                        kbase           Base selection budget   2048
+                        kmin , kmax     Budget bounds           256, 4096
+
+
+allowing the model to suppress uninformative dimensions early. The output gate (G1) acts after
+sparse SDPA,
+                                  gated    sparse         g
+                                Ot,h    = Ot,h    ⊙ σ(ht WO,h ),                         (10)
+providing a per-head, query-dependent mechanism for discarding the attention output altogether—
+precisely the functionality that attention sinks otherwise serve. We initialize gate biases so that
+σ(·) ≈ 0.5 at the start of training, ensuring gradients flow while still introducing non-linearity
+from the first step.
+
+
+3.6   Sparse Attention Computation
+
+Given the selected index set St , attention proceeds in the usual way but over a reduced context:
+                                                      √
+                                         exp(Qt · Ks / dk )
+                             At,s = P                     √ , s ∈ St ,                       (11)
+                                        j∈St exp(Qt · Kj / dk )
+
+                         Otsparse =
+                                     X
+                                          At,s Vs′ .                                         (12)
+                                      s∈St
+
+
+
+
+4     Architecture Details
+
+Figure 1 summarizes the data flow through a GSA layer.
+
+
+Processing stages. Starting from hidden state ht , the layer proceeds as follows. (1) Linear
+projections produce Q, K, and V . (2) The value gate suppresses uninformative dimensions via
+V ′ = V ⊙ σ(ht WVg ). (3) The gated indexer computes scores It,s ∈ (0, H I ) for every position
+and retains the top-kt . (4) Sparse SDPA computes attention over the selected subset, reducing
+per-query cost from O(Ld) to O(kd). (5) The output gate applies ut = Otsparse ⊙σ(ht WOg ), giving
+the model a direct pathway to discard uninformative outputs without resorting to sink tokens.
+
+
+4.1   Hyperparameters
+
+GSA serves as a drop-in replacement for standard attention. Table 1 lists the additional hyper-
+parameters; defaults are chosen for a 7B-class model but scale straightforwardly.
+
+
+                                                 5
+Figure 1: Overview of Gated Sparse Attention. Hidden states are projected into queries, keys,
+and values; the value gate (G2) modulates values before the indexer scores all positions and
+selects the top-k; sparse SDPA aggregates information from the selected context; and the output
+gate (G1) provides a final modulation before producing ut .
+
+
+4.2   Parameter Overhead
+
+Table 2 breaks down the additional parameters. The indexer is lightweight owing to its low
+dimensionality; the output gate dominates because it is head-specific. In total, GSA adds
+
+
+                                              6
+                         Table 2: Parameter overhead by component.
+                         Component                  Size       Overhead
+                         Indexer Q projection       H I d dI   0.4%
+                         Indexer K projection       d dI       0.1%
+                         Indexer head weights       d HI       <0.01%
+                         Value gate (G2)            d nkv dk   0.8%
+                         Output gate (G1)           d nh dk    3.1%
+                         Total                                 ∼4.4%
+
+
+roughly 4.4% to the parameter count of a standard transformer layer.
+
+
+
+5     Theoretical Analysis
+
+We now formalize the claims made informally above. Proofs appear in the appendix unless given
+inline.
+
+
+5.1   Complexity
+
+Theorem 1 (Complexity). GSA runs in time O(L2 dI H I + Lkd), where L is sequence length, k
+is the (average) selection budget, dI is the indexer dimension, and H I is the number of indexer
+heads.
+
+
+Proof. See Appendix A.
+
+Corollary 2. With d = 4096, dI = 64, H I = 4, k = 2048, and L = 128,000, the dominant term
+is Lkd, yielding roughly 12.8× speedup over standard O(L2 d) attention.
+
+
+5.2   Expressiveness
+
+Theorem 3 (Expressiveness). GSA with dual gating represents a strictly richer function class
+than standard attention.
+
+
+Sketch. Standard attention outputs lie in a subspace of rank at most dk per head, since the value
+and output projections factor through Rdk . Sigmoid gating breaks this bottleneck by introducing
+element-wise non-linearities that, by universal approximation, can represent arbitrary continuous
+functions on compact domains. Details in Appendix B.
+
+
+5.3   Attention Sink Mitigation
+
+Theorem 4 (Sink Reduction). The output gate gtO = σ(ht WOg ) provides a learned pathway for
+suppressing attention outputs, reducing reliance on sink tokens.
+
+
+
+
+                                                7
+Sketch. When gtO ≈ 0, the gated output vanishes irrespective of where attention mass falls.
+The model can therefore learn to “do nothing” without parking probability on early positions.
+Empirically, first-token attention drops from 47% to 4%. See Appendix C.
+
+
+5.4   Gradient Bounds and Stability
+
+Theorem 5 (Gradient Bound). Sigmoid gating attenuates gradients flowing through GSA,
+bounding their magnitude and reducing loss-spike risk.
+
+
+Proof. Since σ(x) ∈ (0, 1) and σ ′ (x) ≤ 1/4, the backward pass through a gate contracts gradient
+norms:
+                                    ∂L          ∂L           ∂L
+                                     sparse
+                                            =       ⊙ gO ≤         .                         (13)
+                               ∂O               ∂O           ∂O
+In practice, mean gate values hover around 0.11, yielding an order-of-magnitude reduction in
+maximum activations (from >1000 to <90 in our experiments).
+
+
+5.5   Convergence
+
+Theorem 6 (Convergence). Under L-smoothness and     √ bounded gradient variance, SGD on GSA
+converges to a stationary point at the standard O(1/ T ) rate.
+
+
+Proof. See Appendix D.
+
+
+
+6     Training
+
+6.1   Two-Phase Schedule
+
+We adopt a two-phase procedure inspired by DSA. In the first phase (roughly 1K steps), the
+indexer is trained in isolation to mimic the full attention distribution via a KL objective:
+                                         X
+                              LIwarmup =
+                                                                     
+                                            DKL pt,: ∥ softmax(It,: ) ,                      (14)
+                                           t
+
+where pt,: is the softmax attention computed by the (frozen) base model. This warm-up ensures
+the indexer can identify salient tokens before sparse training begins. In the second phase, the
+entire model trains end-to-end with sparse attention, and the indexer loss shifts to the selected
+subset:                                 X
+                             LIsparse =
+                                                                     
+                                          DKL pt,St ∥ softmax(It,St ) .                      (15)
+                                       t
+
+
+
+6.2   Optimizer Settings
+
+We use AdamW throughout. Because the indexer must learn quickly to avoid degrading early
+training, we assign it a 10× learning-rate multiplier; gate parameters use the base rate. Table 3
+summarizes.
+
+
+                                               8
+                              Table 3: Learning-rate multipliers.
+                               Parameter group        Multiplier
+                               Base model                  1×
+                               Indexer                    10×
+                               Gates                      1×
+
+
+                             Table 4: Perplexity (lower is better).
+                                            WikiText-103        C4
+                             Standard              6.03         7.82
+                             Sparse only           6.02         7.79
+                             Gated only            5.76         7.45
+                             GSA                   5.70         7.38
+
+
+7     Experiments
+
+7.1   Setup
+
+We train 1.7B-parameter models from scratch on 400B tokens drawn from SlimPajama [Cerebras,
+2023]. The architecture comprises 24 layers with hidden dimension 2048, 16 query heads, 4 key–
+value heads, and SwiGLU feed-forward blocks of width 5504. Training uses a 4K context window;
+evaluation extends to 128K via YaRN positional interpolation.
+
+We compare against three baselines: (i) standard grouped-query attention, (ii) sparse-only at-
+tention (DSA-style lightning indexer with ReLU and fixed k), and (iii) gated-only attention (full
+quadratic cost with G1+G2 gating). All runs use 8× H100 GPUs.
+
+
+7.2   Language Modeling
+
+Table 4 reports perplexity on WikiText-103 and C4. Gating alone closes most of the gap to
+GSA, but sparsity contributes an additional reduction, and the combination outperforms both.
+
+
+7.3   Downstream Tasks
+
+Table 5 summarizes accuracy on five benchmarks. GSA leads across the board; the largest
+gains appear on MMLU (+2.6 points over standard) and GSM8K (+3.1 points), suggesting that
+the combination of gating and selective context aids both knowledge retrieval and multi-step
+reasoning.
+
+
+7.4   Long-Context Evaluation
+
+The RULER benchmark (Table 6) probes retrieval and reasoning at increasing context lengths.
+All methods perform comparably up to 32K, but standard attention collapses beyond this point.
+GSA maintains strong performance even at 128K, nearly doubling the standard baseline score.
+
+
+                                               9
+                              Table 5: Downstream accuracy (%).
+                MMLU         GSM8K         HumanEval          HellaSwag         C-Eval     Avg
+Standard          58.8          52.9            28.7              73.1           60.3      54.7
+Sparse only       59.1          53.2            29.3              73.3           60.5      55.0
+Gated only        60.8          55.3            29.3              74.6           62.2      56.4
+GSA               61.4          56.0            30.5              74.9           62.9      57.1
+
+
+                Table 6: RULER scores by context length (*YaRN-extended).
+                                 4K     8K     16K     32K    64K*    128K*
+                  Standard      88.9    85.9   83.2    79.5   37.5       31.7
+                  Sparse only   89.1    86.5   84.0    80.2   42.4       36.8
+                  Gated only    90.6    87.1   84.6    79.8   66.6       58.8
+                  GSA           91.2    88.5   86.1    82.3   69.5       62.2
+
+
+7.5   Attention Sinks and Activations
+
+Table 7 quantifies the attention-sink phenomenon. Standard attention allocates nearly half of
+its probability mass to the first token; GSA reduces this to under 4%. Maximum activation
+magnitudes drop by an order of magnitude, which we attribute to the regularizing effect of
+sigmoid gating.
+
+
+7.6   Training Stability
+
+Loss spikes plague large-scale training and often force conservative learning-rate schedules. Ta-
+ble 8 shows that gating dramatically reduces spike frequency, permitting a 2× higher learning
+rate without instability. GSA inherits these benefits while retaining the speed advantage of
+sparsity.
+
+
+7.7   Throughput
+
+Table 9 reports latency and memory at 128K context. Prefill cost drops by roughly 11×; decode
+improves similarly. Memory overhead from gating parameters is negligible.
+
+
+7.8   Ablations
+
+Gating position. Table 10 isolates the contribution of each gate. Output gating (G1) accounts
+for most of the quality gain; value gating (G2) adds a smaller but consistent improvement.
+Combining both yields the best perplexity and downstream accuracy.
+
+
+Selection budget. Table 11 varies the base sparsity level k. Smaller budgets yield greater
+speedups at some cost in quality; k = 2048 strikes a favorable balance.
+
+
+
+                                               10
+                              Table 7: Sink and activation statistics.
+                              First-token attn Mean gate Max activation
+              Standard             46.7%                    —                 1053
+              Sparse only          38.2%                    —                 892
+              Gated only            4.8%                  0.116                94
+              GSA                  3.9%                   0.108                87
+
+
+                                   Table 8: Training stability.
+                               Spikes / 100K steps            Max LR       Wall time
+                Standard                  12.3                    4e-3        1.00×
+                Sparse only               8.7                     5e-3        0.85×
+                Gated only                 0.8                    8e-3        1.02×
+                GSA                       0.3                     8e-3        0.87×
+
+
+                  Table 9: Efficiency at 128K context (relative to standard).
+                                          Prefill      Decode      Memory
+                         Standard         1.00×        1.00×         1.00×
+                         Sparse only      0.08×        0.12×         0.95×
+                         Gated only       1.02×        1.01×         1.02×
+                         GSA              0.09×        0.13×         0.97×
+
+
+                               Table 10: Ablation: gating position.
+                                          PPL       MMLU          Stability
+                            No gating     6.02         59.1       Moderate
+                            G2 only       5.82         59.2        Good
+                            G1 only       5.79         60.1        Good
+                            G1 + G2       5.70         61.4       Excellent
+
+
+                         Table 11: Ablation study on sparsity level k.
+                         k        PPL      RULER-128K              Speedup
+                         512       5.89           54.32              22×
+                         1024      5.78           58.91              16×
+                         2048      5.70           62.18              12×
+                         4096      5.69           63.45               8×
+
+
+8    Limitations
+
+Several limitations deserve mention. First, for short sequences (below roughly 4K tokens) the
+indexer’s overhead can exceed the savings from sparse attention; a practical deployment would
+switch to dense attention below this threshold. Second, while the indexer’s constants are small,
+its O(L2 ) scaling will eventually dominate at extreme lengths (beyond 1M tokens), motivating
+future work on hierarchical or sub-linear indexing schemes. Third, the two-phase training sched-
+ule adds implementation complexity, though the warmup phase accounts for only a fraction of
+a percent of total training compute. Finally, GSA introduces new hyperparameters—kbase , dI ,
+
+                                                  11
+and gate initialization—that may require tuning when adapting to new domains or model scales.
+
+
+
+9    Conclusion
+
+We have introduced Gated Sparse Attention, an architecture that marries the efficiency of sparse
+token selection with the stability and expressiveness of sigmoid gating. Theoretical analysis con-
+firms that GSA retains standard convergence guarantees while offering strictly greater represen-
+tational capacity than ungated attention. Empirically, the combination delivers on its promise:
+throughput improves by an order of magnitude at 128K context, perplexity and downstream
+accuracy match or exceed gated-only baselines, long-context retrieval nearly doubles relative to
+standard attention, and training stability improves markedly—all without sacrificing wall-clock
+speed.
+
+Looking ahead, natural extensions include hierarchical indexers that achieve sub-quadratic scor-
+ing, integration with mixture-of-experts routing, and tighter theoretical bounds on the infor-
+mation lost through sparse selection. We hope GSA provides a useful foundation for scaling
+attention to ever-longer contexts without abandoning the quality gains that gating affords.
+
+
+
+References
+Tom Brown, Benjamin Mann, Nick Ryder, et al. Language models are few-shot learners. In
+  Advances in Neural Information Processing Systems, 2020.
+
+Cerebras. SlimPajama: A 627B token cleaned and deduplicated version of RedPajama, 2023.
+
+Aakanksha Chowdhery, Sharan Narang, Jacob Devlin, et al. PaLM: Scaling language modeling
+  with pathways. arXiv preprint arXiv:2204.02311, 2022.
+
+DeepSeek-AI. DeepSeek-V3.2: Pushing the frontier of open large language models. arXiv
+  preprint arXiv:2512.02556, 2025.
+
+Kurt Hornik, Maxwell Stinchcombe, and Halbert White. Multilayer feedforward networks are
+ universal approximators. Neural Networks, 2(5):359–366, 1989.
+
+OpenAI. GPT-4 technical report. arXiv preprint arXiv:2303.08774, 2023.
+
+Anthropic. Claude 3 technical report, 2024.
+
+Bowen Peng, Jeffrey Quesnelle, Honglu Fan, and Enrico Shippole. YaRN: Efficient context
+  window extension of large language models. arXiv preprint arXiv:2309.00071, 2023.
+
+Zihan Qiu, Zekun Wang, Bo Zheng, Zeyu Huang, Kaiyue Wen, Songlin Yang, Rui Men, Le Yu,
+  Fei Huang, Suozhi Huang, Dayiheng Liu, Jingren Zhou, and Junyang Lin. Gated attention for
+  large language models: Non-linearity, sparsity, and attention-sink-free. In Advances in Neural
+  Information Processing Systems (NeurIPS), 2025. Best Paper Award.
+
+Ashish Vaswani, Noam Shazeer, Niki Parmar, et al. Attention is all you need. In Advances in
+  Neural Information Processing Systems, 2017.
+
+Guangxuan Xiao, Yuandong Tian, Beidi Chen, Song Han, and Mike Lewis. Efficient streaming
+ language models with attention sinks. In International Conference on Learning Representa-
+ tions, 2024.
+
+
+                                               12
+A      Proof of Theorem 1 (GSA Complexity)
+
+Proof. Let L be sequence length, d be model dimension, nh be number of attention heads,
+dk = d/nh be head dimension.
+
+Standard Attention Complexity:
+
+                              Cstandard = O(L2 · dk · nh ) = O(L2 d)                       (16)
+
+
+GSA Complexity Breakdown:
+
+
+    1. QKV Projections: O(L · d · d) = O(Ld2 ) (same as standard)
+
+    2. Gated Indexer Computation: For each query token t, compute scores with all L
+       preceding tokens. Per-token cost: O(L · dI · H I ). Total: O(L2 · dI · H I ).
+      Since dI ≪ d and H I ≪ nh :
+
+                                     dI · H I     64 · 4
+                                              =           ≈ 0.002                          (17)
+                                      d · nh    4096 · 32
+
+    3. Top-k Selection: O(L · k log L) using heap-based selection.
+
+    4. Sparse Attention: For each query, attend to k selected tokens. Per-token cost: O(k · dk ·
+       nh ) = O(k · d). Total: O(L · k · d).
+
+    5. Gating Operations: O(L · d) each.
+
+
+Total GSA Complexity:
+
+         CGSA = O(Ld2 ) + O(L2 · dI · H I ) + O(Lkd) + O(Ld) ≈ O(L2 · dI · H I + Lkd)      (18)
+
+
+Speedup Factor: For d = 4096, dI = 64, H I = 4, k = 2048, L = 128000:
+                                  4096      1                 1
+                      Speedup ≈        ·  2048·4096  = 16 ·      = 12.8×                   (19)
+                                  256 1 + 128000·256        1.25
+
+
+
+
+B     Proof of Theorem 3 (Non-Linearity Enhancement)
+
+Proof. Standard Attention Output (for head h, token i):
+                        X                         X
+                  ohi =    h
+                          Sij · (Xj WVh ) · WOh =    h
+                                                    Sij · Xj · (WVh WOh )                  (20)
+                            j≤i                      j≤i
+
+
+
+Let WhV O = WVh WOh ∈ Rd×d . Since WVh ∈ Rd×dk and WOh ∈ Rdk ×d with dk < d:
+
+                              rank(WhV O ) ≤ min(dk , dk ) = dk < d                        (21)
+
+
+                                               13
+Thus, standard attention is constrained to a rank-dk linear mapping of input tokens.
+
+GSA Output (with G1 and G2 gating): Let gjV = σ(Xj WVg ) ∈ Rdk and giO = σ(hi WOg ) ∈ Rdk .
+                                                        
+                                  X
+                           ohi =    h
+                                    Sij · (Xj WVh ⊙ gjV ) ⊙ giO · WOh                       (22)
+                                  j≤i
+
+
+
+The gates gjV and giO are non-linear functions of their inputs. By the universal approximation
+theorem [Hornik et al., 1989], compositions of affine transformations with sigmoid non-linearities
+can approximate any continuous function on a compact domain.
+
+
+
+C    Proof of Theorem 4 (Attention Sink Reduction)
+
+P h Attention Sink Phenomenon: In standard attention, due to softmax normalization:
+Proof.
+  s At,s = 1 for all t, h. When no token is particularly relevant, the model needs somewhere
+to allocate attention mass. Due to positional biases, attention concentrates on early tokens,
+particularly position 1.
+                                   O = σ(h W g ):
+GSA Mechanism: With output gating gt,h    t O,h
+                                                                       !
+                          gated    sparse
+                                                      X
+                         Ot,h   = Ot,h       O
+                                          ⊙ gt,h =         Aht,s Vsh          O
+                                                                           ⊙ gt,h            (23)
+                                                       s
+
+
+
+Key Insight: The gate gt,h O provides an alternative mechanism for “doing nothing”. When
+ O ≈ 0, the output is suppressed regardless of attention distribution. This removes the need
+gt,h
+for attention sink tokens.
+
+Empirical Evidence: First token attention: 46.7% (standard) → 3.9% (GSA). Gate score
+mean: 0.108 (highly sparse).
+
+
+
+D     Proof of Theorem 6 (Convergence)
+
+Proof Sketch. We verify that GSA satisfies conditions for SGD convergence on non-convex func-
+tions.
+
+Assumption 1 (L-Smoothness): ∥∇L(θ1 ) − ∇L(θ2 )∥ ≤ L∥θ1 − θ2 ∥. This holds for GSA since
+all operations (linear projections, softmax, sigmoid) have bounded second derivatives.
+
+Assumption 2 (Bounded Variance): E[∥∇Lbatch − ∇L∥2 ] ≤ σ 2 .
+
+Assumption 3 (Bounded Gradients): ∥∇L∥ ≤ G. From Theorem 5, sigmoid gating bounds
+gradient magnitudes.
+
+Convergence Rate: Using standard SGD analysis with learning rate η:
+
+                                                   ∥θ0 − θ∗ ∥2 ηLσ 2
+                            E[L(θT )] − L(θ∗ ) ≤              +                              (24)
+                                                      2ηT        2
+
+                                               14
+              q
+                  ∥θ0 −θ∗ ∥2
+Setting η =         T Lσ 2
+                             :
+                                                   r
+                                           ∗           Lσ 2 ∥θ0 − θ∗ ∥2       √
+                             E[L(θT )] − L(θ ) ≤                        = O(1/ T )   (25)
+                                                              T
+
+
+
+
+                                                        15
+

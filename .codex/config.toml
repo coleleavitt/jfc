@@ -1,0 +1,60 @@
+#:schema https://developers.openai.com/codex/config-schema.json
+
+# ECC Tools generated Codex baseline
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+web_search = "live"
+
+# MCP server versions are pinned for reproducibility across machines and CI.
+# Bump deliberately; current pins verified against the npm registry 2026-06-14.
+model = "gpt-5.5"
+model_context_window = 400000
+model_reasoning_effort = "high"
+plan_mode_reasoning_effort = "xhigh"
+[mcp_servers.github]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-github@2025.4.8"]
+
+[mcp_servers.context7]
+command = "npx"
+args = ["-y", "@upstash/context7-mcp@3.2.1"]
+
+[mcp_servers.exa]
+url = "https://mcp.exa.ai/mcp"
+
+[mcp_servers.memory]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-memory@2026.1.26"]
+
+[mcp_servers.playwright]
+command = "npx"
+args = ["-y", "@playwright/mcp@0.0.76", "--extension"]
+
+[mcp_servers.sequential-thinking]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-sequential-thinking@2025.12.18"]
+
+[features]
+multi_agent = true
+
+[agents]
+max_threads = 6
+max_depth = 1
+
+[agents.explorer]
+description = "Read-only codebase explorer for gathering evidence before changes are proposed."
+config_file = "agents/explorer.toml"
+
+[agents.reviewer]
+description = "PR reviewer focused on correctness, security, and missing tests."
+config_file = "agents/reviewer.toml"
+
+[agents.docs_researcher]
+description = "Documentation specialist that verifies APIs, framework behavior, and release notes."
+config_file = "agents/docs-researcher.toml"
+
+# Managed by LazyCodex: multi_agent_v2 is re-disabled on every Codex session start
+# because enabling it fails every turn with HTTP 400 (openai/codex#26753).
+# Opt out: LAZYCODEX_CONFIG_MIGRATION_DISABLED=1 (or OMO_CODEX_CONFIG_MIGRATION_DISABLED=1).
+[features.multi_agent_v2]
+enabled = false

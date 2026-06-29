@@ -1,0 +1,902 @@
+Cellular and Molecular Neurobiology     (2026) 46:90
+https://doi.org/10.1007/s10571-026-01729-3
+
+    REVIEW PAPER
+
+
+
+Metabolic Symbiosis and Vulnerability in the CNS Axon-Myelin Unit
+Kun Miao1,2 · Meng Meng3               · Liangjing Liu4 · Meiyu Li1 · Yuanyuan Bai2 · Ying Guo1 · Guohui Zhang1,3 ·
+Jiming Kong5 · Jiao Mu1,2,5
+
+Received: 6 February 2026 / Accepted: 1 April 2026
+© The Author(s) 2026
+
+
+Abstract
+Axonal degeneration and demyelination are common pathological phenotypes in central nervous system (CNS) injury
+and degenerative diseases. Axonal and myelin diseases have generally been considered distinct phenomena, although our
+knowledge of why the axon-myelin unit (AMU), as a highly interconnected structure, serves as a common point of vulner-
+ability to damage remains inadequate. In this review, we first reaffirm that the tight biological interconnections between
+axons and myelin should be recognized as a “symbiotic” unit across development, metabolism, and disease progression.
+Second, we systematically delineate the fundamental structural architecture and metabolic coupling of AMU. Third, we
+analyze how the impairment of one component of AMU influences the survival and functional integrity of others. In con-
+clusion, we present a unique conceptual framework indicating that therapeutic methods targeting bioenergetic support in
+the CNS should concentrate on the energy coupling pathways and damage-crossover mechanisms of the AMU.
+
+Keywords Axon-myelin unit · Metabolic coupling · MCT1 · Lactate shuttle · Axonal degeneration · Demyelination.
+
+
+
+                                                                     Introduction
+
+                                                                     The human brain constitutes roughly 2% of the body’s mass
+                                                                     while utilizing approximately 20% of total resting energy
+                                                                     expenditure. (Engl and Attwell 2015). As the core unit of
+Kun Miao and Meng Meng have contributed equally to this work.        central electrochemical signal transmission, neurons are the
+     Guohui Zhang                                                    dominant energy consumers, yet they lack significant energy
+     18931316008@163.com                                             storage capabilities. To cope with intense metabolic fluctua-
+     Jiming Kong                                                     tions in the central nervous system (CNS), neurons seem
+     jiming.kong@umanitoba.ca                                        to rely on real-time energy supply and metabolic intercon-
+     Jiao Mu                                                         nection from surrounding glial cells. In the 1990s, (Pellerin
+     m18931315882_1@163.com                                          et al. 1998) proposed the astrocyte–neuron lactate shuttle
+                                                                     (ANLS) hypothesis, suggesting that glutamatergic synap-
+1
+     Department of Pathology, Hebei North University, No. 11         tic activity triggers astrocyte glucose uptake and glycoly-
+     Zuanshinan Road, Zhangjiakou 075000, Hebei, PR China
+                                                                     sis, and that the generated lactate is shuttled to neurons via
+2
+     Department of Neurobiology, School of Basic Medical             monocarboxylate transporters (MCTs) to provide metabolic
+     Sciences, Capital Medical University, Beijing 100069, China
+                                                                     support. The ANLS hypothesis first positioned astrocytes as
+3
+     Department of Forensic Medicine, Hebei North University,        the “energy stations” of neurons, opening up a new perspec-
+     No. 11 Zuanshinan Road, Zhangjiakou 075000, Hebei, PR
+     China                                                           tive for studying the energy-metabolic interaction between
+4
+                                                                     neurons and glial cells.
+     Department of Pharmacy, Hebei North University, Hebei Key
+     Laboratory of Neuropharmacology, No. 11 Zuanshinan Road,           White matter tracts account for roughly half of the
+     Zhangjiakou 075000, Hebei, PR China                             human brain and provide the anatomical substrate for “long-
+5
+     Department of Human Anatomy and Cell Science, Rady              distance connections” in the vertebrate CNS. Remarkably,
+     Faculty of Health Sciences, Faculty of Medicine, Max            the adult human brain contains about 100 km of axons with
+     Rady College of Medicine, University of Manitoba, 745           extensive ramification and highly complex morphologies
+     Bannatyne, Winnipeg, MB R3E 0J9, Canada
+
+
+                                                                                                                        13
+ 90     Page 2 of 16                                                   Cellular and Molecular Neurobiology   (2026) 46:90
+
+
+(Steiner 2019). These axons utilize around 55% of the entire     AMU Structural Characteristics
+neuronal ATP reservoir to preserve resting potentials, propa-
+gate action potentials, and support synaptic vesicle cycling.    The formation of AMU begins with highly selective recog-
+(Zhang et al. 2022). Considering that axons in white mat-        nition between the processes of mature OL and target axons.
+ter are far from neuronal soma, and astrocyte contact with       A single OL in the CNS can extend multiple processes to dif-
+axons is generally spatially limited to some nodes of Ran-       ferent axons simultaneously. Each process eventually mean-
+vier, this raises an urgent question of how axons continu-       ders into a flat lamina, which then begins to wrap around the
+ously obtain sufficient energy to maintain their metabolic       axon in an Archimedean spiral, continuously enveloping it
+normality and structural integrity.                              to form concentrically arranged myelin sheaths. Eventually,
+    Myelin sheaths encompass up to 98% of the CNS axonal         multiple layers of dense myelin lamellae are formed, a pro-
+surface and myelin-forming cell likely acts as a local fueling   cess known as the “liquid croissant” model (Sobottka et al.
+station for the axonal partner in white matter. In the periph-   2011). This process can be summarized into four consecu-
+eral nervous system (PNS), myelin is formed by Schwann           tive stages: process recognition, lamina extension, spiral
+cells. It forms continuous spirals of stair stepped or over-     wrapping, and compression maturation (Kirby et al. 2006;
+lapping cytoplasmic expansions within compact myelin,            Simons and Trotter 2007). In the CNS, each OL will form
+namely Schmidt–Lanterman incisures (SLI). These inci-            myelin sheaths around 20 to 60 axons (Chong et al. 2012).
+sures provide the structural basis for short-distance radial     Morphologically, the myelin internode is composed of com-
+pathways that potentially facilitating the delivery of energy    pact myelin and non-compact myelin.
+metabolites to the periaxonal space (Segura-Anaya et al.             When examined transversely, the cross-section of com-
+2015; Meier et al. 2004). SLI are common in the PNS, but         pact myelin reveals a distinctive periodic structure consist-
+rare in the CNS. In contrast, myelin is formed by oligoden-      ing of alternating electron-dense and electron-light layers.
+drocyte (OL) with only sporadic longitudinal incisures in        (Fig. 1A). The electron-dense layers, known as major dense
+CNS (Baumann and Pham-Dinh 2001). Indeed, OL couple              lines (MDL), comprise the fused cytoplasmic surfaces of
+to astrocytes via gap junctions, forming a generalized glial     oligodendrocytes, which are abundant in myelin basic
+syncytium (panglial syncytium) that ultimately delivers          protein (MBP), facilitating the tight adhesion of myelin
+energy metabolites to axons through myelin (Giaume and           membrane leaflets. Conversely, the electron-dense layers
+Liu 2012). Therefore, the ANLS has been expanded to also         (intraperiod lines, IPL) denote the closely aligned outer
+include OL, giving rise to an “astrocyte–neuron–oligoden-        membranes, which are abundant in proteolipid protein
+drocyte lactate shuttle” (ANOLS) ternary coupling energy         (PLP) that sustains the exact IPL spacing. (Stadelmann et
+paradigm.                                                        al. 2019) (Fig. 1B). The non-compact myelin comprises the
+    Although the multicellular neuronal-glia energy network      paranodal loops, outer tongue, inner tongue, and sporadic
+exists, the axon-myelin unit (AMU) should be regarded as         longitudinal incisures within the compact myelin mem-
+the minimal functional entity for energy supply and infor-       branes. This intricate design seems somewhat more straight-
+mation integration in white matter. Myelin is no longer          forward when myelin is illustrated in its unwrapped form
+viewed as an inert insulator but as a metabolically active       as a vast network of interconnected intracellular compart-
+energy reservoir. It conveys energy substrates, including        ments. (Edgar et al. 2021). The “myelin channels” provide
+lactate, glucose, and fatty acids, to the axons for prompt ATP   a functional connection between the OL cell body and the
+synthesis, while also providing myelin-derived exosomes to       inner myelin layer, allowing the rapid and direct transfer
+create a prolonged paracrine nutritional pathway. (Nave et       of energy-rich metabolites of OL to the myelinated axons
+al. 2023). The disintegration of the AMU triggers a cascade      (Fig. 1C).
+of energy crisis and induces axonal degeneration in diverse          Examined longitudinally, myelinated fibers are divided
+CNS injuries and neurodegenerative disorders. Here, we           into the following structural domains: the node of Ran-
+therefore define the AMU as a structural and functional          vier, the paranodes, the juxtaparanodes, and the internodes
+complex composed of the axonal compartment of the neu-           (Fig. 2). The node of Ranvier (approximately 0.8–1.1 μm in
+ron and its surrounding OL-generated myelin sheath, which        length) is a bare axolemma that separates adjacent myelin
+is an inseparable unit throughout development, metabolic         segments and contains voltage-dependent Na⁺ channels
+homeostasis and disease. Next, we summarize the structural       at a high density. This organization facilitates swift ion
+characteristics and energy-metabolic coupling mechanisms         exchange with the extracellular environment and energy-
+of AMU in the CNS. Furthermore, we investigate the inter-        efficient saltatory conduction of action potentials. (Aggar-
+relationship between axons and myelin from a fundamental         wal et al. 2011). The adjacent paranodes (approximately
+cell biology standpoint.                                         4 μm in length) form septate cellular junctions between
+                                                                 the axolemma and the terminal ends of the myelin layers,
+
+
+
+13
+Cellular and Molecular Neurobiology      (2026) 46:90                                                                  Page 3 of 16    90
+
+
+
+
+Fig. 1 Schematic diagram of the general structure of the axon-myelin    in an unwrapped state, revealing non-compacted myelin (light) and
+unit. A Transverse section diagram of a myelinated axon illustrating    compacted myelin (dark) regions. The myelinic channel establishes
+the myelin channels (bright) and compacted myelin (dark). B The         a functional connection between the oligodendrocyte cell body and
+fundamental architecture of compressed myelin membranes, constitut-     axons. MBP: myelin basic protein; PLP: proteolipid protein; CNP:
+ing the MDL and IPL, is facilitated by MBP and PLP, respectively.       2’,3’-cyclic nucleotide 3’-phosphodiesterase; MDL: major dense line;
+CNP within the inner tongue helps prevent myelinic channel collapse.    IPL: intraperiod line; MVEs: multivesicular endosomes
+C Schematic representation of a myelin-forming oligodendrocyte
+
+
+
+
+Fig. 2 Schematic diagram of the molecular composition of the axon-      MBP: myelin basic protein; MAG: myelin-associated glycoprotein;
+myelin unit. The myelinated axon shows the different domains, which     NF186: neurofascin-186; NaCh: voltage-gated Na+ channels; KCh:
+are characterized by the expression of specific proteins. MBP helps     voltage-gated K+ channels; Caspr: contactin-associated protein; Cntn:
+generate compacted myelin membrane stacks, and CNP interacts with       contactin-1; NF155: neurofascin-155; Necl1: Nectin-like molecule 1;
+actin to form a myelinic channel. Gap junctions connect the paranodal   Necl4: Nectin-like molecule 4
+loops of myelin. CNP: 2’,3’-cyclic nucleotide 3’-phosphodiesterase;
+
+held together by neurofascin 155 (NF155) on the glial                   nodal ion channels. In addition, paranodal peroxisomes
+surface complexing with Caspr1 and contactin1 (Cntn1)                   accumulate in adaxonal myelin, which participates in lipid
+on the axonal side. The paranodal loops inhibit lateral dif-            metabolism(Baes and Aubourg 2009), and the paranodal
+fusion of axonal proteins and promote the localisation of               angle and gap junction form a radial pathway that allows
+
+
+
+                                                                                                                                 13
+ 90     Page 4 of 16                                                    Cellular and Molecular Neurobiology   (2026) 46:90
+
+
+the free diffusion of ions and neurotrophic factors into          of axonal Na+/K+-ATPase in the internode likely leads to
+the periaxonal space (Salzer et al. 2008). Therefore, the         continuous neurological decline in demyelinating diseases
+paranodes provide widespread ionic homeostatic regulation         (Young et al. 2008). Facing high local energy requirements,
+and energic metabolism of the AMU. The juxtaparanodes             axons must cooperate with the overlying myelin to secure
+(approximately 10–15 μm in length) are rich in voltage-           essential metabolites.This metabolic dependence of axons
+gated K⁺ channels and include a complex formed by the             on myelin has led to the idea of axon–myelin metabolic
+glial cell adhesion molecule TAG-1 and axonal adhesion            conjugation. We summarize many mechanisms of myelin
+proteins Caspr2. This assembly facilitates fast repolarisa-       trophic support for axons (Fig. 3).
+tion and preservation of the domain architecture at the node
+of Ranvier. (Poliak et al. 2003; Saint-Martin et al. 2019;        Lactate Metabolism
+Traka et al. 2003). The internodes, measuring roughly 50 to
+200 μm in length, possess many axonal membranes that do           Currently, the myelin-axon “lactate shuttle” model has
+not directly interface with the extracellular environment but     received much attention, and myelin-derived lactate is
+are oriented towards the insulating myelin sheath.                crucial for long-term axonal integrity (Rinholm and Berg-
+                                                                  ersen 2012). OL detects the metabolic requirements of
+                                                                  axons through glutamatergic transmission and extracellular
+AMU Energy Coupling                                               K+ levels, subsequently regulating the rapid and immedi-
+                                                                  ate provision of lactate to axons to meet elevated energy
+Myelin in the CNS forms a compact insulating sheath that          demands. (Looser et al. 2024). OL absorbs and metabolises
+prevents ion leakage, effectively eliminating “electrical         circulatory glucose to pyruvate by glycolysis, subsequently
+crosstalk” between adjacent axons. Due to its low capaci-         converting pyruvate to lactate. Such lactate in OL can also
+tance and high resistance, myelin confines action potentials      be directly taken up from the blood via the monocarbox-
+to the node of Ranvier between myelinated segments. This          ylate transporter 1 (MCT1) (Fig. 4). Funfschilling et al.
+saltatory conduction significantly enhances the propagation       (Fünfschilling et al. 2012) demonstrated the ability of OL to
+velocity of action potentials along the axon. Additionally,       generate high levels of lactate for consumption by myelin-
+myelination reduces the axonal capacitance and markedly           ated axons using conditional Cox10 mutant mice. When
+lowers the energy cost of restoring resting ion gradients         oxidative phosphorylation was explicitly inhibited in oligo-
+after each depolarization. Consequently, rapid conduction,        dendrocytes, these genetic models produced normal myelin.
+fidelity in long-distance signal transmission, and spatial        Moreover, magnetic resonance spectroscopy findings indi-
+efficiency are the three primary advantages that myelin pro-      cated elevated brain lactate concentrations in mutants com-
+vides to the vertebrate nervous system. (Nave 2010; Stadel-       pared to controls when isoflurane suppressed mitochondrial
+mann et al. 2019).                                                respiration. While brain lactate was rapidly metabolized
+   Although myelination markedly reduces the overall              within the white matter tracts and fell to undetectable lev-
+energy cost of electrical conduction, axons still face sub-       els upon washout of isoflurane(Fünfschilling et al. 2012).
+stantial local metabolic demands. A single action potential       These results indicate that adult OL could maintain ATP lev-
+(AP) at a node of Ranvier requires at least 10⁶ ATP mol-          els with glycolysis alone and support that lactate flows from
+ecules, corresponding to a metabolic cost of approximately        OL to neurons to maintain axonal integrity.
+3.5 pmol ATP per cm² of membrane area (Aiello and Bach-               Notably, lactate in OL could also be obtained from “pan-
+y-Rita 2000; Neishabouri and Faisal 2011). Notably, a             glial syncytium” via gap junctions (Fig. 4A and B). Gap junc-
+second longitudinal conducting pathway is formed by the           tions are channels that link the cytoplasm of adjacent cells
+periaxonal and paranodal submyelin spaces. This periax-           and allow rapid metabolic transport, electrical coupling, and
+onal nanocircuit represents an additional energy-consuming        spatial buffering. The “heterotypic gap junctions” have been
+process that accompanies saltatory conduction (Gorgoulis          observed between astrocytes and OL (Orthmann-Murphy et
+et al. 2019). Collectively, electrical signaling accounts for     al. 2008). Such heterologous coupling would extend the size
+the second largest metabolic cost after synaptic transmis-        of a functional compartment from a single OL to a large
+sion (Hallermann et al. 2012). Indeed, most of this ATP           glial network. Astrocytes take up glucose from the blood
+is consumed by Na⁺/K⁺-ATPase to restore ionic gradients           via glucose transporter 1 (GLUT1), store it as glycogen, and
+(Yang et al. 2023; Shrivastava et al. 2020). Specifically, Na⁺/   release lactate or pyruvate to the OL on demand. The OL/
+K⁺-ATPase actively expels Na⁺ into the periaxonal space,          astrocyte gap junctions are composed of Cx32/Cx30, which
+with subsequent release at the paranode, establishing a           mainly reside in the outer myelin sheaths, and Cx47/Cx43
+return pathway from the axon to the endoneurial space that        that predominate at the OL soma (Nualart-Marti et al. 2013).
+helps sustain ionic gradients (Trigo and Smith 2015). Loss        These connexins are crucial for myelination and axonal
+
+
+
+13
+Cellular and Molecular Neurobiology      (2026) 46:90                                                                 Page 5 of 16    90
+
+
+
+
+Fig. 3 The energy coupling mechanisms of the axon-myelin unit. A       peroxisomal β-oxidation in the paranodal loop, after which the resul-
+Lactate is transferred from myelin to axon via MCT1 and MCT2,          tant short-chain fatty acids are delivered to axonal mitochondria by
+where it is converted into pyruvate by LDH, resulting in ATP produc-   a carnitine-dependent pathway for complete β-oxidation to generate
+tion. B In glucose metabolism, glucose is translocated via GLUT1 and   ATP. MCT1: monocarboxylate transporter 1; MCT2: monocarboxyl-
+GLUT3 from myelin to the axon, where it is transformed into pyru-      ate transporter 2; LDH: lactic dehydrogenase; GLUT1: glucose trans-
+vate by glycolysis, resulting in ATP production. C In EV signalling,   porter 1; GLUT3: glucose transporter 3; EV: extracellular vesicle;
+myelin releases MVE, and then the exosome-derived SIRT2 protein        MVEs: multivesicular endosomes; SIRT2: sirtuin-2; VLCFA: very
+increases ATP production via deacetylation in axonal mitochondria.     long chain fatty acids
+D In lipid metabolism, very long-chain fatty acids (VLCFA) undergo
+
+viability, and mutations in these gap junctions result in              astrocytes, endothelial cells, and certain neuronal popula-
+demyelinating neuropathy in both the peripheral and central            tions, it is crucial to further investigate the cell-type-specific
+nervous systems. (Bruzzone et al. 1994; Kleopa et al. 2002;            conditional deletion of MCT1 using genetic approaches.
+Orthmann-Murphy et al. 2007; Tress et al. 2011). Conse-                Thomas Philips et al. (Philips et al. 2021) found that dele-
+quently, there is substantial justification to hypothesize a           tion of MCT1 in the OL lineage leads to late-onset axonal
+connection between lactate metabolism in oligodendrocytes              degeneration and hypomyelination in aged mice, whereas
+and the activity of the “glial syncytium.”                             conditional knockout of MCT1 in astrocytes or endothe-
+    Whether through intrinsic metabolism or glia coupling,             lial cells does not result in neuronal damage (Suzuki et al.
+the OL-derived lactate must rely on monocarboxylate trans-             2011). Collectively, these findings demonstrate that MCT1-
+porters to feed axons (Figs. 3A and 4C). MCT1 at the adax-             mediated lactate metabolism is important for axonal energy
+onal membrane of the myelin sheath exports lactate into the            homeostasis in the CNS.
+periaxonal space, whereas the monocarboxylate transporter
+2 (MCT2) at the axolemma imports it to axons (Jha and                  Glucose Metabolism
+Morrison 2020). In vitro studies have shown that suppres-
+sion or downregulation of MCT1 expression in spinal cord               Lactate is generally regarded as the principal energetic
+organotypic slice cultures significantly reduces the survival          substrate for myelinated axons, because glucose is rapidly
+rate of motor neurons and their axons, and this injury can be          phosphorylated upon entry into OL (Baltan 2015). Myelin
+rescued by exogenous L-lactate supplementation under con-              expresses GLUT1, while axonal membranes are abundant
+current glucose deprivation (Lee et al. 2012). Thus, MCT1              in GLUT3. Therefore, an alternative mechanism of trophic
+knockdown blocks lactate export from OL without impeding               support for AMU has been proposed: OL may transfer glu-
+its axonal uptake. In vivo studies have revealed that MCT1             cose to the periaxonal area through Glut1, after which axons
+heterozygous null mice eventually develop extensive axonal             absorb glucose via Glut3. (Figures 3B and 4D). Trevisiol
+pathology in both the brain and spinal cord by 8 months                et al. [34] demonstrated that optic neurons perfused solely
+of age (Lee et al. 2012). Since MCT1 is also expressed in              with lactate/pyruvate saw a significant decline in axonal
+
+
+
+                                                                                                                                13
+ 90       Page 6 of 16                                                            Cellular and Molecular Neurobiology       (2026) 46:90
+
+
+
+
+Fig. 4 Proposed metabolite shuttling between oligodendrocytes, astro-      erate metabolic energy (A). Astrocytes can also transport lactate and
+cytes, and neurons. Glia cells (OL and astrocyte) import and metabo-       glucose to OL via gap junctions that mainly reside in the outer myelin
+lise blood glucose to pyruvate through glycolysis, then convert pyru-      sheaths and OL soma (B). Then, lactate and glucose in OL are exported
+vate to lactate. Such lactate in glia cells could also be directly taken   via transporters (MCT1, GLUT1) located in the myelin sheath and fur-
+up from the blood via MCT1. Astrocytes can transport lactate via           ther imported into axons via transporters (MCT2, GLUT3), respec-
+MCT1/4 to neuronal soma, nodes of Ranvier, and synapses, whereas           tively (C and D)
+MCT2 imports it to neurons and converts it into ATP molecules to gen-
+
+
+ATP during high-frequency stimulation, suggesting that lac-                mice, myelin fatty acid levels reduced under hypoglycemic
+tate/pyruvate alone is inferior to glucose in supporting ATP               conditions (Asadollahi et al. 2024). In humans, myelin was
+generation. Consequently, glucose may function as a crucial                markedly reduced in specific brain regions after marathon
+energy substrate to supply supplementary energy to axons.                  running. (Ramos-Cabrer et al. 2025). Therefore, lipid use
+    The oligodendroglial supply of glucose to axons may dif-               as a metabolic buffer during periods of extreme metabolic
+fer across various parts of the central nervous system. In                 demand may be a conserved mechanism among different
+acute brain slices of the corpus callosum in mice, Niklas                  species. Although lipid droplets appear “lost” in axon-asso-
+Meyer et al. (Meyer et al. 2018) observed that exogenous                   ciated glial cells, lipid-rich myelin has evolved as a large
+glucose deprivation (EGD) abolished compound action                        ‘lipid store’ in vertebrates. Multi-layered myelin membranes
+potentials (CAPs), and supplementation of lactate/pyruvate                 comprise 70–75% lipid, and this substantial lipid content
+was unable to rescue them. In addition, loading OL with                    enables myelin to serve as a temporary energy storage.
+glucose effectively prevents CAP loss during EGD, whereas                  (Nave et al. 2017). The recent study supports this possibil-
+it failed in mice lacking CX47. Consequently, the authors                  ity. In states of starvation, oligodendroglial lipid metabolism
+suggested that callosal oligodendrocyte networks supply                    serves as an energy store for axons, with the preservation
+energy to maintain axonal activity, mostly via glucose trans-              of axonal function reliant on fatty acid β-oxidation occur-
+port. Future research is necessary to elucidate the specific               ring in peroxisomes within myelin. (Asadollahi et al. 2024).
+processes of myelin–axon glucose coupling and to deter-                    In addition, the genetic model with dysfunction of myelin
+mine if glucose functions as a universal energy source for                 peroxisomes in OL displayed myelin metabolic disturbance
+maintaining CNS axons.                                                     and serious axonal swelling in the CNS (Kassmann et al.
+                                                                           2011). Collectively, this research suggests that maintaining
+Lipid Metabolism                                                           the myelin lipid metabolism is possibly the key to reversing
+                                                                           axonal energy deficits in a metabolic crisis.
+When glucose is scarce during starvation, myelin may mobi-                     Currently, the detailed coupling mechanism of lipid
+lize fatty acids to fuel axons (Fig. 3C). In Drosophila, corti-            metabolism of AMU has not been clarified. Peroxisomes
+cal glia directly interface with neurons and use their lipid               are prevalent in adaxonal myelin and accumulate in the
+store to rescue energy-starved axons (Silva et al. 2022). In               paranodal loops, positioning them optimally to facilitate
+
+
+
+13
+Cellular and Molecular Neurobiology   (2026) 46:90                                                         Page 7 of 16   90
+
+
+axonal metabolism. (Kassmann et al. 2011). When glucose          mitochondrial proteins and then stimulate axonal mitochon-
+availability declines, catabolism of myelin lipids releases      drial ATP production(Krämer-Albers 2021). An in vitro
+free fatty acids (FA) that undergo peroxisomal β-oxidation       study showed that SIRT2 knockdown or SIRT2 deletion in
+to generate acetyl-CoA and short-chain FA. The short-chain       OL fail to enhance axonal ATP supply (Chamberlain et al.
+FA can be delivered to axonal mitochondria through a car-        2021). Importantly, deficiency of SIRT2 in mice causes late-
+nitine-dependent pathway for full β-oxidation to maintain        onset axonopathy and locomotor disability associated with
+axonal energy supply. (Kassmann 2014). Meanwhile, ace-           redox and energy imbalance (Fourcade et al. 2017). In vivo
+tyl-CoA could be utilized to produce ketone bodies within        delivery of OL-derived SIRT2 to axon could rescue axonal
+the cholesterol biosynthetic pathway. (Auestad et al. 1991;      mitochondrial deficiency in SIRT2 KO mice (Chamberlain
+Geelen et al. 1983). Then, ketone bodies can be exported to      et al. 2021). Recently, mitochondria transfer via extracel-
+axons through MCT1 and further undergo oxidative phos-           lular vesicles (EVs) has been identified as a possible physi-
+phorylation (OXPHOS) in axonal mitochondria to produce           ological phenomenon under metabolic stress (Mozafari et
+ATP (Asadollahi et al. 2024). Interestingly, mitochondria        al. 2026). Weather these communicating oligodendroglia
+migrate through thin cytoplasmic channels and localize           EVs carry mitochondria components to axons remain to be
+within the cytoplasm of paranodal loops (Nakamura et al.         investigated. Collectively, these findings highlight the role
+2021). Focal netrin-1 signaling induces mitochondrial elon-      of oligodendroglial exosome secretion in glia-mediated tro-
+gation and inner membrane hyperpolarization, and pro-            phic support for axons.
+motes glycolysis, thereby increasing lactate production to
+support membrane expansion and local axonal metabolism
+(Nakamura and Kennedy 2021).                                     AMU Pathology
+
+Extracellular Vesicle (EV) Signaling                             The AMU’s most significant characteristic is the substan-
+                                                                 tial proximity of two plasma membrane surfaces within the
+EV is in a novel mode of bidirectional axon-myelin energy        CNS. Both the neuron and oligodendrocyte must sustain
+linkage (Fig. 3D). Oligodendroglial multivesicular endo-         disproportionately massive peripheral compartments, with
+somes (MVEs) are the precursors of exosomes and accumu-          a plasma membrane that is 100 times heavier than their cell
+late at myelin channels and the periaxonal loops within the      bodies, via a susceptible conduit. Because both membranes
+myelin sheath. Axonal electrical activity-dependent release      of the AMU must sustain rapid electrical activity at sites far
+of glutamate triggers oligodendroglial MVEs fusion and           removed from their respective somata, the AMU is likely an
+EV secretion through oligodendroglial AMPA and NMDA              “energy vulnerability point” in the CNS. Axonal degenera-
+receptors. In turn, axons internalize the released exosomes      tion and demyelination are common pathological hallmarks
+by endocytosis (Frühbeis et al. 2013). In vitro study shows      in CNS injury and neurodegenerative diseases. However,
+that OL-derived exosomes markedly increase neuronal              these pathologies are usually the result of the combined
+viability under oxidative or metabolic stress (Fröhlich et al.   effects of pathogenic factors (genetic, infectious, immune
+2014; Frühbeis et al. 2013). In vivo studies demonstrated        and traumatic) on AMU. Therefore, it is difficult to distin-
+that conditional Rab35 ablation in OL inhibited MVE fusion       guish the primary and secondary injury targets. To elucidate
+and reduced exosome release, resulting in increased sus-         AMU disease, myelin and the ensheathed axons should be
+ceptibility of axons to oxidative damage (Hsu et al. 2010;       regarded as an interconnected functional unit, necessitat-
+Mukherjee et al. 2020). Experiments conducted in the             ing an inquiry into how the impairment of one component
+1980s on squid gigantic axons yielded the initial evidence       influences the viability of the other in AMU from a cellular
+of vesicular exchange between adaxonal glia and the axon,        biological standpoint.
+indicating an evolutionarily conserved mechanism of meta-
+bolic coupling between glia and axons. (Buchheit and Tytell      The Myelin to the Axons “Outside-In” Injury Model
+1992).
+   The oligodendroglial exosomes provide axons with key          Secondary axonal degeneration after demyelination is a
+factors that enhance axonal transport (Krämer-Albers and         multi-dimensional pathological cascade that combines elec-
+Werner 2023), stress resistance (Mukherjee et al. 2020) and      trophysiological dysfunction, ionic homeostasis disruption,
+energy homeostasis (Krämer-Albers et al. 2007). Next, we         energy metabolism failure, and toxic microenvironment
+highlight the metabolic mechanism by which OL supports           attack (Fig. 5). First, demyelination impairs the paranodal
+axons via delivery of the NAD⁺-dependent deacetylase             contact between the myelin and axons and instigates sodium
+SIRT2. SIRT2 is highly enriched in myelinating OL and            channels to spread along the axolemma. The upregulation
+secreted within exosomes to mediate deacetylation of axonal      of sodium channels subsequently causes notably slower
+
+
+
+                                                                                                                     13
+ 90      Page 8 of 16                                                         Cellular and Molecular Neurobiology     (2026) 46:90
+
+
+
+
+Fig. 5 Proposed mechanisms of coupling injury within the axon–myelin unit. A Loss of trophic or metabolic support from myelin. B Increased
+energy demand due to distributed sodium channels along the axolemma. C Gain of toxic myelin components
+
+
+conduction and ectopic action potentials (Hamada and Kole              application of chemicals with disruptive effects (cuprizone
+2015). Second, increased sodium channel expression results             or lysolecithin), but these toxic chemicals do not act to selec-
+in increased operation of Na⁺/K⁺-ATPase, the highly ener-              tively injury myelin membranes, but directly disrupt axonal
+getic process subsequently increases the number and vol-               membranes (Pang et al. 2022; Praet et al. 2014). Experimen-
+ume of mitochondria. In addition, the Na+/Ca2+-ATPase will             tal autoimmune encephalomyelitis and virus-induced demy-
+start to operate in reverse mode to clear the increased axonal         elination depend on an immune response targeting a myelin
+Na+ load, which leads to accumulation of intra-axonal Ca2+             antigen. Similarly, immune cells and the inflammatory
+and activation of Ca2+-dependent degradation pathways.                 environment can also directly attack axons (Constantinescu
+Third, demyelination deprives the supply of trophic and                et al. 2011; Sato et al. 2011; Tsunoda and Fujinami 2002).
+metabolic energy substrates from myelin and OL, which                  Consequently, significant axonal degeneration occurs early
+further aggravates the energy burden. This condition has               in the first three models and even precedes the develop-
+been designated as virtual hypoxia to signify a discrepancy            ment of demyelination. In contrast, the gene knockout and
+between energy demand and supply. (Trapp and Stys 2009).               genetic models eliminate the above potentially confounding
+Ultimately, demyelination probably results in the break-               non-cell-specific effects in a highly controlled and specific
+down of the protective barrier afforded by myelin, exposing            manner to induce demyelination without concurrent effects
+axons to deleterious myelin constituents.                              on axons. Consequently, these models may provide a more
+   Demyelinating animal models have provided pivotal                   valuable framework for understanding the fundamental
+insight into how myelin supports axons. Currently, four                mechanisms governing axon–myelin interactions and clari-
+types of rodent models of demyelination paradigms have                 fying the impact of demyelination on axonal integrity.
+been developed: experimental autoimmune encephalitis                       The myelin gene knockout model is generated through
+(EAE) (Handel et al. 2011), toxin-induced models (Blake-               the germline knockout of genes exclusively expressed in
+more and Franklin 2008), viral infection models (Das                   the oligodendrocyte lineage, offering critical insights into
+Sarma 2010), and genetic models (Traka et al. 2010). We                the roles of proteins involved in myelin development and
+have summarized the principles of model induction, axon-               production (Brady et al. 1999; Edgar et al. 2009; Fruttiger
+myelin pathology, and the advantages and disadvantages                 et al. 1995; Griffiths et al. 1998; Kirkpatrick et al. 2001;
+of each model (Table 1). Toxin-induced models utilize the              Klugmann et al. 1997; Lappe-Siefke et al. 2003; Nguyen
+
+
+
+13
+Cellular and Molecular Neurobiology         (2026) 46:90                                                                      Page 9 of 16      90
+
+Table 1 The pathogenesis, axon-       Models               Pathogenesis       Axon-myelin             Advantages of             Disadvantages of
+myelin phenotype, advantages                                                  phenotype               models                    models
+and disadvantages of demyelinat-
+                                      EAE                  Immunization       Impaired axon           Easy induction of the     Immune cells
+ing animal models
+                                                           with myelin        transport, increased    model and similar         impair axonal
+                                                           glycoprotein       axoplasmic calcium,     clinical course and       transport and
+                                                           peptides induces   irreversible cytoskele- autoimmune etiol-         induce cytoskele-
+                                                           inflammatory       tal fragmentation, axon ogy with multiple         tal insults directly,
+                                                           demyelination      loss, and demyelination sclerosis                 independently of
+                                                                                                                                demyelination
+                                      Cuprizone            Oral adminis-     Axonal oedema, axonal Ease of induction of         Sustained
+                                                           tration of the    degeneration, compro- wide demyelination           cytotoxicity and
+                                                           copper chelator   mised axonal transport,                            inflammatory
+                                                           cuprizone causes  enlarged mitochon-                                 state induced by
+                                                           OL oxidative      drial stationary site                              cuprizone directly
+                                                           damage and        size, oligodendrocyte                              damage axons
+                                                           demyelination     death, and extensive
+                                                                             demyelination in white
+                                                                             matter
+                                      Lysolecithin         Focal injection   axonal swelling, axon Directly produces            Lysolecithin does
+                                                           of lysolecithin   loss, impaired axon     obvious demyelin-          not exclusively
+                                                           functions as a    transport, disrupted    ation in restricted        target myelin
+                                                           detergent to dam- nodal architecture,     regions of injection       membranes;
+                                                           age membranes     focal demyelination                                rather, it destroys
+                                                           and provoke                                                          axonal mem-
+                                                           demyelination.                                                       branes, resulting
+                                                                                                                                in axonal injury.
+                                      TMEV                 Viral infection    axonal swelling,        Easy induction of the     Virus-mediated
+                                                           damages OL         decreased neurofila-    model and similar         inflammatory
+                                                           and activates an   ment phosphorylation,   clinical course and       environment
+                                                           immune response    cytoskeletal fragmen-   autoimmune etiol-         directly causes
+                                                           leading to         tation, widespread      ogy with multiple         axonal injury
+                                                           demyelination      demyelination           sclerosis
+                                      Genic model          Genetic ablation   Various phenotypes      Prevents direct axonal Can only specifi-
+                                                           of OL or myelin    of axon-myelin          injury caused by       cally identify the
+                                                           gene knockout      abnormalities           inflammation or tox- function of a
+                                                                                                      ins, advantageous for specific protein in
+EAE: experimental autoimmune                                                                          clarifying the mecha- myelin
+encephalitis; TMEV: Theiler’s                                                                         nistic understanding
+murine encephalomyelitis virus;                                                                       of myelin’s role in
+OL: oligodendrocyte                                                                                   supporting axons.
+
+
+et al. 2009; Pan et al. 2005; Rasband et al. 2005; Snaidero                       Genetic models involve the ablation of mature oligoden-
+et al. 2017; Spörkel et al. 2002). Table 2 summarizes the                     drocytes in transgenic mice through the cell-specific action
+axon-myelin pathology secondary to mutations in myelin-                       of diphtheria toxin (DT). The administration of DT induces
+associated genes. Single myelin gene knockouts could lead                     primary oligodendrocyte cytotoxicity and considerable axo-
+to axon degeneration. For example, Mbp null mice lack                         nal damage (Ghosh et al. 2011; Oluich et al. 2012; Pohl et
+compact myelin lamellae and exhibit reduced axonal cali-                      al. 2011). Strikingly, myelinated axons obviously survived
+ber and diminished neurofilament phosphorylation(Brady                        longer than the targeted OL, indicating that the myelin
+et al. 1999; Kirkpatrick et al. 2001; Snaidero et al. 2017).                  compartment can feed axons independent of a viable glial
+Notably, some myelin gene knockout mice go on to develop                      soma. Myelin is a remarkably stable structure that may be
+severe defects in axonal transport and progressive axonal                     near its thermodynamic equilibrium state. (Aggarwal et al.
+degeneration despite forming compact myelin(Edgar et al.                      2011). Upon ablation of oligodendrocytes, myelin does not
+2009; Nguyen et al. 2009; Spörkel et al. 2002). The degen-                    undergo immediate disintegration; rather, it maintains struc-
+erative axonal phenotypes linked to myelin gene deletion                      tural integrity and continues to furnish metabolic support for
+indicate a crucial function of myelin in preserving axonal                    axons through glycolytic enzymes and transporters. (Oluich
+integrity. Progressive axonal loss may arise not only from                    et al. 2012; Pohl et al. 2011). After several weeks, the OL
+evident demyelination but also from prolonged disruption                      death case showed a subsequent degeneration of myelin-
+of oligodendrocyte-axon connections.                                          ated axons. Thus, the genetic models of OL ablation suggest
+                                                                              that primary injury at the level of the cell body of OL could
+
+
+
+                                                                                                                                         13
+ 90      Page 10 of 16                                                      Cellular and Molecular Neurobiology   (2026) 46:90
+
+
+Table 2 The axon-myelin pathology in myelin gene knockout models      primates have shown reduced myelin levels and lipid
+and genetic models of oligodendrocyte ablation
+                                                                      alterations across various brain regions with aging(Xu et
+Animal      Physiologi- Myelin          Axon pathology Refer-
+models      cal functions pathology                      ences        al. 2024; Dimovasili et al. 2025). Age-related myelin dys-
+MBP null MBP: binds Lack of             Decreased        (Brady       function typically involves myelinodegenerative structural
+            the cytoplas- compact       neurofilament    et al.       changes and alterations in myelin formation dynamics(Wu
+            mic surfaces myelin         phosphoryla-     1999;        and Chen 2026). In aging and various brain disorders,
+            of the bilay-               tion/axon        Kirkpat-
+                                                                      myelin pathological morpgylogy inclued reduced myelin
+            ers tightly                 caliber, reduced rick et
+            together                    microtubule      al. 2001;    thickness, formation of myelin balloons, and the accumu-
+                                        stability,       Snaidero     lation of dark cytoplasm(Huang et al. 2025). Meanwhile,
+                                        minimal axon     et al.       MCT1 expression is significantly reduced in aging, likely
+                                        degeneration     2017)
+                                                                      impairing monocarboxylate transport(Mayorga-Weber et al.
+Plp1 null PLP: adhe-       Compact      Progressive      (Griffiths
+            sion of the    myelin       axon loss, axo- et al.
+                                                                      2025). Aging generates specific inflammatory transcriptome
+            extracellular formation     nal spheroids    1998;        alterations and diminished proliferation and differentiation
+            leaflets of                 containing mul- Klug-         rates in oligodendrocyte progenitor cells (OPCs), resulting
+            the myelin                  tivesicular bod- mann et      in the failure of OPCs to generate new myelin and maintain
+            membrane                    ies, impaired    al. 1997;
+                                        axon transport, Spörkel
+                                                                      myelin integrity.(Heo et al. 2024). Therefore, age-related
+                                        disorganized     et al.       myelin deterioration as a potential catalyst contributes to
+                                        cytoskeletal     2002)        cognitive decline and neurodegeneration for various neuro-
+                                        components,                   degenerative conditions.
+                                        axonal swelling
+Mag null MAG: com- Compact              Decreased        (Frut-
+            municates      myelin       axonal caliber, tiger et      The Axons to the Myelin “In-Outside” Injury Model
+            the signal     formation    reduced neu-     al. 1995;
+            to the axo-                 rofilament       Nguyen       Currently, the most thoroughly investigated form of axon
+            plasm and                   spacing and      et al.       loss is Wallerian degeneration (WD), which is defined as the
+            induces the                 phosphory-       2009;
+            maturation                  lation, and      Pan et al.   progressive anterograde disintegration that occurs distal to
+            of the axonal               progressive      2005)        a site of axonal or neuronal cell-body injury (Llobet Rosell
+            cytoskeleton                axonal loss                   and Neukomm 2019). Researchers now recognize Wallerian
+Cnp null CNP:              Compact      Disrupted        (Edgar et    degeneration as a genetically regulated, autonomous axon-
+            implicated     myelin       paranode archi- al. 2009;
+                                                                      deathprogram, rather than viewing it as a passive process-
+            in the forma- formation     tecture, pro-    Lappe-
+            tion and                    gressive axon    Siefke et    caused by the cutting of the nutrient supply (Freeman 2014).
+            maintenance                 loss, axonal     al. 2003;    WD could be at least divided into three morphologically
+            of cytosolic                spheroids with Rasband        discernible phases: acute axon degeneration (Phase I), lag
+            channels                    accumulations et al.
+                                                                      phase in the distal axon (Phase II), and execution phase in
+                                        of membranous 2005)
+                                        organelles,                   the distal axon (Phase III) (Wang et al. 2012). In phase I,
+                                        axonal swell-                 the axonal segments, both proximal and distal to the lesion,
+                                        ing, impaired                 rapidly disintegrate for several hundred micrometres within
+                                        axon transport,
+                                                                      60 min. Such an early-onset degenerative event may be
+                                        swollen inner
+                                        tongues                       related to extracellular Ca2+ influx at the lesion site due to
+OL          OL forms       Late-onset Progressive        (Ghosh       mechanical primary axotomy. In phase II, NAD+ and ATP
+ablation    myelin         myelin loss impairment of et al.           depletion impair energy homeostasis and then trigger a sec-
+            sheaths and                 axonal transport 2011;        ond, long-term Ca2+ wave. At this point, the distal axons
+            supports                    and axonal loss, Oluich et
+            axons                       disrupted nodal al. 2012;     exhibit a period of structural quiescence and maintain phys-
+                                        architecture     Pohl et      iological functions. In phase III, the axon begins to disas-
+                                                         al. 2011)    semble, and microtubules start to break down, alongside
+MBP: Myelin basic protein; PLP: Proteolipid protein; MAG: myelin-     the dismantling of the axonal skeleton. The axonal granular
+associated glycoprotein; CNP: 2′,3′-cyclic nucleotide phosphodies-
+                                                                      fragmentation is complete within 1–2 h from the onset.
+terase; OL: oligodendrocyte
+                                                                         The WD animal models in CNS generally are produced
+                                                                      by spinal cord injury (Wang et al. 2009), transection of
+spread to the connected myelin segments and further cause             optic nerve (Alexandris et al. 2023), cortical injury (Mu et
+delayed axonal degeneration.                                          al. 2024), and retinal ganglion cellular damage (Saggu et
+   Notably, myelin is a deficient energy source in aging              al. 2010). Currently, a number of studies have proved that
+(Matute and Verkhratsky 2025), and studies in nonhuman                axonal degeneration could damage the structural integrity
+
+
+
+13
+Cellular and Molecular Neurobiology       (2026) 46:90                                                                    Page 11 of 16     90
+
+
+
+
+Fig. 6 Injury model of the axon–myelin unit. A “Outside-In” injury        early hyperacute degenerative event may be related to extracellular
+model. Primary injury targets the OL by administration of diphtheria      Ca²⁺ influx (first Ca²⁺ wave) at the lesion site. In the lag phase of WD,
+toxin to cause OL ablation. In the early stage, myelin remains struc-     the distal axons maintain structural quiescence, whereas NAD+ and
+turally stable and sustains support axons independent of a viable OL      ATP depletion impairs energy homeostasis and then triggers a sec-
+soma. In the late stage, myelin disintegrates and causes delayed axonal   ond, long-term Ca2+ wave. In the execution phase of WD, axonal
+degeneration. B “In-Outside” injury model. After an axotomy injury,       granular fragmentation occurs and subsequently causes myelin loss.
+the local mechanical injury directly causes primary damage of all cel-    OL: oligodendrocyte; AAD: acute axon degeneration; WD: Wallerian
+lular components, resulting in OL death, AAD and demyelination in         degeneration
+the axonal segments both proximal and distal to the lesion. Such an
+
+of its myelin partner. In the early phase after axotomy,                  spinal cord damage. (Fan et al. 2023; Zhao et al. 2022). Oli-
+both axonal and myelin sheath disruptions are confined to                 godendrocyte apoptosis may occur due to the loss of axonal
+the damage site as a result of the main mechanical trauma.                contact, which is crucial for oligodendrocyte survival dur-
+(Alexandris et al. 2023). Several days post-injury, disease               ing development. (Barres et al. 1993). In contrast, Li et al.
+progresses to distal segments, where swollen axons exhibit                (Li and Blakemore 2004) found that the number of myelin-
+pallor, axolemmal enlargement, and cytoskeletal disinte-                  supporting OL remained constant during WD. It seems that
+gration, indicative of ‘watery degeneration’. In the chronic              OL respond by entering an atrophy-like resting state when
+phase, it progressively exhibited ‘dark degeneration’, char-              facing loss of survival signals and secondary inflammatory
+acterised by axoplasm containing an amorphous, granular,                  responses during WD in CNS (Vargas and Barres 2007).
+and dark substance. (Saggu et al. 2010). Simultaneously,                  These markedly different conclusions might be related to
+their myelin partner showed various pathological changes,                 the animal model, the distance between the sampling site
+such as myelin vacuolation, myelin breakdown, thinner                     and the lesion site, and the degree of injury. Indeed, only a
+lamellae and formation of dense amorphous myelin pro-                     limited number of animal research have sought to ascertain
+files (Alexandris et al. 2023; Saggu et al. 2010; Wang et                 if WD impacts OL, and a definite conclusion is absent cur-
+al. 2009). Therefore, axonal degeneration seems to transmit               rently. In our opinion, cortical pyramidal neuron injury or
+pathology to its myelin partner, yet the specific mechanism               retinal ganglion cellular damage maybe ideal animal models
+remains unclear.                                                          by investigation of WD in spinal CST or optical nerve. The
+    WD triggers sustained microglial and astrocytic acti-                 initial injury affects neuronal somas while preserving their
+vation, yet its impact on the OL lineage remains highly                   axons, so subtly mitigating the impact of direct mechani-
+controversial. Certain studies discovered significant oligo-              cal stress on axon-myelin integrity and the disruption to the
+dendrocyte death in the distal white matter subsequent to the             blood-brain barrier. Furthermore, future studies should also
+
+
+
+                                                                                                                                      13
+ 90      Page 12 of 16                                                              Cellular and Molecular Neurobiology                                       (2026) 46:90
+
+                                                                        Open Access This article is licensed under a Creative Commons
+investigate OL energy metabolism during the lag phase and               Attribution-NonCommercial-NoDerivatives 4.0 International License,
+function change during the execution phase, respectively.               which permits any non-commercial use, sharing, distribution and
+                                                                        reproduction in any medium or format, as long as you give appropri-
+                                                                        ate credit to the original author(s) and the source, provide a link to the
+                                                                        Creative Commons licence, and indicate if you modified the licensed
+Conclusions and Outlook                                                 material. You do not have permission under this licence to share
+                                                                        adapted material derived from this article or parts of it. The images or
+In summary, we delineate the structural and energetic                   other third party material in this article are included in the article’s Cre-
+coupling characteristics of the AMU. Axon and myelin                    ative Commons licence, unless indicated otherwise in a credit line to
+                                                                        the material. If material is not included in the article’s Creative Com-
+disease under energy stress should be viewed as a highly                mons licence and your intended use is not permitted by statutory regu-
+interconnected single target rather than as separate entities,          lation or exceeds the permitted use, you will need to obtain permission
+like AMU. The special geometry of axon-myelin interac-                  directly from the copyright holder. To view a copy of this licence, visit​
+tions provides a framework for understanding patterns of                h​t​t​p​​:​/​/​​c​r​e​a​​t​i​​v​e​c​​o​m​m​o​​n​s​.​​o​r​g​​/​l​i​​c​e​n​​s​e​s​/​​b​y​​-​n​c​-​n​d​/​4​.​0​/.
+pathology spread. If the original insult affects axons, the
+disease may extend to the myelin sheath and then to the oli-
+godendrocyte soma, referred to as the “in-outside” injury               References
+paradigm. Conversely, if the main insult affects the oli-
+                                                                        Aggarwal S, Yurlova L, Simons M (2011) Central nervous system
+godendrocyte soma, disease may propagate to the myelin                       myelin: structure, synthesis and assembly. Trends Cell Biol
+sheath and subsequently to the ensheathed axons, referred                    21(10):585–593. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​1​6​​/​j​.​​t​c​b​.​2​0​1​1​.​0​6​.​0​0​4
+to as the “outside-in” injury model. (Fig. 6). The precise              Aiello GL, Bach-y-Rita P (2000) The cost of an action potential. J
+mechanisms that govern axon degeneration and myelin loss                     Neurosci Methods 103(2):145–149. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​1​6​​/​s​0​​1​6​
+                                                                             5​-​0​2​7​0​(​0​0​)​0​0​3​0​8​-​3
+remain unclear and require further exploration.                         Alexandris AS, Lee Y, Lehar M, Alam Z, McKenney J, Perdomo D,
+    AMU injury is a hallmark of CNS injury and degenerative                  Ryu J, Welsbie D, Zack DJ, Koliatsos VE (2023) Traumatic Axo-
+disease. Therapeutic therapies aimed at bioenergetic support                 nal Injury in the Optic Nerve: The Selective Role of SARM1
+in the central nervous system should also consider the axons                 in the Evolution of Distal Axonopathy. J Neurotrauma 40(15–
+                                                                             16):1743–1761. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​8​9​​/​n​e​​u​.​2​0​2​2​.​0​4​1​6
+and their metabolic interactions with myelin. Moreover, it is           Asadollahi E, Trevisiol A, Saab AS, Looser ZJ, Dibaj P, Ebrahimi
+imperative to refine and progress methodologies for assess-                  R, Kusch K, Ruhwedel T, Möbius W, Jahn O, Lee JY, Don AS,
+ing energy levels in axons with high resolution, including in                Khalil MA, Hiller K, Baes M, Weber B, Abel ED, Ballabio A,
+vivo single-cell-resolution imaging of the axon-myelin unit                  Popko B, Kassmann CM, Ehrenreich H, Hirrlinger J, Nave KA
+                                                                             (2024) Oligodendroglial fatty acid metabolism as a central ner-
+(AMU), high-resolution detection of ultrastructural details                  vous system energy reserve. Nat Neurosci 27(10):1934–1944. ​h​t​t​
+of the AMU, and real-time visualization of substrate flux                    p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​3​8​​/​s​4​​1​5​9​3​-​0​2​4​-​0​1​7​4​9​-​6
+across the axon-myelin interface. Further work is necessary             Auestad N, Korsak RA, Morrow JW, Edmond J (1991) Fatty acid oxi-
+to reveal the signals that mediate structural integrity and                  dation and ketogenesis by astrocytes in primary culture. J Neuro-
+                                                                             chem 56(4):1376–1386. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​1​1​1​​/​j​.​​1​4​7​​1​-​4​​1​5​9​.​​1​9​​9​
+metabolic exchange in AMU. Further insights into the par-                    1​.​t​b​1​1​4​3​5​.​x
+ticular vulnerability of AMU enhance our comprehension of               Baes M, Aubourg P (2009) Peroxisomes, myelination, and axonal
+how a specific injury target might lead to distinctive patho-                integrity in the CNS. Neuroscientist 15(4):367–379. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​
+logical evolution of AMU in diverse CNS illnesses.                           o​​r​g​/​​1​0​.​1​​1​7​7​​/​1​0​​7​3​8​5​8​4​0​9​3​3​6​2​9​7
+                                                                        Baltan S (2015) Can lactate serve as an energy substrate for axons in
+                                                                             good times and in bad, in sickness and in health? Metab Brain Dis
+Acknowledgements Authors thank the members of their respective
+                                                                             30(1):25–30. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​0​7​​/​s​1​​1​0​1​1​-​0​1​4​-​9​5​9​5​-​3
+research groups and colleagues for valuable feedback and suggestions.
+                                                                        Barres BA, Jacobson MD, Schmid R, Sendtner M, Raff MC (1993)
+                                                                             Does oligodendrocyte survival depend on axons?. Curr Biol CB
+Author Contributions K.M. and M.M. drafted the original manuscript.          3. 8489–497.
+L.L., M.L., Y.B., and Y.G. reviewed and edited the manuscript. G.Z.,    Baumann N, Pham-Dinh D (2001) Biology of oligodendrocyte and
+J.K., and J.M. revised and approved the manuscript. All authors have         myelin in the mammalian central nervous system. Physiol Rev
+read and agreed to the published version of the manuscript.                  81(2):871–927. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​1​5​2​​/​p​h​​y​s​r​​e​v​.​​2​0​0​1​​.​8​​1​.​2​.​8​7​1
+                                                                        Blakemore WF, Franklin RJ (2008) Remyelination in experimental
+Funding The study was supported by the Natural Science Foundation            models of toxin-induced demyelination. Curr Top Microbiol
+of Hebei Province (C2024405023) and the Hebei North University               Immunol 318:193–212. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​0​7​​/​9​7​​8​-​3​-​5​4​0​-​7​3​6​7​
+Doctoral Start-up Funding Project (BSJJ202512).                              7​-​6​_​8
+                                                                        Brady ST, Witt AS, Kirkpatrick LL, de Waegh SM, Readhead C, Tu
+Data Availability Data will be made available on request.                    PH, Lee VM (1999) Formation of compact myelin is required for
+                                                                             maturation of the axonal cytoskeleton. J neuroscience: official J
+                                                                             Soc Neurosci 19(17):7278–7288. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​5​2​3​​/​j​n​​e​u​r​​o​s​
+Declarations                                                                 c​​i​.​1​9​​-​1​​7​-​0​7​2​7​8​.​1​9​9​9
+                                                                        Bruzzone R, White TW, Scherer SS, Fischbeck KH, Paul DL
+Competing interests The authors declare no competing interests.              (1994) Null mutations of connexin32 in patients with X-linked
+
+
+
+
+13
+Cellular and Molecular Neurobiology                               (2026) 46:90                                                                                                                 Page 13 of 16                90
+
+    Charcot-Marie-Tooth disease. Neuron 13(5):1253–1260. ​h​t​t​p​​s​:​/​​/​                                     Fruttiger M, Montag D, Schachner M, Martini R (1995) Crucial role
+    d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​1​6​​/​0​8​​9​6​-​6​2​7​3​(​9​4​)​9​0​0​6​3​-​9                                     for the myelin-associated glycoprotein in the maintenance of
+Buchheit TE, Tytell M (1992) Transfer of molecules from glia to                                                       axon-myelin integrity. Eur J Neurosci 7(3):511–515. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​
+    axon in the squid may be mediated by glial vesicles. J Neurobiol                                                  r​g​/​​1​0​.​1​​1​1​1​​/​j​.​​1​4​6​​0​-​9​​5​6​8​.​​1​9​​9​5​.​t​b​0​0​3​4​7​.​x
+    23(3):217–230. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​0​2​​/​n​e​​u​.​4​8​0​2​3​0​3​0​3            Fünfschilling U, Supplie LM, Mahad D, Boretius S, Saab AS, Edgar
+Chamberlain KA, Huang N, Xie Y, LiCausi F, Li S, Li Y, Sheng ZH                                                       J, Brinkmann BG, Kassmann CM, Tzvetanova ID, Möbius W,
+    (2021) Oligodendrocytes enhance axonal energy metabolism by                                                       Diaz F, Meijer D, Suter U, Hamprecht B, Sereda MW, Moraes
+    deacetylation of mitochondrial proteins through transcellular                                                     CT, Frahm J, Goebbels S, Nave KA (2012) Glycolytic oligoden-
+    delivery of SIRT2. Neuron 109(21):3456–3472e3458. ​h​t​t​p​​s​:​/​​/​d​o​i​​                                      drocytes maintain myelin and long-term axonal integrity. Nature
+    .​o​​r​g​/​​1​0​.​1​​0​1​6​​/​j​.​​n​e​u​r​o​n​.​2​0​2​1​.​0​8​.​0​1​1                                            485(7399):517–521. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​3​8​​/​n​a​​t​u​r​e​1​1​0​0​7
+Chong SY, Rosenberg SS, Fancy SP, Zhao C, Shen YA, Hahn AT,                                                      Geelen MJ, Lopes-Cardozo M, Edmond J (1983) Acetoacetate: a
+    McGee AW, Xu X, Zheng B, Zhang LI, Rowitch DH, Franklin                                                           major substrate for the synthesis of cholesterol and fatty acids by
+    RJ, Lu QR, Chan JR (2012) Neurite outgrowth inhibitor Nogo-                                                       isolated rat hepatocytes. FEBS Lett 163(2):269–273. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​
+    A establishes spatial segregation and extent of oligodendrocyte                                                   r​g​/​​1​0​.​1​​0​1​6​​/​0​0​​1​4​-​5​7​9​3​(​8​3​)​8​0​8​3​3​-​3
+    myelination. Proc Natl Acad Sci USA 109(4):1299–1304. ​h​t​t​p​​s​:​/​​/​                                    Ghosh A, Manrique-Hoyos N, Voigt A, Schulz JB, Kreutzfeldt M,
+    d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​7​3​​/​p​n​​a​s​.​1​1​1​3​5​4​0​1​0​9                                               Merkler D, Simons M (2011) Targeted ablation of oligodendro-
+Constantinescu CS, Farooqi N, O’Brien K, Gran B (2011) Experimen-                                                     cytes triggers axonal damage. PLoS ONE 6(7):e22735. ​h​t​t​p​​s​:​/​​/​d​o​
+    tal autoimmune encephalomyelitis (EAE) as a model for multiple                                                    i​​.​o​​r​g​/​​1​0​.​1​​3​7​1​​/​j​o​​u​r​n​a​l​.​p​o​n​e​.​0​0​2​2​7​3​5
+    sclerosis (MS). Br J Pharmacol 164(4):1079–1106. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​                           Giaume C, Liu X (2012) From a glial syncytium to a more restricted
+    g​/​​1​0​.​1​​1​1​1​​/​j​.​​1​4​7​​6​-​5​​3​8​1​.​​2​0​​1​1​.​0​1​3​0​2​.​x                                       and specific glial networking. J Physiol Paris 106(1–2):34–39. ​h​t​
+Das Sarma J (2010) A mechanism of virus-induced demyelination.                                                        t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​1​6​​/​j​.​​j​p​h​​y​s​p​​a​r​i​s​​.​2​​0​1​1​.​0​9​.​0​0​1
+    Interdiscip Perspect Infect Dis. 2010:109239 ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​                    Gorgoulis V, Adams PD, Alimonti A, Bennett DC, Bischof O, Bishop
+    1​​1​5​5​​/​2​0​​1​0​/​1​0​9​2​3​9                                                                                C, Campisi J, Collado M, Evangelou K, Ferbeyre G, Gil J, Hara
+Dimovasili C, Vitantonio AT, Conner B, Vaughan KL, Mattison JA,                                                       E, Krizhanovsky V, Jurk D, Maier AB, Narita M, Niedernhofer
+    Rosene DL (2025) White matter lipid alterations during aging in                                                   L, Passos JF, Robbins PD, Schmitt CA, Sedivy J, Vougas K, von
+    the rhesus monkey brain. Geroscience 47(3):3627–3645. ​h​t​t​p​​s​:​/​​/​d​                                       Zglinicki T, Zhou D, Serrano M, Demaria M (2019) Cellular
+    o​i​​.​o​​r​g​/​​1​0​.​1​​0​0​7​​/​s​1​​1​3​5​7​-​0​2​4​-​0​1​3​5​3​-​3                                           Senescence: Defining a Path Forward. Cell 179(4):813–827. ​h​t​t​
+Edgar JM, McLaughlin M, Werner HB, McCulloch MC, Barrie JA,                                                           p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​1​6​​/​j​.​​c​e​l​l​.​2​0​1​9​.​1​0​.​0​0​5
+    Brown A, Faichney AB, Snaidero N, Nave KA, Griffiths IR (2009)                                               Griffiths I, Klugmann M, Anderson T, Yool D, Thomson C, Schwab
+    Early ultrastructural defects of axons and axon-glia junctions in                                                 MH, Schneider A, Zimmermann F, McCulloch M, Nadon N, Nave
+    mice lacking expression of Cnp1. Glia 57(16):1815–1824. ​h​t​t​p​​s​:​/​​                                         KA (1998) Axonal swellings and degeneration in mice lacking
+    /​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​0​2​​/​g​l​​i​a​.​2​0​8​9​3                                                       the major proteolipid of myelin. Science 280(5369):1610–1613.​
+Edgar JM, McGowan E, Chapple KJ, Möbius W, Lemgruber L, Insall                                                        h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​1​2​6​​/​s​c​​i​e​n​​c​e​.​​2​8​0​.​​5​3​​6​9​.​1​6​1​0
+    RH, Nave KA, Boullerne A (2021) Río-Hortega’s drawings revis-                                                Hallermann S, de Kock CP, Stuart GJ, Kole MH (2012) State and
+    ited with fluorescent protein defines a cytoplasm-filled channel                                                  location dependence of action potential metabolic cost in cortical
+    system of CNS myelin. J Anat 239(6):1241–1255. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​                                  pyramidal neurons. Nat Neurosci 15(7):1007–1014. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​
+    g​/​​1​0​.​1​​1​1​1​​/​j​o​​a​.​1​3​5​7​7                                                                         r​g​/​​1​0​.​1​​0​3​8​​/​n​n​​.​3​1​3​2
+Engl E, Attwell D (2015) Non-signalling energy use in the brain. J                                               Hamada MS, Kole MH (2015) Myelin loss and axonal ion channel
+    Physiol 593(16):3417–3429. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​1​1​3​​/​j​p​​h​y​s​i​o​l​.​2​0​        adaptations associated with gray matter neuronal hyperexcitabil-
+    1​4​.​2​8​2​5​1​7                                                                                                 ity. J neuroscience: official J Soc Neurosci 35(18):7272–7286. ​h​t​
+Fan Y, Wu X, Han S, Zhang Q, Sun Z, Chen B, Xue X, Zhang H,                                                           t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​5​2​3​​/​j​n​​e​u​r​​o​s​c​​i​.​4​7​​4​7​​-​1​4​.​2​0​1​5
+    Chen Z, Yin M, Xiao Z, Zhao Y, Dai J (2023) Single-cell analysis                                             Handel AE, Lincoln MR, Ramagopalan SV (2011) Of mice and men:
+    reveals region-heterogeneous responses in rhesus monkey spinal                                                    experimental autoimmune encephalitis and multiple sclerosis.
+    cord with complete injury. Nat Commun 14(1):4796. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​                                 Eur J Clin Invest 41(11):1254–1258. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​1​1​1​​/​j​.​​1​3​
+    r​g​/​​1​0​.​1​​0​3​8​​/​s​4​​1​4​6​7​-​0​2​3​-​4​0​5​1​3​-​5                                                     6​​5​-​2​​3​6​2​.​​2​0​​1​1​.​0​2​5​1​9​.​x
+Fourcade S, Morató L, Parameswaran J, Ruiz M, Ruiz-Cortés T, Jové                                                Heo D, Kim AA, Neumann B, Doze VN, Xu YKT, Mironova YA, Slos-
+    M, Naudí A, Martínez-Redondo P, Dierssen M, Ferrer I, Villar-                                                     berg J, Goff LA, Franklin RJM, Bergles DE (2024) Transcrip-
+    roya F, Pamplona R, Vaquero A, Portero-Otín M, Pujol A (2017)                                                     tional profiles of murine oligodendrocyte precursor cells across
+    Loss of SIRT2 leads to axonal degeneration and locomotor dis-                                                     the lifespan. bioRxiv. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​1​0​1​​/​2​0​​2​4​.​1​0​.​2​7​.​6​2​0​5​0​2
+    ability associated with redox and energy imbalance. Aging Cell                                               Hsu C, Morohashi Y, Yoshimura S, Manrique-Hoyos N, Jung S, Laut-
+    16(6):1404–1413. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​1​1​1​​/​a​c​​e​l​.​1​2​6​8​2                     erbach MA, Bakhti M, Grønborg M, Möbius W, Rhee J, Barr FA,
+Freeman MR (2014) Signaling mechanisms regulating Wallerian                                                           Simons M (2010) Regulation of exosome secretion by Rab35
+    degeneration. Curr Opin Neurobiol 27:224–231. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​                              and its GTPase-activating proteins TBC1D10A-C. J Cell Biol
+    1​0​.​1​​0​1​6​​/​j​.​​c​o​n​b​.​2​0​1​4​.​0​5​.​0​0​1                                                            189(2):223–232. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​8​3​​/​j​c​​b​.​2​0​0​9​1​1​0​1​8
+Fröhlich D, Kuo WP, Frühbeis C, Sun JJ, Zehendner CM, Luhmann                                                    Huang Z, Zhang Y, Zou P, Zong X, Zhang Q (2025) Myelin dysfunc-
+    HJ, Pinto S, Toedling J, Trotter J, Krämer-Albers EM (2014) Mul-                                                  tion in aging and brain disorders: mechanisms and therapeutic
+    tifaceted effects of oligodendroglial exosomes on neurons: impact                                                 opportunities. Mol Neurodegener 20(1):69. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​1​
+    on neuronal firing rate, signal transduction and gene regulation.                                                 8​6​​/​s​1​​3​0​2​4​-​0​2​5​-​0​0​8​6​1​-​w
+    Philos Trans R Soc Lond B Biol Sci 369(1652):20130510. ​h​t​t​p​​s​:​/​​                                     Jha MK, Morrison BM (2020) Lactate Transporters Mediate Glia-
+    /​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​9​8​​/​r​s​​t​b​.​2​0​1​3​.​0​5​1​0                                               Neuron Metabolic Crosstalk in Homeostasis and Disease. Front
+Frühbeis C, Fröhlich D, Kuo WP, Amphornrat J, Thilemann S, Saab                                                       Cell Neurosci 14:589582. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​3​​3​8​9​​/​f​n​​c​e​l​.​2​0​2​0​.​5​8​9​
+    AS, Kirchhoff F, Möbius W, Goebbels S, Nave KA, Schneider A,                                                      5​8​2
+    Simons M, Klugmann M, Trotter J, Krämer-Albers EM (2013)                                                     Kassmann CM (2014) Myelin peroxisomes - essential organelles for
+    Neurotransmitter-triggered transfer of exosomes mediates oligo-                                                   the maintenance of white matter in the nervous system. Biochi-
+    dendrocyte-neuron communication. PLoS Biol 11(7):e1001604.​                                                       mie 98:111–118. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​1​6​​/​j​.​​b​i​o​c​h​i​.​2​0​1​3​.​0​9​.​0​2​0
+    h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​3​7​1​​/​j​o​​u​r​n​a​l​.​p​b​i​o​.​1​0​0​1​6​0​4
+
+
+
+                                                                                                                                                                                                                  13
+  90             Page 14 of 16                                                                                                            Cellular and Molecular Neurobiology                                       (2026) 46:90
+
+Kassmann CM, Quintes S, Rietdorf J, Möbius W, Sereda MW, Nien-                                                                     Schmidt-Lanterman incisures. J neuroscience: official J Soc Neu-
+     tiedt T, Saher G, Baes M, Nave KA (2011) A role for myelin-asso-                                                              rosci 24(13):3186–3198. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​5​2​3​​/​j​n​​e​u​r​​o​s​c​​i​.​5​1​​4​
+     ciated peroxisomes in maintaining paranodal loops and axonal                                                                  6​​-​0​3​.​2​0​0​4
+     integrity. FEBS Lett 585(14):2205–2211. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​1​6​​                           Meyer N, Richter N, Fan Z, Siemonsmeier G, Pivneva T, Jordan P,
+     /​j​.​​f​e​b​​s​l​e​​t​.​2​0​​1​1​​.​0​5​.​0​3​2                                                                              Steinhäuser C, Semtner M, Nolte C, Kettenmann H (2018) Oli-
+Kirby BB, Takada N, Latimer AJ, Shin J, Carney TJ, Kelsh RN, Appel                                                                 godendrocytes in the Mouse Corpus Callosum Maintain Axonal
+     B (2006) In vivo time-lapse imaging shows dynamic oligoden-                                                                   Function by Delivery of Glucose. Cell Rep 22(9):2383–2394. ​h​t​t​
+     drocyte progenitor behavior during zebrafish development. Nat                                                                 p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​1​6​​/​j​.​​c​e​l​r​e​p​.​2​0​1​8​.​0​2​.​0​2​2
+     Neurosci 9(12):1506–1511. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​3​8​​/​n​n​​1​8​0​3                           Mozafari S, Peruzzotti-Jametti L, Pluchino S (2026) Mitochondria
+Kirkpatrick LL, Witt AS, Payne HR, Shine HD, Brady ST (2001)                                                                       transfer for myelin repair. J Cereb blood flow metabolism: official
+     Changes in microtubule stability and density in myelin-deficient                                                              J Int Soc Cereb Blood Flow Metabolism 46(2):250–268. ​h​t​t​p​​s​:​/​​/​d​
+     shiverer mouse CNS axons. J neuroscience: official J Soc Neuro-                                                               o​i​​.​o​​r​g​/​​1​0​.​1​​1​7​7​​/​0​2​​7​1​6​7​8​x​2​5​1​3​2​5​8​0​5
+     sci 21(7):2288–2297. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​5​2​3​​/​j​n​​e​u​r​​o​s​c​​i​.​2​1​​-​0​​7​-​0​2​   Mu J, Hao L, Wang Z, Fu X, Li Y, Hao F, Duan H, Yang Z, Li X (2024)
+     2​8​8​.​2​0​0​1                                                                                                               Visualizing Wallerian degeneration in the corticospinal tract after
+Kleopa KA, Yum SW, Scherer SS (2002) Cellular mechanisms of con-                                                                   sensorimotor cortex ischemia in mice. Neural regeneration Res
+     nexin32 mutations associated with CNS manifestations. J Neuro-                                                                19(3):636–641. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​4​​1​0​3​​/​1​6​​7​3​-​5​3​7​4​.​3​8​0​9​0​3
+     sci Res 68(5):522–534. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​0​2​​/​j​n​​r​.​1​0​2​5​5                        Mukherjee C, Kling T, Russo B, Miebach K, Kess E, Schifferer M,
+Klugmann M, Schwab MH, Pühlhofer A, Schneider A, Zimmermann                                                                        Pedro LD, Weikert U, Fard MK, Kannaiyan N, Rossner M,
+     F, Griffiths IR, Nave KA (1997) Assembly of CNS myelin in the                                                                 Aicher ML, Goebbels S, Nave KA, Krämer-Albers EM, Schnei-
+     absence of proteolipid protein. Neuron 18(1):59–70. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​                                           der A, Simons M (2020) Oligodendrocytes Provide Antioxidant
+     r​g​/​​1​0​.​1​​0​1​6​​/​s​0​​8​9​6​-​6​2​7​3​(​0​1​)​8​0​0​4​6​-​5                                                           Defense Function for Neurons by Secreting Ferritin Heavy Chain.
+Krämer-Albers EM (2021) Superfood for axons: Glial exosomes boost                                                                  Cell Metabol 32(2):259–272e210. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​1​6​​/​j​.​​c​m​e​t​
+     axonal energetics by delivery of SIRT2. Neuron 109(21):3397–                                                                  .​2​0​2​0​.​0​5​.​0​1​9
+     3400. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​1​6​​/​j​.​​n​e​u​r​o​n​.​2​0​2​1​.​1​0​.​0​1​6                   Nakamura DS, Kennedy TE (2021) Netrin-1 marshals mitochondrial
+Krämer-Albers EM, Werner HB (2023) Mechanisms of axonal sup-                                                                       movement, morphology, and metabolism in myelin. Neural
+     port by oligodendrocyte-derived extracellular vesicles. Nat Rev                                                               regeneration Res 16(12):2399–2400. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​4​​1​0​3​​/​1​6​​
+     Neurosci 24(8):474–486. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​3​8​​/​s​4​​1​5​8​3​-​0​2​3​-​0​0​                   7​3​-​5​3​7​4​.​3​1​3​0​2​8
+     7​1​1​-​y                                                                                                                Nakamura DS, Lin YH, Khan D, Gothié JM, de Faria O Jr., Dixon
+Krämer-Albers EM, Bretz N, Tenzer S, Winterstein C, Möbius W,                                                                      JA, McBride HM, Antel JP, Kennedy TE (2021) Mitochondrial
+     Berger H, Nave KA, Schild H, Trotter J (2007) Oligodendro-                                                                    dynamics and bioenergetics regulated by netrin-1 in oligodendro-
+     cytes secrete exosomes containing major myelin and stress-pro-                                                                cytes. Glia 69(2):392–412. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​0​2​​/​g​l​​i​a​.​2​3​9​0​5
+     tective proteins: Trophic support for axons? Proteom Clin Appl                                                           Nave KA (2010) Myelination and support of axonal integrity by glia.
+     1(11):1446–1461. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​0​2​​/​p​r​​c​a​.​2​0​0​7​0​0​5​2​2                         Nature 468(7321):244–252. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​3​8​​/​n​a​​t​u​r​e​0​9​6​1​4
+Lappe-Siefke C, Goebbels S, Gravel M, Nicksch E, Lee J, Braun PE,                                                             Nave KA, Tzvetanova ID, Schirmeier S (2017) Glial Cell Evolution:
+     Griffiths IR, Nave KA (2003) Disruption of Cnp1 uncouples oli-                                                                The Origins of a Lipid Store. Cell Metab 26(5):701–702. ​h​t​t​p​​s​:​/​​/​
+     godendroglial functions in axonal support and myelination. Nat                                                                d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​1​6​​/​j​.​​c​m​e​t​.​2​0​1​7​.​1​0​.​0​1​1
+     Genet 33(3):366–374. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​3​8​​/​n​g​​1​0​9​5                                Nave KA, Asadollahi E, Sasmita A (2023) Expanding the function of
+Lee Y, Morrison BM, Li Y, Lengacher S, Farah MH, Hoffman PN, Liu                                                                   oligodendrocytes to brain energy metabolism. Curr Opin Neuro-
+     Y, Tsingalia A, Jin L, Zhang PW, Pellerin L, Magistretti PJ, Roth-                                                            biol 83:102782. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​1​6​​/​j​.​​c​o​n​b​.​2​0​2​3​.​1​0​2​7​8​2
+     stein JD (2012) Oligodendroglia metabolically support axons and                                                          Neishabouri AM, Faisal AA (2011) The metabolic efficiency of myelin-
+     contribute to neurodegeneration. Nature 487(7408):443–448. ​h​t​t​                                                            ated vs unmyelinated axons. BMC Neurosci 12(Suppl 1):P100. ​h​
+     p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​3​8​​/​n​a​​t​u​r​e​1​1​3​1​4                                                       t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​1​8​6​​/​1​4​​7​1​-​2​2​0​2​-​1​2​-​s​1​-​p​1​0​0
+Li G, Blakemore WF (2004) The number of cells expressing the                                                                  Nguyen T, Mehta NR, Conant K, Kim KJ, Jones M, Calabresi PA,
+     myelin-supporting oligodendrocyte marker PLP-exon 3b                                                                          Melli G, Hoke A, Schnaar RL, Ming GL, Song H, Keswani
+     remains unchanged in Wallerian degeneration. J Neurotrauma                                                                    SC, Griffin JW (2009) Axonal protective effects of the myelin-
+     21(8):1044–1049. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​8​9​​/​0​8​​9​7​7​1​5​0​4​1​6​5​1​0​1​5                     associated glycoprotein. J neuroscience: official J Soc Neurosci
+Llobet Rosell A, Neukomm LJ (2019) Axon death signalling in Wal-                                                                   29(3):630–637. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​5​2​3​​/​j​n​​e​u​r​​o​s​c​​i​.​5​2​​0​4​​-​0​8​.​2​0​0​9
+     lerian degeneration among species and in disease. Open biology                                                           Nualart-Marti A, Solsona C, Fields RD (2013) Gap junction communi-
+     9(8):190118. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​9​8​​/​r​s​​o​b​.​1​9​0​1​1​8                                   cation in myelinating glia. Biochim Biophys Acta 1828(1):69–78.
+Looser ZJ, Faik Z, Ravotto L, Zanker HS, Jung RB, Werner HB, Ruh-                                                                  ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​1​6​​/​j​.​​b​b​a​m​e​m​.​2​0​1​2​.​0​1​.​0​2​4
+     wedel T, Möbius W, Bergles DE, Barros LF, Nave KA, Weber                                                                 Oluich LJ, Stratton JA, Xing YL, Ng SW, Cate HS, Sah P, Windels F,
+     B, Saab AS (2024) Oligodendrocyte-axon metabolic coupling is                                                                   Kilpatrick TJ, Merson TD (2012) Targeted ablation of oligoden-
+     mediated by extracellular K(+) and maintains axonal health. Nat                                                                drocytes induces axonal pathology independent of overt demyelin-
+     Neurosci 27(3):433–448. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​3​8​​/​s​4​​1​5​9​3​-​0​2​3​-​0​1​                    ation. J neuroscience: official J Soc Neurosci 32(24):8317–8330.​
+     5​5​8​-​3                                                                                                                      h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​5​2​3​​/​j​n​​e​u​r​​o​s​c​​i​.​1​0​​5​3​​-​1​2​.​2​0​1​2
+Matute C, Verkhratsky A (2025) Brain myelin as a deficient energy                                                             Orthmann-Murphy JL, Enriquez AD, Abrams CK, Scherer SS (2007)
+     source in aging and disease. Trends Endocrinol Metab 36(9):781–                                                                Loss-of-function GJA12/Connexin47 mutations cause Pelizaeus-
+     784. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​1​6​​/​j​.​​t​e​m​.​2​0​2​5​.​0​7​.​0​0​6                                Merzbacher-like disease. Mol Cell Neurosci 34(4):629–641. ​h​t​t​p​​
+Mayorga-Weber G, Alarcón P, Peña-Münzenmayer G, Rojas P, Burgos                                                                     s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​1​6​​/​j​.​​m​c​n​.​2​0​0​7​.​0​1​.​0​1​0
+     RA, Rivera FJ, Castro MA (2025) Lactate dynamics modulated by                                                            Orthmann-Murphy JL, Abrams CK, Scherer SS (2008) Gap junctions
+     MCT1 and glucose oxidation shifts in age-related energy decline                                                                couple astrocytes and oligodendrocytes. J Mol neuroscience: MN
+     in the corpus callosum. Free Radic Biol Med 238:417–429. ​h​t​t​p​​s​                                                          35(1):101–116. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​0​7​​/​s​1​​2​0​3​1​-​0​0​7​-​9​0​2​7​-​5
+     :​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​1​6​​/​j​.​​f​r​e​​e​r​a​​d​b​i​o​​m​e​​d​.​2​0​2​5​.​0​6​.​0​4​4                   Pan B, Fromholt SE, Hess EJ, Crawford TO, Griffin JW, Sheikh KA,
+Meier C, Dermietzel R, Davidson KG, Yasumura T, Rash JE (2004)                                                                      Schnaar RL (2005) Myelin-associated glycoprotein and comple-
+     Connexin32-containing gap junctions in Schwann cells at                                                                        mentary axonal ligands, gangliosides, mediate axon stability in
+     the internodal zone of partial myelin compaction and in                                                                        the CNS and PNS: neuropathology and behavioral deficits in
+
+
+
+13
+Cellular and Molecular Neurobiology                                           (2026) 46:90                                                                                                                        Page 15 of 16                 90
+
+     single- and double-null mice. Exp Neurol 195(1):208–217. ​h​t​t​p​​                                                                 bodies to sustain memory under starvation. Nat metabolism
+     s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​1​6​​/​j​.​​e​x​p​​n​e​u​​r​o​l​.​​2​0​​0​5​.​0​4​.​0​1​7                                    4(2):213–224. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​3​8​​/​s​4​​2​2​5​5​-​0​2​2​-​0​0​5​2​8​-​6
+Pang XW, Chen M, Chu YH, Tang Y, Qin C, Tian DS (2022) A sta-                                                                       Simons M, Trotter J (2007) Wrapping it up: the cell biology of myelin-
+     bly established two-point injection of lysophosphatidylcholine-                                                                     ation. Curr Opin Neurobiol 17(5):533–540. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​
+     induced focal demyelination model in mice. J Vis Exp. ​h​t​t​p​s​:​/​/​d​o​                                                         1​6​​/​j​.​​c​o​n​b​.​2​0​0​7​.​0​8​.​0​0​3
+     i​.​o​r​g​/​1​0​.​3​7​9​1​/​6​4​0​5​9​​​​                                                                                      Snaidero N, Velte C, Myllykoski M, Raasakka A, Ignatev A, Wer-
+Philips T, Mironova YA, Jouroukhin Y, Chew J, Vidensky S, Farah                                                                          ner HB, Erwig MS, Möbius W, Kursula P, Nave KA, Simons M
+     MH, Pletnikov MV, Bergles DE, Morrison BM, Rothstein JD                                                                             (2017) Antagonistic Functions of MBP and CNP Establish Cyto-
+     (2021) MCT1 Deletion in Oligodendrocyte Lineage Cells Causes                                                                        solic Channels in CNS Myelin. Cell Rep 18(2):314–323. ​h​t​t​p​​s​:​/​​/​d​
+     Late-Onset Hypomyelination and Axonal Degeneration. Cell Rep                                                                        o​i​​.​o​​r​g​/​​1​0​.​1​​0​1​6​​/​j​.​​c​e​l​r​e​p​.​2​0​1​6​.​1​2​.​0​5​3
+     34(2):108610. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​1​6​​/​j​.​​c​e​l​r​e​p​.​2​0​2​0​.​1​0​8​6​1​0                 Sobottka B, Ziegler U, Kaech A, Becher B, Goebels N (2011) CNS
+Pohl HB, Porcheri C, Mueggler T, Bachmann LC, Martino G, Rieth-                                                                          live imaging reveals a new mechanism of myelination: the liquid
+     macher D, Franklin RJ, Rudin M, Suter U (2011) Genetically                                                                          croissant model. Glia 59(12):1841–1849. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​0​2​​
+     induced adult oligodendrocyte cell death is associated with poor                                                                    /​g​l​​i​a​.​2​1​2​2​8
+     myelin clearance, reduced remyelination, and axonal damage. J                                                                  Spörkel O, Uschkureit T, Büssow H, Stoffel W (2002) Oligodendro-
+     neuroscience: official J Soc Neurosci 31(3):1069–1080. ​h​t​t​p​​s​:​/​​/​d​                                                        cytes expressing exclusively the DM20 isoform of the proteolipid
+     o​i​​.​o​​r​g​/​​1​0​.​1​​5​2​3​​/​j​n​​e​u​r​​o​s​c​​i​.​5​0​​3​5​​-​1​0​.​2​0​1​1                                                 protein gene: myelination and development. Glia 37(1):19–30. ​h​t​
+Poliak S, Salomon D, Elhanany H, Sabanay H, Kiernan B, Pevny                                                                             t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​0​2​​/​g​l​​i​a​.​1​0​0​1​4
+     L, Stewart CL, Xu X, Chiu SY, Shrager P, Furley AJ, Peles E                                                                    Stadelmann C, Timmler S, Barrantes-Freer A, Simons M (2019)
+     (2003) Juxtaparanodal clustering of Shaker-like K+ channels in                                                                      Myelin in the Central Nervous System: Structure, Function, and
+     myelinated axons depends on Caspr2 and TAG-1. J Cell Biol                                                                           Pathology. Physiol Rev 99(3):1381–1431. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​1​5​2​​
+     162(6):1149–1160. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​8​3​​/​j​c​​b​.​2​0​0​3​0​5​0​1​8                                /​p​h​​y​s​r​e​v​.​0​0​0​3​1​.​2​0​1​8
+Praet J, Guglielmetti C, Berneman Z, Van der Linden A, Ponsaerts P                                                                  Steiner P (2019) Brain Fuel Utilization in the Developing Brain. Ann
+     (2014) Cellular and molecular neuropathology of the cuprizone                                                                       Nutr Metab 75 Suppl 1:8–18. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​1​5​9​​/​0​0​​0​5​0​8​0​5​4
+     mouse model: clinical relevance for multiple sclerosis. Neurosci                                                               Suzuki A, Stern SA, Bozdagi O, Huntley GW, Walker RH, Magistretti
+     Biobehav Rev 47:485–505. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​1​6​​/​j​.​​n​e​u​​b​i​o​​r​e​v​.​​2​                     PJ, Alberini CM (2011) Astrocyte-neuron lactate transport is
+     0​​1​4​.​1​0​.​0​0​4                                                                                                                required for long-term memory formation. Cell 144(5):810–823.​
+Ramos-Cabrer P, Cabrera-Zubizarreta A, Padro D, Matute-González                                                                          h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​1​6​​/​j​.​​c​e​l​l​.​2​0​1​1​.​0​2​.​0​1​8
+     M, Rodríguez-Antigüedad A, Matute C (2025) Reversible reduc-                                                                   Traka M, Goutebroze L, Denisenko N, Bessa M, Nifli A, Havaki S,
+     tion in brain myelin content upon marathon running. Nat Metab                                                                       Iwakura Y, Fukamauchi F, Watanabe K, Soliven B, Girault JA,
+     7(4):697–703. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​3​8​​/​s​4​​2​2​5​5​-​0​2​5​-​0​1​2​4​4​-​7                          Karagogeos D (2003) Association of TAG-1 with Caspr2 is
+Rasband MN, Tayler J, Kaga Y, Yang Y, Lappe-Siefke C, Nave KA,                                                                           essential for the molecular organization of juxtaparanodal regions
+     Bansal R (2005) CNP is required for maintenance of axon-glia                                                                        of myelinated fibers. J Cell Biol 162(6):1161–1172. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​
+     interactions at nodes of Ranvier in the CNS. Glia 50(1):86–90. ​h​t​                                                                g​/​​1​0​.​1​​0​8​3​​/​j​c​​b​.​2​0​0​3​0​5​0​7​8
+     t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​0​2​​/​g​l​​i​a​.​2​0​1​6​5                                                        Traka M, Arasi K, Avila RL, Podojil JR, Christakos A, Miller SD,
+Rinholm JE, Bergersen LH (2012) Neuroscience: The wrap that feeds                                                                        Soliven B, Popko B (2010) A genetic mouse model of adult-onset,
+     neurons. Nature 487(7408):435–436. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​3​8​​/​4​8​​7​                                  pervasive central nervous system demyelination with robust
+     4​3​5​a                                                                                                                             remyelination. Brain 133(10):3017–3029. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​9​
+Saggu SK, Chotaliya HP, Blumbergs PC, Casson RJ (2010) Wallerian-                                                                        3​​/​b​r​​a​i​n​/​a​w​q​2​4​7
+     like axonal degeneration in the optic nerve after excitotoxic reti-                                                            Trapp BD, Stys PK (2009) Virtual hypoxia and chronic necrosis
+     nal insult: an ultrastructural study. BMC Neurosci 11:97. ​h​t​t​p​​s​:​/​​/​d​                                                     of demyelinated axons in multiple sclerosis. Lancet Neurol
+     o​i​​.​o​​r​g​/​​1​0​.​1​​1​8​6​​/​1​4​​7​1​-​2​2​0​2​-​1​1​-​9​7                                                                   8(3):280–291. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​1​6​​/​s​1​​4​7​4​-​4​4​2​2​(​0​9​)​7​0​0​4​3​-​2
+Saint-Martin M, Pieters A, Déchelotte B, Malleval C, Pinatel D, Pas-                                                                Tress O, Maglione M, Zlomuzica A, May D, Dicke N, Degen J, Dere
+     cual O, Karagogeos D, Honnorat J, Pellier-Monnin V, Noraz N                                                                         E, Kettenmann H, Hartmann D, Willecke K (2011) Pathologic
+     (2019) Impact of anti-CASPR2 autoantibodies from patients with                                                                      and phenotypic alterations in a mouse expressing a connexin47
+     autoimmune encephalitis on CASPR2/TAG-1 interaction and                                                                             missense mutation that causes Pelizaeus-Merzbacher-like disease
+     Kv1 expression. J Autoimmun 103:102284. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​                                             in humans. PLoS Genet 7(7):e1002146. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​3​7​1​​/​j​
+     0​1​6​​/​j​.​​j​a​u​t​.​2​0​1​9​.​0​5​.​0​1​2                                                                                       o​​u​r​n​a​l​.​p​g​e​n​.​1​0​0​2​1​4​6
+Salzer JL, Brophy PJ, Peles E (2008) Molecular domains of myelin-                                                                   Trigo D, Smith KJ (2015) Axonal morphological changes following
+     ated axons in the peripheral nervous system. Glia 56(14):1532–                                                                      impulse activity in mouse peripheral nerve in vivo: the return
+     1540. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​0​2​​/​g​l​​i​a​.​2​0​7​5​0                                                  pathway for sodium ions. J Physiol 593(4):987–1002. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​
+Sato F, Tanaka H, Hasanovic F, Tsunoda I (2011) Theiler’s virus infec-                                                                   o​​r​g​/​​1​0​.​1​​1​1​3​​/​j​p​​h​y​s​i​o​l​.​2​0​1​4​.​2​7​9​3​3​1
+     tion: Pathophysiology of demyelination and neurodegeneration.                                                                  Tsunoda I, Fujinami RS (2002) Inside-Out versus Outside-In models
+     Pathophysiology 18(1):31–41. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​1​6​​/​j​.​​p​a​t​​h​o​p​​h​                          for virus induced demyelination: axonal damage triggering demy-
+     y​s​.​​2​0​​1​0​.​0​4​.​0​1​1                                                                                                       elination. Springer Semin Immunopathol 24(2):105–125. ​h​t​t​p​​s​:​/​​/​
+Segura-Anaya E, Martínez-Gómez A, Dent MA (2015) Localization                                                                            d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​0​7​​/​s​0​​0​2​8​1​-​0​0​2​-​0​1​0​5​-​z
+     of aquaporin 1 water channel in the Schmidt-Lanterman incisures                                                                Vargas ME, Barres BA (2007) Why is Wallerian degeneration in the
+     and the paranodal regions of the rat sciatic nerve. Neuroscience                                                                    CNS so slow? Annu Rev Neurosci 30:153–179. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​
+     285:119–127. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​1​6​​/​j​.​​n​e​u​​r​o​s​​c​i​e​n​​c​e​​.​2​0​1​4​.​1​0​.​0​6​        .​1​​1​4​6​​/​a​n​​n​u​r​​e​v​.​​n​e​u​r​​o​.​​3​0​.​0​5​1​6​0​6​.​0​9​4​3​5​4
+     0                                                                                                                              Wang L, Hu B, Wong WM, Lu P, Wu W, Xu XM (2009) Glial and
+Shrivastava AN, Triller A, Melki R (2020) Cell biology and dynamics                                                                      axonal responses in areas of Wallerian degeneration of the cor-
+     of Neuronal Na(+)/K(+)-ATPase in health and diseases. Neuro-                                                                        ticospinal and dorsal ascending tracts after spinal cord dorsal
+     pharmacology 169:107461. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​1​6​​/​j​.​​n​e​u​​r​o​p​​h​a​r​m​​                       funiculotomy. Neuropathology: official J Japanese Soc Neuropa-
+     .​2​​0​1​8​.​1​2​.​0​0​8                                                                                                            thology 29(3):230–241. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​1​1​1​​/​j​.​​1​4​4​​0​-​1​​7​8​9​.​​2​0​​0​
+Silva B, Mantha OL, Schor J, Pascual A, Plaçais PY, Pavlowsky A,                                                                         8​.​0​0​9​6​9​.​x
+     Preat T (2022) Glia fuel neurons with locally synthesized ketone
+
+
+
+                                                                                                                                                                                                                                     13
+  90            Page 16 of 16                                                                                                   Cellular and Molecular Neurobiology                                 (2026) 46:90
+
+Wang JT, Medress ZA, Barres BA (2012) Axon degeneration: molec-                                                          K+ ATPase in chronic multiple sclerosis lesions. Ann Neurol
+    ular mechanisms of a self-destruction pathway. J Cell Biol                                                           63(4):428–435. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​0​2​​/​a​n​​a​.​2​1​3​8​1
+    196(1):7–18. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​0​8​3​​/​j​c​​b​.​2​0​1​1​0​8​1​1​1                  Zhang H, Chen Y, Wang Z, Xie G, Liu M, Yuan B, Chai H, Wang W,
+Wu S, Chen J (2026) Is age-related myelinodegenerative change an                                                         Cheng P (2022) Implications of Gut Microbiota in Neurodegen-
+    initial risk factor of neurodegenerative diseases? Neural regen-                                                     erative Diseases. Front Immunol 13:785644. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​3​​
+    eration Res 21(2):648–658. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​4​​1​0​3​​/​n​r​​r​.​N​r​r​-​d​-​2​           3​8​9​​/​f​i​​m​m​u​.​2​0​2​2​.​7​8​5​6​4​4
+    4​-​0​0​8​4​8                                                                                                    Zhao Q, Zhu Y, Ren Y, Yin S, Yu L, Huang R, Song S, Hu X, Zhu R,
+Xu Z, He S, Begum MM, Han X (2024) Myelin Lipid Alterations in                                                           Cheng L, Xie N (2022) Neurogenesis potential of oligodendro-
+    Neurodegenerative Diseases: Landscape and Pathogenic Implica-                                                        cyte precursor cells from oligospheres and injured spinal cord.
+    tions. Antioxid Redox Signal 41(16–18):1073–1099. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​                                    Front Cell Neurosci 16:1049562. ​h​t​t​p​s​:​​​/​​/​d​o​​i​.​o​​r​​g​​/​​1​0​​.​3​3​​​8​9​/​​f​n​​c​e​l​.​2​​
+    r​g​/​​1​0​.​1​​0​8​9​​/​a​r​​s​.​2​0​2​4​.​0​6​7​6                                                                  0​2​2​.​1​0​4​9​5​6​2
+Yang S, Park JH, Lu HC (2023) Axonal energy metabolism, and the
+    effects in aging and neurodegenerative diseases. Mol neurodegen-                                                 Publisher’s Note Springer Nature remains neutral with regard to juris-
+    eration 18(1):49. ​h​t​t​p​​s​:​/​​/​d​o​i​​.​o​​r​g​/​​1​0​.​1​​1​8​6​​/​s​1​​3​0​2​4​-​0​2​3​-​0​0​6​3​4​-​3   dictional claims in published maps and institutional affiliations.
+Young EA, Fowler CD, Kidd GJ, Chang A, Rudick R, Fisher E,
+    Trapp BD (2008) Imaging correlates of decreased axonal Na+/
+
+
+
+
+13
+

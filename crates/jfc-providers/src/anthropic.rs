@@ -1,0 +1,1071 @@
+use async_trait::async_trait;
+use serde_json::json;
+
+use jfc_provider::{
+    EventStream, ModelInfo, Provider, ProviderMessage, StreamConvention, StreamOptions,
+};
+
+use super::sse;
+
+const API_URL: &str = "https://api.anthropic.com/v1/messages";
+const ANTHROPIC_VERSION: &str = "2023-06-01";
+const ANTHROPIC_BETA: &str = "interleaved-thinking-2025-05-14";
+const PROMPT_CACHING_SCOPE_BETA: &str = "prompt-caching-scope-2026-01-05";
+const EXTENDED_CACHE_TTL_BETA: &str = "extended-cache-ttl-2025-04-11";
+const CACHE_DIAGNOSIS_BETA: &str = "cache-diagnosis-2026-04-07";
+const CONTEXT_MANAGEMENT_BETA: &str = "context-management-2025-06-27";
+const NARRATION_SUMMARIES_BETA: &str = jfc_anthropic_sdk::beta::NARRATION_SUMMARIES;
+// `mid-conversation-system-2026-04-07` is gated per-model via
+// `super::anthropic_oauth::mid_conversation_system_enabled` (mirrors CC's `XH8`).
+
+pub const AUTO_RETRY_SENTINEL: &str = jfc_provider::retry::ANTHROPIC_AUTO_RETRY_SENTINEL;
+
+/// Opt-in prompt-cache hygiene scan. When `JFC_CACHE_VOLATILITY_WARN` is set,
+/// scan the outbound request body for volatile content (per-request
+/// timestamps / UUIDs / id-named fields) sitting inside the cacheable prefix
+/// — those silently bust Anthropic prompt-cache hits. Off by default
+/// (progressive disclosure): zero cost unless explicitly enabled. The scan is
+/// strictly read-only — it never mutates the body — and emits one
+/// structured `tracing::warn!` per finding.
+pub(crate) fn maybe_warn_volatile_cache_content(body: &serde_json::Value) {
+    let enabled = std::env::var("JFC_CACHE_VOLATILITY_WARN")
+        .map(|v| matches!(v.as_str(), "1" | "true" | "yes" | "on"))
+        .unwrap_or(false);
+    if !enabled {
+        return;
+    }
+    let findings = jfc_compress::volatile::detect_volatile_content(
+        body,
+        jfc_compress::volatile::ApiKind::Anthropic,
+    );
+    if !findings.is_empty() {
+        jfc_compress::volatile::emit_volatile_warnings(&findings, "anthropic.messages");
+    }
+}
+
+pub struct AnthropicProvider {
+    client: reqwest::Client,
+    api_key: String,
+}
+
+impl AnthropicProvider {
+    pub fn new(api_key: impl Into<String>) -> Self {
+        Self {
+            client: jfc_provider::http::streaming_client(),
+            api_key: api_key.into(),
+        }
+    }
+}
+
+/// Pluck the `error.type` field out of an Anthropic API error body
+/// without parsing the whole JSON. The canonical shape is
+/// `{"type":"error","error":{"type":"<kind>","message":"…"}}`. We
+/// accept any of the documented values: `authentication_error`,
+/// `permission_error`, `rate_limit_error`, `overloaded_error`,
+/// `api_error`, `invalid_request_error`, `not_found_error`,
+/// `request_too_large`. Returns the matched kind as a static str so
+/// callers can match against it without a cloned String. None when
+/// the body is missing/malformed (e.g. a 503 HTML page from a proxy).
+fn anthropic_error_type(body: &str) -> Option<&'static str> {
+    let candidates: &[&'static str] = &[
+        "authentication_error",
+        "permission_error",
+        "rate_limit_error",
+        "overloaded_error",
+        "request_too_large",
+        "invalid_request_error",
+        "not_found_error",
+        "api_error",
+    ];
+    // Look for `"type":"<kind>"` *inside* the inner error object.
+    // The outer `"type":"error"` is always present, so we skip past
+    // it by anchoring to `"error":{`.
+    let inner_start = body.find("\"error\":{").map(|i| i + "\"error\":{".len())?;
+    let inner = &body[inner_start..];
+    for kind in candidates {
+        let needle = format!("\"type\":\"{kind}\"");
+        if inner.contains(&needle) {
+            return Some(kind);
+        }
+    }
+    None
+}
+
+fn should_auto_retry_status(status: u16, kind: Option<&str>) -> bool {
+    matches!(
+        kind,
+        Some("overloaded_error" | "rate_limit_error" | "api_error")
+    ) || matches!(status, 408 | 409 | 429 | 500..=599)
+}
+
+fn build_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -> serde_json::Value {
+    let thinking_mode = if opts.adaptive_thinking {
+        "adaptive"
+    } else if opts.thinking_budget.is_some() {
+        "enabled"
+    } else {
+        "none"
+    };
+    tracing::debug!(
+        target: "jfc::provider::anthropic",
+        model = %opts.model,
+        max_tokens = opts.max_tokens,
+        has_system = opts.system.is_some(),
+        tool_count = opts.tools.len(),
+        advisor_model = ?opts.advisor_model.as_ref().map(|m| m.as_str()),
+        thinking_mode,
+        "building request body"
+    );
+
+    let mut body = json!({
+        "model": opts.model,
+        "max_tokens": opts.max_tokens,
+        "stream": true,
+        "messages": sse::build_messages(&messages),
+    });
+
+    if let Some(sys) = &opts.system {
+        // v132 prompt caching: tag the system prompt as `ephemeral` so
+        // Anthropic's 5-minute cache kicks in. Multi-turn sessions read
+        // the same big system block every turn — caching it cuts input
+        // token costs by ~70% on those turns. The v132 SDK does the
+        // same; cli.js sets `cache_control: {type:"ephemeral"}` on the
+        // last block of system + tools.
+        body["system"] = system_blocks(sys);
+    }
+
+    let has_thinking = opts.adaptive_thinking || opts.thinking_budget.is_some();
+    let model_supports_context_management =
+        super::anthropic_models::model_supports_context_management(opts.model.as_str());
+    // Anthropic rejects sampling overrides while extended thinking is on:
+    // `temperature` may only be 1, and `top_p`/`top_k` must be unset. We drop
+    // BOTH here so a configured `top_p` doesn't 400 the request the moment
+    // thinking is enabled (previously only `temperature` was gated).
+    if !has_thinking {
+        if let Some(temp) = opts.temperature {
+            body["temperature"] = serde_json::Value::from(temp);
+        }
+        if let Some(top_p) = opts.top_p {
+            body["top_p"] = serde_json::Value::from(top_p);
+        }
+    }
+
+    if !opts.tools.is_empty() || opts.advisor_model.is_some() {
+        // Tag the LAST tool with cache_control so the entire tools
+        // array becomes a cache breakpoint. v132 picks the last tool
+        // (vs. first) so callers can prepend ephemeral tools without
+        // re-keying the cache.
+        let mut tools = sse::build_tools_with_advisor(&opts.tools, opts.advisor_model.as_ref());
+        sse::apply_anthropic_tool_schema_controls(
+            &mut tools,
+            opts.eager_input_streaming,
+            opts.strict_tool_schemas,
+        );
+        if let Some(arr) = tools.as_array_mut()
+            && let Some(last) = arr.last_mut()
+            && let Some(obj) = last.as_object_mut()
+        {
+            obj.insert("cache_control".to_owned(), json!({ "type": "ephemeral" }));
+        }
+        body["tools"] = tools;
+    }
+
+    if opts.adaptive_thinking {
+        let mut thinking = json!({ "type": "adaptive" });
+        thinking["display"] = json!(opts.thinking_display.as_deref().unwrap_or("summarized"));
+        body["thinking"] = thinking;
+    } else if let Some(budget) = opts.thinking_budget {
+        let mut thinking = json!({
+            "type": "enabled",
+            "budget_tokens": budget,
+        });
+        thinking["display"] = json!(opts.thinking_display.as_deref().unwrap_or("summarized"));
+        body["thinking"] = thinking;
+    }
+    // Claude Code 2.1.177 sends a context-management edit while thinking is
+    // active so old thinking blocks do not accumulate in the model context.
+    if has_thinking && model_supports_context_management {
+        body["context_management"] = json!({
+            "edits": [{ "type": "clear_thinking_20251015", "keep": "all" }]
+        });
+    }
+    {
+        let mut oc = serde_json::Map::new();
+        // Gate `effort` by model — see anthropic_oauth.rs build_body for the
+        // rationale (CC 2.1.156 A2/NLz parity). Drops on unsupported models
+        // (haiku/sonnet-4-5/opus<4.6/claude-3) and clamps max/xhigh→high on
+        // effort-capable-but-Sonnet tiers, preventing the 400 a subagent hit
+        // when it inherited the global effort=max and ran on haiku.
+        if let Some(requested) = opts.reasoning_effort.as_deref()
+            && let Some(effort) =
+                super::anthropic_models::effort_for_model(opts.model.as_str(), requested)
+        {
+            oc.insert("effort".into(), json!(effort));
+        }
+        if let Some(tb) = opts.task_budget_tokens {
+            oc.insert("task_budget".into(), json!({"type": "tokens", "total": tb}));
+        }
+        if !oc.is_empty() {
+            body["output_config"] = serde_json::Value::Object(oc);
+        }
+    }
+    if opts.cache_diagnosis
+        && let Some(ref msg_id) = opts.previous_message_id
+    {
+        body["diagnostics"] = json!({ "previous_message_id": msg_id });
+    }
+    for (key, value) in &opts.provider_options {
+        body[key] = value.clone();
+    }
+    sse::cap_cache_control_breakpoints(&mut body, 4);
+
+    body
+}
+
+fn system_blocks(system: &str) -> serde_json::Value {
+    let Some(index) = system.find("\n\n## Current diagnostics") else {
+        return json!([{ "type": "text", "text": system, "cache_control": { "type": "ephemeral" } }]);
+    };
+
+    let stable = system[..index].trim_end();
+    let volatile = system[index..].trim_start();
+    let mut blocks = Vec::new();
+    if !stable.is_empty() {
+        blocks.push(json!({
+            "type": "text",
+            "text": stable,
+            "cache_control": { "type": "ephemeral" },
+        }));
+    }
+    if !volatile.is_empty() {
+        blocks.push(json!({ "type": "text", "text": volatile }));
+    }
+    json!(blocks)
+}
+
+impl jfc_provider::seal::Sealed for AnthropicProvider {}
+
+#[async_trait]
+impl Provider for AnthropicProvider {
+    fn name(&self) -> &str {
+        "anthropic"
+    }
+
+    fn stream_convention(&self) -> StreamConvention {
+        StreamConvention::AnthropicNative
+    }
+
+    fn available_models(&self) -> Vec<ModelInfo> {
+        super::anthropic_models::anthropic_first_party_models("anthropic")
+    }
+
+    fn http_client(&self) -> Option<reqwest::Client> {
+        Some(self.client.clone())
+    }
+
+    fn warmup_url(&self) -> Option<String> {
+        Some("https://api.anthropic.com".to_owned())
+    }
+
+    async fn fetch_models(&self) -> anyhow::Result<Vec<ModelInfo>> {
+        let _linkscope_fetch = linkscope::phase("provider.anthropic.fetch_models");
+        // Union the live models.dev catalog into the curated canonical list.
+        // Replacing canonical wholesale (the old behaviour) lost the alias rows
+        // (`↗ Opus / Sonnet / Haiku (latest)`) the picker leads with, because
+        // those are emitted by `anthropic_first_party_models()` and aren't in
+        // models.dev. Merging keeps the curated layout *and* picks up new ids
+        // the moment Anthropic ships them. Network failure → canonical only.
+        let canonical = self.available_models();
+        match super::models_dev::fetch_provider_models(&self.client, "anthropic", "anthropic").await
+        {
+            Ok(live) if !live.is_empty() => Ok(super::anthropic_models::merge_live_into_canonical(
+                canonical, live,
+            )),
+            _ => Ok(canonical),
+        }
+    }
+
+    #[tracing::instrument(
+        target = "jfc::provider::anthropic",
+        skip_all,
+        fields(
+            model = %options.model,
+            messages = messages.len(),
+            tools = options.tools.len(),
+        ),
+        err,
+    )]
+    async fn stream(
+        &self,
+        messages: Vec<ProviderMessage>,
+        options: &StreamOptions,
+    ) -> anyhow::Result<EventStream> {
+        let message_count = usize_to_u64_saturating(messages.len());
+        let _linkscope_stream = linkscope::phase("provider.anthropic.stream");
+        if linkscope::is_enabled() {
+            linkscope::event_fields(
+                "provider.anthropic.stream.start",
+                [
+                    linkscope::TraceField::text("model", options.model.to_string()),
+                    linkscope::TraceField::count("messages", message_count),
+                    linkscope::TraceField::count(
+                        "tools",
+                        usize_to_u64_saturating(options.tools.len()),
+                    ),
+                ],
+            );
+        }
+        let body = build_body(messages, options);
+        maybe_warn_volatile_cache_content(&body);
+
+        let beta_header = build_beta_header_for_body(options, &body);
+
+        let send_started = std::time::Instant::now();
+        let resp = match jfc_provider::http::send_with_retry("anthropic.messages", || {
+            self.client
+                .post(API_URL)
+                .header("x-api-key", &self.api_key)
+                .header("anthropic-version", ANTHROPIC_VERSION)
+                .header("anthropic-beta", beta_header.as_str())
+                .header("content-type", "application/json")
+                .json(&body)
+                .send()
+        })
+        .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                let cause = jfc_provider::http::classify_send_error(&e);
+                tracing::warn!(
+                    target: "jfc::provider::anthropic",
+                    error = %e,
+                    cause = cause,
+                    "POST messages failed before response (after retries)"
+                );
+                anyhow::bail!(
+                    "Anthropic request failed: {cause} ({e}). \
+                     If this persists, check your network and try again — \
+                     long thinking turns can stall briefly under proxies."
+                );
+            }
+        };
+
+        jfc_provider::http::report_first_byte_latency("anthropic.messages", send_started.elapsed());
+        let status = resp.status();
+        let content_type = resp
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("unknown")
+            .to_owned();
+        tracing::info!(
+            target: "jfc::provider::anthropic",
+            status = %status,
+            content_type = %content_type,
+            "received HTTP response"
+        );
+
+        if !status.is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            tracing::warn!(
+                target: "jfc::provider::anthropic",
+                status = %status,
+                body_preview = %&text[..text.len().min(200)],
+                "API request failed"
+            );
+            if let Some(model) = super::anthropic_oauth::parse_model_not_found(&text) {
+                anyhow::bail!(
+                    "{model} is not enabled on your Anthropic account. \
+                     Pin a model you have access to (Ctrl+M)."
+                );
+            }
+            // Map the body's `error.type` against the canonical strings
+            // v132 (`extracted_2.1.132/src/entrypoints/cli.js`) recognises:
+            // overloaded_error / rate_limit_error / api_error /
+            // authentication_error / permission_error / invalid_request_error
+            // / not_found_error / request_too_large. Surfacing the
+            // semantic kind first gives the user a one-line cause
+            // before we dump the raw body.
+            let kind = anthropic_error_type(&text);
+            let friendly = jfc_provider::retry::friendly_error_message(status.as_u16(), &text);
+            if should_auto_retry_status(status.as_u16(), kind) {
+                anyhow::bail!(
+                    "{AUTO_RETRY_SENTINEL}Anthropic transient API error {status}: {friendly}"
+                );
+            }
+            match kind {
+                Some("authentication_error") => anyhow::bail!(
+                    "Authentication failed — check your API key or token. \
+                     {friendly}"
+                ),
+                Some("permission_error") => anyhow::bail!(
+                    "Permission denied — your account may not have access \
+                     to this model. {friendly}"
+                ),
+                Some("rate_limit_error") => {
+                    anyhow::bail!("Rate limited — wait a moment and retry. {friendly}")
+                }
+                Some("overloaded_error") => anyhow::bail!(
+                    "Anthropic is overloaded ({status}). Try again in a \
+                     few seconds. {friendly}"
+                ),
+                Some("request_too_large") => anyhow::bail!(
+                    "Request too large — auto-compaction should kick in. \
+                     {friendly}"
+                ),
+                Some("invalid_request_error") => {
+                    anyhow::bail!("Invalid request: {friendly}\n  raw: {text}")
+                }
+                Some("not_found_error") => anyhow::bail!("Model or endpoint not found: {friendly}"),
+                _ => anyhow::bail!("Anthropic API error {status}: {friendly}\n  raw: {text}"),
+            }
+        }
+
+        Ok(sse::into_event_stream(resp))
+    }
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
+}
+
+fn append_custom_betas(header: &mut String, custom_betas: &[String]) {
+    for beta in custom_betas {
+        let beta = beta.trim();
+        if beta.is_empty() {
+            continue;
+        }
+        header.push(',');
+        header.push_str(beta);
+    }
+}
+
+#[cfg(test)]
+fn build_beta_header(options: &StreamOptions) -> String {
+    build_beta_header_with_cache_ttl(options, false)
+}
+
+fn build_beta_header_for_body(options: &StreamOptions, body: &serde_json::Value) -> String {
+    build_beta_header_with_cache_ttl(options, sse::has_cache_control_ttl(body))
+}
+
+fn build_beta_header_with_cache_ttl(options: &StreamOptions, extended_cache_ttl: bool) -> String {
+    let mut betas = ANTHROPIC_BETA.to_owned();
+    if options.prompt_caching_scope {
+        betas.push(',');
+        betas.push_str(PROMPT_CACHING_SCOPE_BETA);
+    }
+    if extended_cache_ttl {
+        betas.push(',');
+        betas.push_str(EXTENDED_CACHE_TTL_BETA);
+    }
+    if super::anthropic_oauth::mid_conversation_system_enabled(&options.model) {
+        betas.push_str(",mid-conversation-system-2026-04-07");
+    }
+    if options.fast_mode {
+        betas.push_str(",fast-mode-2026-02-01");
+    }
+    if options.task_budget_tokens.is_some() {
+        betas.push_str(",task-budgets-2026-03-13");
+    }
+    if (options.adaptive_thinking || options.thinking_budget.is_some())
+        && super::anthropic_models::model_supports_context_management(options.model.as_str())
+    {
+        betas.push(',');
+        betas.push_str(CONTEXT_MANAGEMENT_BETA);
+    }
+    if options.cache_diagnosis {
+        betas.push(',');
+        betas.push_str(CACHE_DIAGNOSIS_BETA);
+    }
+    if options.advisor_model.is_some() {
+        betas.push_str(",advisor-tool-2026-03-01");
+    }
+    if options.eager_input_streaming {
+        betas.push_str(",fine-grained-tool-streaming-2025-05-14");
+    }
+    if options.strict_tool_schemas {
+        betas.push_str(",structured-outputs-2025-12-15");
+    }
+    if options.narration_summaries {
+        betas.push(',');
+        betas.push_str(NARRATION_SUMMARIES_BETA);
+    }
+    if options.thinking_token_count {
+        betas.push_str(",thinking-token-count-2026-05-13");
+    }
+    append_custom_betas(&mut betas, &options.custom_betas);
+    super::anthropic_oauth::append_env_betas(&mut betas);
+    betas
+}
+
+/// DO-178B §6.4.2 conformance: every behavior is exercised by at least one
+/// `_normal` test (canonical inputs / equivalence classes / boundary values)
+/// and one `_robust` test (invalid / abnormal / illegal-state inputs).
+///
+/// Tests focus on the request-construction layer (`build_body`) and the
+/// `Provider` trait wiring. The HTTP layer is exercised end-to-end by the
+/// existing live integration tests in `models_dev.rs` and
+/// `anthropic_oauth.rs`; replicating those here would duplicate the setup
+/// without buying extra coverage of `AnthropicProvider`-specific code.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use jfc_provider::{
+        Provider, ProviderContent, ProviderMessage, ProviderRole, StreamConvention, StreamOptions,
+        ToolDef,
+    };
+
+    fn make_user_msg(text: &str) -> ProviderMessage {
+        ProviderMessage {
+            role: ProviderRole::User,
+            content: vec![ProviderContent::Text(text.to_owned())],
+        }
+    }
+
+    fn make_assistant_msg(text: &str) -> ProviderMessage {
+        ProviderMessage {
+            role: ProviderRole::Assistant,
+            content: vec![ProviderContent::Text(text.to_owned())],
+        }
+    }
+
+    fn opts(model: &str) -> StreamOptions {
+        StreamOptions::new(model)
+    }
+
+    #[test]
+    fn build_beta_header_includes_narration_summaries_normal() {
+        let header = build_beta_header(&opts("claude-opus-4-7").narration_summaries(true));
+        assert!(header.contains(NARRATION_SUMMARIES_BETA));
+    }
+
+    #[test]
+    fn build_beta_header_omits_narration_summaries_by_default_robust() {
+        let header = build_beta_header(&opts("claude-opus-4-7"));
+        assert!(!header.contains(NARRATION_SUMMARIES_BETA));
+    }
+
+    #[test]
+    fn build_beta_header_includes_thinking_token_count_normal() {
+        let header = build_beta_header(&opts("claude-opus-4-7").thinking_token_count(true));
+        assert!(header.contains("thinking-token-count-2026-05-13"));
+    }
+
+    #[test]
+    fn build_beta_header_includes_prompt_caching_scope_by_default_normal() {
+        let header = build_beta_header(&opts("claude-opus-4-7"));
+        assert!(header.contains(PROMPT_CACHING_SCOPE_BETA));
+    }
+
+    #[test]
+    fn build_beta_header_omits_prompt_caching_scope_when_disabled_robust() {
+        let mut options = opts("claude-opus-4-7");
+        options.prompt_caching_scope = false;
+        let header = build_beta_header(&options);
+        assert!(!header.contains(PROMPT_CACHING_SCOPE_BETA));
+    }
+
+    #[test]
+    fn build_beta_header_includes_extended_cache_ttl_for_ttl_body_normal() {
+        let body = serde_json::json!({
+            "system": [{
+                "type": "text",
+                "text": "stable",
+                "cache_control": { "type": "ephemeral", "ttl": "1h" }
+            }]
+        });
+        let header = build_beta_header_for_body(&opts("claude-opus-4-7"), &body);
+        assert!(header.contains(EXTENDED_CACHE_TTL_BETA));
+    }
+
+    #[test]
+    fn build_beta_header_omits_extended_cache_ttl_for_plain_cache_robust() {
+        let body = build_body(vec![make_user_msg("hi")], &opts("claude-opus-4-7"));
+        let header = build_beta_header_for_body(&opts("claude-opus-4-7"), &body);
+        assert!(!header.contains(EXTENDED_CACHE_TTL_BETA));
+    }
+
+    #[test]
+    fn build_beta_header_includes_context_management_for_thinking_normal() {
+        let header = build_beta_header(&opts("claude-opus-4-7").adaptive());
+        assert!(header.contains(CONTEXT_MANAGEMENT_BETA));
+    }
+
+    #[test]
+    fn build_beta_header_omits_context_management_for_haiku_thinking_regression() {
+        let header = build_beta_header(&opts("claude-haiku-4-5").thinking(4096));
+        assert!(!header.contains(CONTEXT_MANAGEMENT_BETA));
+    }
+
+    #[test]
+    fn build_body_omits_context_management_for_haiku_thinking_regression() {
+        let body = build_body(
+            vec![make_user_msg("hi")],
+            &opts("claude-haiku-4-5").thinking(4096),
+        );
+        assert!(body.get("context_management").is_none());
+    }
+
+    #[test]
+    fn build_beta_header_includes_cache_diagnosis_when_enabled_normal() {
+        let mut options = opts("claude-opus-4-7");
+        options.cache_diagnosis = true;
+        let header = build_beta_header(&options);
+        assert!(header.contains(CACHE_DIAGNOSIS_BETA));
+    }
+
+    #[test]
+    fn build_beta_header_omits_thinking_token_count_by_default_robust() {
+        let header = build_beta_header(&opts("claude-opus-4-7"));
+        assert!(!header.contains("thinking-token-count"));
+    }
+
+    // Normal: anthropic_error_type recognises the canonical shape
+    // and every documented `error.type` value v132 cli.js looks for.
+    #[test]
+    fn anthropic_error_type_recognises_all_kinds_normal() {
+        for kind in &[
+            "authentication_error",
+            "permission_error",
+            "rate_limit_error",
+            "overloaded_error",
+            "api_error",
+            "invalid_request_error",
+            "not_found_error",
+            "request_too_large",
+        ] {
+            let body = format!(
+                "{{\"type\":\"error\",\"error\":{{\"type\":\"{kind}\",\"message\":\"x\"}}}}"
+            );
+            assert_eq!(anthropic_error_type(&body), Some(*kind), "{kind}");
+        }
+    }
+
+    // Robust: an unknown kind, malformed body, or HTML proxy page
+    // returns None so the dispatcher falls back to the generic
+    // status-code handler.
+    #[test]
+    fn anthropic_error_type_returns_none_when_missing_robust() {
+        assert_eq!(anthropic_error_type(""), None);
+        assert_eq!(anthropic_error_type("<html>503</html>"), None);
+        assert_eq!(
+            anthropic_error_type(
+                "{\"type\":\"error\",\"error\":{\"type\":\"future_kind\",\"message\":\"\"}}"
+            ),
+            None
+        );
+        // Outer `"type":"error"` alone — no inner error object — None.
+        assert_eq!(anthropic_error_type("{\"type\":\"error\"}"), None);
+    }
+
+    #[test]
+    fn should_auto_retry_status_covers_overload_and_500_normal() {
+        assert!(should_auto_retry_status(529, None));
+        assert!(should_auto_retry_status(500, None));
+        assert!(should_auto_retry_status(503, Some("api_error")));
+        assert!(should_auto_retry_status(429, Some("rate_limit_error")));
+        assert!(should_auto_retry_status(408, None));
+        assert!(should_auto_retry_status(409, None));
+        assert!(should_auto_retry_status(503, Some("overloaded_error")));
+    }
+
+    #[test]
+    fn should_auto_retry_status_leaves_permanent_errors_robust() {
+        assert!(!should_auto_retry_status(
+            400,
+            Some("invalid_request_error")
+        ));
+        assert!(!should_auto_retry_status(401, Some("authentication_error")));
+        assert!(!should_auto_retry_status(413, Some("request_too_large")));
+    }
+
+    // Normal: a fresh provider exposes the expected name / convention pair so
+    // the renderer's stream-decoding dispatcher routes Anthropic-native SSE.
+    #[test]
+    fn provider_name_and_convention_normal() {
+        let p = AnthropicProvider::new("sk-ant-test");
+        assert_eq!(p.name(), "anthropic");
+        assert_eq!(p.stream_convention(), StreamConvention::AnthropicNative);
+    }
+
+    // Normal: `available_models()` surfaces the embedded canonical catalog so
+    // the picker has something to show before `fetch_models()` resolves.
+    #[test]
+    fn available_models_returns_canonical_catalog_normal() {
+        let p = AnthropicProvider::new("sk-ant-test");
+        let models = p.available_models();
+        assert!(!models.is_empty(), "canonical catalog must be non-empty");
+        // Every entry is stamped with the "anthropic" provider tag — that's what
+        // the picker round-trips back to `Provider::name()`.
+        assert!(models.iter().all(|m| m.provider == "anthropic"));
+    }
+
+    // Normal: build_body emits the four Anthropic-required fields when no
+    // optional knobs are set — model / max_tokens / stream / messages.
+    #[test]
+    fn build_body_required_fields_present_normal() {
+        let body = build_body(vec![make_user_msg("hello")], &opts("claude-opus-4-7"));
+        assert_eq!(body["model"], "claude-opus-4-7");
+        assert_eq!(body["max_tokens"], 8192);
+        assert_eq!(body["stream"], true);
+        assert!(body["messages"].is_array());
+    }
+
+    // Normal: the optional `system` field is included when the caller provides
+    // a system prompt; the on-wire shape is text blocks so cache_control can be
+    // applied to the stable prefix.
+    #[test]
+    fn build_body_includes_system_when_set_normal() {
+        let body = build_body(
+            vec![make_user_msg("hi")],
+            &opts("m").system("you are helpful"),
+        );
+        assert_eq!(body["system"][0]["text"], "you are helpful");
+        assert_eq!(body["system"][0]["cache_control"]["type"], "ephemeral");
+    }
+
+    #[test]
+    fn build_body_splits_volatile_diagnostics_from_cached_system() {
+        let body = build_body(
+            vec![make_user_msg("hi")],
+            &opts("m").system("stable instructions\n\n## Current diagnostics\n\nvolatile"),
+        );
+        assert_eq!(body["system"].as_array().unwrap().len(), 2);
+        assert_eq!(body["system"][0]["text"], "stable instructions");
+        assert_eq!(body["system"][0]["cache_control"]["type"], "ephemeral");
+        assert_eq!(
+            body["system"][1]["text"],
+            "## Current diagnostics\n\nvolatile"
+        );
+        assert!(body["system"][1].get("cache_control").is_none());
+    }
+
+    // The volatile-cache scan runs over the real built body shape and flags a
+    // per-request UUID embedded in the (cacheable) system prompt — the exact
+    // content that silently busts prompt-cache hits. Confirms the detector is
+    // wired to the Anthropic body shape, not just unit-tested in isolation.
+    #[test]
+    fn volatile_scan_flags_uuid_in_built_system_prompt_robust() {
+        let body = build_body(
+            vec![make_user_msg("hi")],
+            &opts("m").system("session 550e8400-e29b-41d4-a716-446655440000 active"),
+        );
+        let findings = jfc_compress::volatile::detect_volatile_content(
+            &body,
+            jfc_compress::volatile::ApiKind::Anthropic,
+        );
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.kind == jfc_compress::volatile::VolatileKind::Uuid),
+            "built body's system prompt UUID must be flagged: {findings:?}"
+        );
+        // And the scan must not mutate the body it inspects.
+        let before = serde_json::to_vec(&body).unwrap();
+        maybe_warn_volatile_cache_content(&body);
+        assert_eq!(before, serde_json::to_vec(&body).unwrap());
+    }
+
+    // Robust: when no system prompt is set, the field must be absent (sending
+    // `system: null` is rejected by some Anthropic-compatible proxies).
+    #[test]
+    fn build_body_omits_system_when_unset_robust() {
+        let body = build_body(vec![make_user_msg("hi")], &opts("m"));
+        assert!(body.get("system").is_none(), "system leaked: {body}");
+    }
+
+    // Normal: tools array is included when the caller provides tool defs.
+    #[test]
+    fn build_body_includes_tools_when_set_normal() {
+        let body = build_body(
+            vec![make_user_msg("hi")],
+            &opts("m").tools(vec![ToolDef {
+                name: "Bash".into(),
+                description: "run".into(),
+                input_schema: serde_json::json!({"type": "object"}),
+            }]),
+        );
+        assert_eq!(body["tools"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn build_body_caps_cache_control_breakpoints_to_four_robust() {
+        let body = build_body(
+            vec![
+                make_user_msg("first"),
+                make_assistant_msg("first response"),
+                make_user_msg("second"),
+                make_assistant_msg("second response"),
+            ],
+            &opts("m").system("stable instructions").tools(vec![ToolDef {
+                name: "Bash".into(),
+                description: "run".into(),
+                input_schema: serde_json::json!({"type": "object"}),
+            }]),
+        );
+
+        assert_eq!(sse::count_cache_control_breakpoints(&body), 4);
+        assert!(body["system"][0].get("cache_control").is_some());
+        assert!(body["tools"][0].get("cache_control").is_some());
+        assert!(
+            body["messages"][0]["content"][0]
+                .get("cache_control")
+                .is_none()
+        );
+        assert!(
+            body["messages"][2]["content"][0]
+                .get("cache_control")
+                .is_some()
+        );
+        assert!(
+            body["messages"][3]["content"][0]
+                .get("cache_control")
+                .is_some()
+        );
+    }
+
+    // Normal: provider_options are caller-supplied transport controls. The
+    // stream request layer uses this path for Anthropic `tool_choice`, so the
+    // native body builder must not silently drop the map.
+    #[test]
+    fn build_body_merges_provider_options_normal() {
+        let mut opts = opts("m").tools(vec![ToolDef {
+            name: "Bash".into(),
+            description: "run".into(),
+            input_schema: serde_json::json!({"type": "object"}),
+        }]);
+        opts.provider_options
+            .insert("tool_choice".into(), serde_json::json!({"type": "any"}));
+
+        let body = build_body(vec![make_user_msg("hi")], &opts);
+        assert_eq!(body["tool_choice"]["type"], "any");
+    }
+
+    // Robust: empty tools list omits the field entirely so proxies that reject
+    // `tools: []` don't 400 the request.
+    #[test]
+    fn build_body_omits_tools_when_empty_robust() {
+        let body = build_body(vec![make_user_msg("hi")], &opts("m"));
+        assert!(body.get("tools").is_none());
+    }
+
+    // Normal: legacy thinking budget — pre-4.6 Claude accepts the
+    // `{"type":"enabled","budget_tokens":N}` form. Tests the lower budget path.
+    #[test]
+    fn build_body_thinking_legacy_budget_normal() {
+        // max_tokens headroom so the legacy budget is emitted verbatim and not
+        // clamped by the `budget_tokens < max_tokens` rule.
+        let body = build_body(
+            vec![make_user_msg("hi")],
+            &opts("m").max_tokens(16_000).thinking(8192),
+        );
+        assert_eq!(body["thinking"]["type"], "enabled");
+        assert_eq!(body["thinking"]["budget_tokens"], 8192);
+    }
+
+    // Normal: adaptive thinking emits `{"type":"adaptive"}` for 4.6+ models.
+    // Critically, when `adaptive_thinking` is true, the legacy `budget_tokens`
+    // path is never taken — even if `thinking_budget` is also set.
+    #[test]
+    fn build_body_thinking_adaptive_overrides_budget_normal() {
+        let body = build_body(
+            vec![make_user_msg("hi")],
+            &opts("m").thinking(4096).adaptive(),
+        );
+        assert_eq!(body["thinking"]["type"], "adaptive");
+        // budget_tokens must NOT leak into the body when adaptive is on,
+        // otherwise Claude 4.6+ rejects with 400.
+        assert!(body["thinking"].get("budget_tokens").is_none());
+    }
+
+    #[test]
+    fn build_body_thinking_clears_old_thinking_context_normal() {
+        let body = build_body(
+            vec![make_user_msg("hi")],
+            &opts("claude-opus-4-7").adaptive(),
+        );
+        assert_eq!(
+            body["context_management"]["edits"][0]["type"],
+            "clear_thinking_20251015"
+        );
+        assert_eq!(body["context_management"]["edits"][0]["keep"], "all");
+    }
+
+    // Robust: with neither budget nor adaptive set, the field must be absent.
+    // Sending an empty `thinking: {}` block yields a 400 from Anthropic.
+    #[test]
+    fn build_body_thinking_absent_when_unset_robust() {
+        let body = build_body(vec![make_user_msg("hi")], &opts("m"));
+        assert!(body.get("thinking").is_none());
+        assert!(body.get("context_management").is_none());
+    }
+
+    #[test]
+    fn build_body_includes_temperature_when_thinking_off_normal() {
+        let body = build_body(vec![make_user_msg("hi")], &opts("m").temperature(0.7));
+        assert_eq!(body["temperature"], 0.7);
+    }
+
+    #[test]
+    fn build_body_omits_temperature_when_thinking_enabled_regression() {
+        let body = build_body(
+            vec![make_user_msg("hi")],
+            &opts("m").temperature(0.7).adaptive(),
+        );
+        assert!(body.get("temperature").is_none());
+    }
+
+    #[test]
+    fn build_body_reasoning_effort_uses_output_config_normal() {
+        let body = build_body(
+            vec![make_user_msg("hi")],
+            &opts("claude-opus-4-8").reasoning_effort("xhigh"),
+        );
+        assert_eq!(body["output_config"]["effort"], "xhigh");
+
+        // max stays max on models that support it
+        let body = build_body(
+            vec![make_user_msg("hi")],
+            &opts("claude-opus-4-6").reasoning_effort("max"),
+        );
+        assert_eq!(body["output_config"]["effort"], "max");
+    }
+
+    // Normal — REGRESSION (the haiku 400): effort is dropped for a model that
+    // doesn't support the parameter (CC 2.1.156 A2/NLz parity).
+    #[test]
+    fn build_body_drops_effort_on_haiku_regression() {
+        let body = build_body(
+            vec![make_user_msg("hi")],
+            &opts("claude-haiku-4-5").reasoning_effort("max"),
+        );
+        assert!(
+            body.get("output_config").is_none() || body["output_config"].get("effort").is_none(),
+            "haiku must not receive an effort param"
+        );
+    }
+
+    // Normal: build_body preserves message order — user/assistant alternation
+    // matters for Claude's prefill behavior.
+    #[test]
+    fn build_body_preserves_message_order_normal() {
+        let history = vec![
+            make_user_msg("first"),
+            ProviderMessage {
+                role: ProviderRole::Assistant,
+                content: vec![ProviderContent::Text("reply".into())],
+            },
+            make_user_msg("second"),
+        ];
+        let body = build_body(history, &opts("m"));
+        let msgs = body["messages"].as_array().unwrap();
+        assert_eq!(msgs.len(), 3);
+        assert_eq!(msgs[0]["role"], "user");
+        assert_eq!(msgs[1]["role"], "assistant");
+        assert_eq!(msgs[2]["role"], "user");
+    }
+
+    // Robust: empty message list still produces a valid body — caller may
+    // legitimately want to send only a system prompt with no history.
+    #[test]
+    fn build_body_empty_messages_robust() {
+        let body = build_body(vec![], &opts("m"));
+        assert_eq!(body["messages"].as_array().unwrap().len(), 0);
+    }
+
+    // Normal: max_tokens override flows into the body. The default is 8192;
+    // setting a custom cap lets the caller pin extended-output deployments.
+    #[test]
+    fn build_body_max_tokens_override_normal() {
+        let body = build_body(vec![make_user_msg("hi")], &opts("m").max_tokens(64_000));
+        assert_eq!(body["max_tokens"], 64_000);
+    }
+
+    // Normal: `.thinking_display("summarized")` injects `display: "summarized"` into
+    // the adaptive thinking block so Opus 4.7 returns thinking text to the caller.
+    #[test]
+    fn build_body_thinking_display_summarized_normal() {
+        let body = build_body(
+            vec![make_user_msg("hi")],
+            &opts("m").adaptive().thinking_display("summarized"),
+        );
+        assert_eq!(body["thinking"]["type"], "adaptive");
+        assert_eq!(body["thinking"]["display"], "summarized");
+    }
+
+    #[test]
+    fn build_body_legacy_thinking_display_summarized_normal() {
+        let body = build_body(
+            vec![make_user_msg("hi")],
+            &opts("m")
+                .max_tokens(16_000)
+                .thinking(8192)
+                .thinking_display("summarized"),
+        );
+        assert_eq!(body["thinking"]["type"], "enabled");
+        assert_eq!(body["thinking"]["budget_tokens"], 8192);
+        assert_eq!(body["thinking"]["display"], "summarized");
+    }
+
+    // Robust: without `.thinking_display()` direct provider calls still request
+    // visible summarized thinking, matching the current Anthropic SDK default.
+    #[test]
+    fn build_body_thinking_display_defaults_summarized_robust() {
+        let body = build_body(vec![make_user_msg("hi")], &opts("m").adaptive());
+        assert_eq!(body["thinking"]["type"], "adaptive");
+        assert_eq!(body["thinking"]["display"], "summarized");
+    }
+
+    #[test]
+    fn build_body_cache_diagnosis_sends_previous_message_id_normal() {
+        let mut options = opts("m");
+        options.cache_diagnosis = true;
+        options.previous_message_id = Some("msg_123".to_owned());
+        let body = build_body(vec![make_user_msg("hi")], &options);
+        assert_eq!(body["diagnostics"]["previous_message_id"], "msg_123");
+    }
+
+    #[test]
+    fn build_body_omits_diagnostics_without_cache_diagnosis_robust() {
+        let mut options = opts("m");
+        options.previous_message_id = Some("msg_123".to_owned());
+        let body = build_body(vec![make_user_msg("hi")], &options);
+        assert!(body.get("diagnostics").is_none());
+    }
+
+    // Normal: task_budget(50_000) produces the correct output_config shape
+    // with type "tokens" and total 50000 as required by the API beta spec.
+    #[test]
+    fn build_body_task_budget_produces_output_config_normal() {
+        let body = build_body(vec![make_user_msg("hi")], &opts("m").task_budget(50_000));
+        assert_eq!(body["output_config"]["task_budget"]["type"], "tokens");
+        assert_eq!(body["output_config"]["task_budget"]["total"], 50_000u64);
+    }
+
+    // Robust: task_budget(5_000) is below the API minimum of 20_000 and must
+    // be clamped up. Sending a sub-minimum value would be rejected by the API.
+    #[test]
+    fn build_body_task_budget_clamped_to_minimum_robust() {
+        let o = opts("m").task_budget(5_000);
+        // StreamOptions builder clamps to 20_000.
+        assert_eq!(o.task_budget_tokens, Some(20_000));
+        let body = build_body(vec![make_user_msg("hi")], &o);
+        assert_eq!(body["output_config"]["task_budget"]["total"], 20_000u64);
+    }
+
+    // Normal: when both reasoning_effort and task_budget are set, they must
+    // both appear in a single output_config object (not overwrite each other).
+    #[test]
+    fn build_body_effort_and_task_budget_coexist_in_output_config_normal() {
+        let body = build_body(
+            vec![make_user_msg("hi")],
+            &opts("claude-opus-4-8")
+                .reasoning_effort("high")
+                .task_budget(30_000),
+        );
+        assert_eq!(body["output_config"]["effort"], "high");
+        assert_eq!(body["output_config"]["task_budget"]["type"], "tokens");
+        assert_eq!(body["output_config"]["task_budget"]["total"], 30_000u64);
+    }
+}

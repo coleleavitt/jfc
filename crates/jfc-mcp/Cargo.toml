@@ -1,0 +1,29 @@
+[package]
+name = "jfc-mcp"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+dotenvy = "0.15"
+jfc-core = { path = "../jfc-core" }
+jfc-provider = { path = "../jfc-provider" }
+linkscope = { workspace = true }
+rmcp = { version = "1.7", default-features = false, features = [
+    "client",
+    "transport-child-process",
+    "transport-streamable-http-client-reqwest",
+    "reqwest",
+] }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["process", "io-util", "sync", "time", "rt"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full"] }
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

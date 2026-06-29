@@ -1,0 +1,30 @@
+[package]
+name = "jfc-bridge"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+async-stream = { workspace = true }
+axum = { workspace = true }
+base64 = { workspace = true }
+futures-util = { workspace = true }
+hmac = { workspace = true }
+linkscope = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["macros", "net", "rt", "sync", "time"] }
+tracing = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+
+[lints]
+workspace = true

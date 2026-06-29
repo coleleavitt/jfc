@@ -1,0 +1,1751 @@
+Review
+
+Social Behavior and Neurogenesis
+Alejandro Tapia-De-Jesús 1, * , Mario Humberto Buenrostro-Jáuregui 2                             and Jesús Armando Mata-Luévanos 3, *
+
+                                         1   Department of Health, Universidad Iberoamericana, Mexico City 01219, Mexico
+                                         2   Laboratory of Neuroscience, Department of Psychology, Universidad Iberoamericana,
+                                             Mexico City 01219, Mexico; mario.buenrostro@ibero.mx
+                                         3   Laboratory of Integration in Motivation, Emotion and Neuroscience, Facultad de Medicina y Ciencias
+                                             Biomédicas, Universidad Autónoma de Chihuahua, Chihuahua 31125, Mexico
+                                         *   Correspondence: alejandro.tapia@ibero.mx (A.T.-D.-J.); jamata@uach.mx (J.A.M.-L.)
+
+
+                                         Abstract
+                                         Adult neurogenesis is a regulated form of brain plasticity shaped by interactions between
+                                         hormonal systems and environmental context. Social experience has been identified as
+                                         an important modulator of neuronal proliferation, differentiation, and survival across the
+                                         lifespan, although effects vary across species, developmental stages, and experimental
+                                         paradigms. This review synthesizes evidence indicating that diverse social behaviors—
+                                         including isolation, social hierarchy, parenting, sexual interaction, social buffering, and
+                                         social learning—engage neuroendocrine, neurochemical, and stress-related pathways that
+                                         are associated with modulation of hippocampal and olfactory neurogenesis. Affiliative and
+                                         reproductive contexts have been linked in multiple models to enhanced neurogenic indices
+                                         via gonadal hormones, oxytocinergic and vasopressinergic signaling, and neurotrophic
+                                         mechanisms, whereas chronic isolation or social defeat has frequently been associated with
+                                         reduced neurogenic markers, particularly within stress-sensitive regions of the ventral
+                                         dentate gyrus. Sex differences further shape these patterns, reflecting both biological
+                                         regulation and uneven sampling across paradigms. Comparative findings in prairie voles,
+                                         eusocial mole-rats, nonhuman primates, songbirds, and teleost fish indicate that social
+                                         organization can be accompanied by either increased or constrained neurogenic activity,
+                                         depending on ecological pressures and life-history strategies. Collectively, the available
+                                         evidence suggests that adult neurogenesis represents a context-dependent plastic process
+                                         embedded within vertebrate social systems, while underscoring the need for integrative
+                                         and evidence-graded interpretations.
+
+                                         Keywords: adult neurogenesis; social behavior; neuroendocrine modulation
+
+
+
+
+                                         1. Introduction
+Academic Editors: Rossella Ventura
+and Matteo Di Segni                            Neurogenesis is a continuous process in the brain that remains highly sensitive to a
+                                         wide range of internal and external factors, making it critical for mammalian maturation,
+Received: 3 February 2026
+Revised: 21 February 2026                development, adaptation, and evolution [1,2]. The neurogenic process comprises multiple
+Accepted: 2 March 2026                   stages that are modulated by shared neurochemical and hormonal systems [3]. Endogenous
+Published: 7 March 2026                  factors include hormonal and neurochemical signals that promote the proliferation, growth,
+Copyright: © 2026 by the authors.        survival, and functional integration of new neurons, whereas exogenous factors encompass
+Licensee MDPI, Basel, Switzerland.       environmental elements—both stressful and appetitive—that can either trigger or inhibit
+This article is an open access article
+                                         neurogenic mechanisms [4,5].
+distributed under the terms and
+                                               A wide body of research has examined key external modulators of neurogenesis. Phys-
+conditions of the Creative Commons
+Attribution (CC BY) license.             ical activity, particularly cardiovascular exercise, promotes the generation of new neurons
+
+
+Int. J. Mol. Sci. 2026, 27, 2471                                                                               https://doi.org/10.3390/ijms27052471
+Int. J. Mol. Sci. 2026, 27, 2471                                                                                           2 of 28
+
+
+
+                                   through neurotrophic pathways [6–8] and enhances memory and learning functions [9].
+                                   Environmental enrichment is likewise associated with increased neuronal density in the
+                                   dentate gyrus of the hippocampus [4,10]. More recently, social experience has emerged as a
+                                   potent regulator of neurogenesis, influencing each stage of the process [11,12]. A deeper
+                                   understanding of these pathways offers opportunities to develop novel stimulation- and
+                                   treatment-based strategies for multiple human conditions.
+                                        Comprehensive frameworks of adult neurogenesis have been previously described [13].
+                                   Building on this foundation, the present review focuses specifically on how social interac-
+                                   tion shapes neurogenic processes across different stages of life.
+                                        Although animal models provide controlled and mechanistically tractable approaches
+                                   to studying social behavior, it is important to recognize their conceptual scope. Compar-
+                                   ative neurobiological research indicates that across vertebrates, social behaviors such as
+                                   reproduction, aggression, parental care, dominance interactions, and affiliation are regu-
+                                   lated by conserved neural circuits, including the social decision-making network [14]. These
+                                   paradigms capture evolutionarily conserved mechanisms underlying social interaction and
+                                   motivational regulation.
+                                        However, human social phenomena are additionally shaped by language, symbolic
+                                   representation, cultural transmission, and meta-cognitive processes that enable explicit
+                                   mentalizing, reflective communication, and reputation management [15]. While these
+                                   higher-order processes build upon conserved neurobiological substrates, they extend
+                                   beyond the operational domains typically modeled in non-human species.
+                                        Accordingly, translational interpretations should be made with caution. The present
+                                   review therefore emphasizes conserved neuroendocrine and circuit-level mechanisms
+                                   through which social experience influences adult neurogenesis, while acknowledging
+                                   that the full sociocultural complexity of human social life cannot be fully recapitulated in
+                                   animal paradigms.
+                                        Review approach. We conducted a targeted literature search in PubMed and Scopus
+                                   (from database inception to 2026) using combinations of terms including “adult neurogen-
+                                   esis”, “hippocampus”, “dentate gyrus”, “social isolation”, “social defeat”, “dominance”,
+                                   “social buffering”, “parenting”, “mating”, “oxytocin”, and “glucocorticoids”. Priority
+                                   was given to studies with direct neurogenesis readouts (e.g., BrdU, Ki67, DCX; prolifer-
+                                   ation/survival/maturation; DG/SVZ; dorsal/ventral DG when available), followed by
+                                   mechanistic studies that explicitly tested candidate pathways relevant to neurogenic reg-
+                                   ulation. Behavioral-only studies were used to contextualize social phenotypes but were
+                                   explicitly labeled as indirect. When findings were mixed, we summarized moderators
+                                   (species/strain, sex, developmental timing, manipulation intensity/contact modality, and
+                                   readout type) and used graded language to reflect evidence strength.
+                                        Throughout this review, “adult neurogenesis” is not treated as a unitary construct.
+                                   When possible, we specify the component assessed (proliferation, survival, matura-
+                                   tion/integration), the anatomical region (dentate gyrus vs. subventricular zone), and
+                                   the methodological marker used (e.g., BrdU, Ki67, DCX), as different components may
+                                   show divergent responses under similar social conditions.
+
+                                   2. Socialization
+                                        Social interaction is associated with numerous neuroprotective, cognitive, and mood-
+                                   related benefits, particularly by stimulating and enhancing cognitive functions such as
+                                   learning and memory [16]. It also plays a key role in reducing the impact of stress and
+                                   decreasing anxiety- and depression-like behaviors [17]. This review synthesizes evidence
+                                   on the relationship between social behavior and neurogenesis, identifying different forms of
+                                   social behavior and their underlying mechanisms—ranging from neurotrophic factors to the
+
+
+
+                                                                                              https://doi.org/10.3390/ijms27052471
+Int. J. Mol. Sci. 2026, 27, 2471                                                                                              3 of 28
+
+
+
+                                   hormonal pathways governed by the hypothalamic–pituitary–gonadal and hypothalamic–
+                                   pituitary–adrenal axes.
+                                        A recent systematic review of adult neurogenesis and social behavior in rodents
+                                   synthesized evidence indicating that social living conditions can bidirectionally modulate
+                                   dentate gyrus neurogenic indices. Across included paradigms, social isolation and repeated
+                                   social defeat were generally associated with reductions in neurogenesis-related markers,
+                                   whereas social dominance and social enrichment were more often linked to increases,
+                                   although results vary across models and readouts [11]. The same review also summarizes
+                                   studies in which experimental reduction in adult neurogenesis (e.g., via irradiation or
+                                   antimitotic approaches) is associated with impairments in social recognition and social
+                                   memory, reinforcing the need to distinguish direct neurogenesis readouts from behavioral-
+                                   only endpoints when interpreting social–neurogenic coupling [11].
+                                        Several elements contribute to social behavior, along with their associated mechanisms
+                                   and manifestations, including social hierarchy, sexual interaction, parenting, and living in
+                                   groups or in isolation. All of these domains have been examined in relation to the gener-
+                                   ation, survival, and functional integration of neurons. However, interactions with other
+                                   variables—such as age, sex, and species—produce heterogeneous findings, underscoring
+                                   the need for studies that systematically incorporate these moderating factors.
+                                        Social behavior is broadly understood to comprise both reinforcing and aversive
+                                   components, although most behaviors involve a mixture of the two. For instance, re-
+                                   ceiving aggression exemplifies an aversive social experience, whereas mating typically
+                                   represents a highly reinforcing one. Social status, in turn, reflects a combination of both
+                                   motivational components.
+
+                                   3. Isolation
+                                         In most wildlife species, living in a social group provides several advantages, including
+                                   improved access to territory, greater protection, enhanced performance, and more reliable
+                                   food sources—factors that collectively contribute to well-being and survival [18]. To avoid
+                                   misinterpretations of the effects of social behavior, it is essential to identify both the social
+                                   role of individuals and the contextual characteristics of their environment, as isolation can
+                                   be stressful in one situation yet relatively neutral—or even rewarding—in another [19,20].
+                                         Here, “social isolation” denotes physical housing in the absence of conspecific con-
+                                   tact (visual, tactile, and/or olfactory), typically implemented chronically during adoles-
+                                   cence or adulthood, and should be distinguished from social defeat or dominance-related
+                                   stress paradigms.
+                                         A systematic review and meta-analysis focusing on the oxytocin system under social
+                                   isolation shows that isolation is associated with measurable alterations in oxytocin biology,
+                                   but that effect direction and magnitude vary across species/strains, tissues assessed (central
+                                   vs. peripheral), and features of the isolation paradigm (duration, timing, and social con-
+                                   text) [21]. This synthesis therefore supports oxytocin signaling as a plausible mechanistic
+                                   conduit linking isolation to downstream brain plasticity, while also emphasizing substan-
+                                   tive heterogeneity that limits one-direction generalization. In line with this evidence tiering,
+                                   we treat isolation–oxytocin links as mechanistic-level evidence unless adult neurogenesis
+                                   markers (e.g., BrdU/Ki67/DCX with region and component specification) are measured
+                                   in parallel.
+                                         Social isolation has been consistently associated with measurable changes in brain
+                                   function and plasticity, including alterations in synaptic transmission and reductions in
+                                   neurogenesis. [22–24]. However, these outcomes depend strongly on developmental stage.
+                                   Because neurogenesis varies across the lifespan—adolescents generate and integrate new
+
+
+
+
+                                                                                                 https://doi.org/10.3390/ijms27052471
+Int. J. Mol. Sci. 2026, 27, 2471                                                                                                                 4 of 28
+
+
+
+                                   neurons at substantially higher rates than adults [25]—isolation during early life versus
+                                   adulthood leads to different consequences.
+                                         Importantly, the neurogenic and behavioral impact of social isolation is strongly
+                                   modulated by developmental stage and duration of exposure. Adolescence represents a
+                                   particularly sensitive window, during which chronic isolation has been associated with
+                                   persistent behavioral alterations and long-lasting vulnerability. In contrast, short-term
+                                   isolation in adulthood produces relatively limited behavioral effects, whereas prolonged
+                                   isolation has been linked to measurable impairments in hippocampal plasticity and cogni-
+                                   tion. These age-dependent patterns underscore that isolation does not exert uniform effects
+                                   across the lifespan, but instead interacts with baseline neurogenic capacity and circuit
+                                   maturation (Figure 1).
+
+                                             Adolescence                             Adulthood                          Adulthood
+                                              (P30-P50)                         (Short-Term, 10 days)              (Long-Term, 30 weeks)
+
+                                                                High Rate,                          Stable
+                                                                                                    Neuron                    Aging
+                                                                4x vs
+                                                                Adulthood                           Integration
+
+
+
+                                             Chronic Isolation                 Short-Term Social Isolation          Chronic Social Isolation
+                                               Consequences:                         Consequences:                        Consequences:
+                                      Persistent behavioral alterations        Limited behavioral changes         Short-term memory impairment
+                                     (Anxiety, Voluntary ethanol intake,          (Reduced sociability).               Mild anxiety markers
+                                         Impaired fear extinction).             Transcriptomic changes in          Reduced plasticity ( ΔFosB,
+                                                                             monoaminergic signaling (mPFC).       BDNF in CA3/dentate gyrus).
+                                                     Anxiety
+                                                    behaviors
+                                                                                       PFC                                               ΔFosB
+                                                                                                                                         BDNF
+
+
+                                                                                             mPFC                              CA3/DG
+
+
+
+                                   Figure 1. Age-dependent effects of social isolation on adult neurogenesis and behavior. Conceptual
+                                   overview of age- and duration-dependent effects of social isolation on behavior and hippocampal
+                                   plasticity. DG, dentate gyrus; CA3, cornu ammonis 3; mPFC, medial prefrontal cortex; BDNF,
+                                   brain-derived neurotrophic factor.
+
+                                         In addition to its effects on hippocampal plasticity, peripubertal social isolation has
+                                   been associated with long-term alterations in reproductive neuroendocrine regulation and
+                                   sexually motivated behavior. Experimental models in male rats isolated between postnatal
+                                   days 25–50 show reduced adult sexual motivation, reflected in increased mount and intro-
+                                   mission latencies, together with decreased serum testosterone levels [26,27]. Importantly,
+                                   these endocrine alterations are accompanied by functional changes in prefrontal–amygdalar
+                                   circuits: control males display a context-dependent association between testosterone levels
+                                   and theta-band activity in the medial prefrontal cortex and basolateral amygdala, whereas
+                                   this coupling is absent following peripubertal isolation [27]. These findings suggest that
+                                   adolescent social deprivation may induce durable reorganization of neuroendocrine–limbic
+                                   interactions, extending beyond hippocampal neurogenesis to circuits involved in motiva-
+                                   tion and reward processing.
+                                         Ibi et al. [22] conducted an experiment in which 3-week-old male mice were isolated
+                                   for 4 weeks. When BrdU (bromodeoxyuridine) was administered at the end of the fourth
+                                   week, no significant differences in cell proliferation were found between isolated and con-
+                                   trol groups. However, when BrdU was administered at the beginning of the fourth week,
+                                   isolated mice showed significantly lower concentrations of BrdU-labeled cells in the dentate
+                                   gyrus, indicating that isolation impaired cell differentiation and survival but not prolifer-
+                                   ation. Isolation is associated with different effects depending on natural fluctuations in
+                                   gonadal hormones, sex, and specific features of the isolation paradigm, including onset and
+                                   duration [28,29]. McCormick et al. [30] reported decreased cell proliferation and survival
+
+
+
+                                                                                                                  https://doi.org/10.3390/ijms27052471
+Int. J. Mol. Sci. 2026, 27, 2471                                                                                              5 of 28
+
+
+
+                                   in the dentate gyrus during breeding [31] and adolescence [32]. These reductions, however,
+                                   could be reversed by re-exposure to social housing during these developmental windows,
+                                   consistent with heightened neuroplasticity during early life. In contrast, male mice isolated
+                                   after weaning exhibited no changes in dentate gyrus cell proliferation [22], highlighting
+                                   that the neurogenic impact of early isolation depends on precise developmental timing.
+                                         Additional evidence shows that isolation has been reported to decrease doublecortin
+                                   expression—a marker of neuronal immaturity and ongoing neurogenesis [33,34]—indicating
+                                   reduced numbers of newly generated neurons.
+                                         In adult female prairie voles, six weeks of isolation similarly reduced cell proliferation
+                                   and survival; notably, this reduction extended beyond the dentate gyrus to include the
+                                   amygdala, medial preoptic area, and ventromedial hypothalamus [35].
+                                         In contrast, several studies indicate that social or group housing can buffer the impact
+                                   of chronic stress on hippocampal neurogenesis. Social housing reduces or prevents stress-
+                                   induced decreases in BrdU-labeled cells in the dentate gyrus [36], and social enrichment
+                                   following a period of isolation restores hippocampal BDNF and NGF expression as well
+                                   as neurogenesis in the dentate gyrus [37]. Additionally, chronic social isolation reduces
+                                   hippocampal BDNF levels relative to pair-housed rats [38], supporting the notion that
+                                   group living may exert a neuroprotective effect through neurotrophic mechanisms.
+                                         Galea et al. [29] exposed male and female adult rats to an electric-shock stress paradigm
+                                   under two housing conditions: isolated or group-housed. A reduction in BrdU-labeled
+                                   cells was observed in isolated animals, whereas group-housed rats showed increased cell
+                                   proliferation; importantly, sex differences emerged, indicating modulation by gonadal
+                                   hormones. These changes were not evident in the subventricular zone, even though
+                                   exposure to a social olfactory stimulus can mitigate stress effects in the dentate gyrus [19].
+                                   Social interaction also increases the expression of neurotrophic factors such as brain-derived
+                                   neurotrophic factor (BDNF), its TrkB receptor [39], and nerve growth factor (NGF) [40], all
+                                   of which play essential roles in neurogenesis.
+                                         Importantly, hippocampal responses to isolation are anatomically dissociable. The dor-
+                                   sal dentate gyrus (dDG) is primarily involved in spatial and contextual memory, whereas
+                                   the ventral dentate gyrus (vDG) regulates stress, social behavior, and emotional processing.
+                                   Adult neurogenesis in the vDG has been shown to confer resilience to chronic stress by
+                                   inhibiting stress-responsive granule cells, whereas suppression of neurogenesis in this re-
+                                   gion increases stress susceptibility [41]. Emerging data further indicate that social isolation
+                                   produces selective reductions in cell proliferation in the vDG (but not the dDG), at least in
+                                   female rodents, following adolescent isolation; these changes persist into adulthood and
+                                   are not reversed by a resocialization period [42]. These findings suggest that many of the
+                                   behavioral and affective consequences of isolation likely involve vDG-mediated circuits
+                                   rather than dorsal hippocampal pathways.
+                                         These findings indicate that the effects of social isolation on hippocampal neurogenesis
+                                   are not uniformly distributed along the dentate gyrus. Instead, isolation appears to prefer-
+                                   entially affect the ventral dentate gyrus—a subregion critically involved in stress regulation,
+                                   emotional processing, and social behavior—while sparing the dorsal dentate gyrus, which
+                                   primarily supports spatial and contextual memory. This functional–anatomical dissociation
+                                   provides a potential mechanistic link between reduced neurogenesis and the affective and
+                                   behavioral consequences of isolation (Figure 2).
+
+
+
+
+                                                                                                 https://doi.org/10.3390/ijms27052471
+Int. J. Mol. Sci. 2026, 27, 2471                                                                                                                                                   6 of 28
+
+
+
+
+                                                Dorsal Dentate Gyrus (dDG)                                                 Primary Function:
+                                                                                                                      Spatial & Contextual Memory.
+
+
+
+
+                                                                     Ventral Dentate Gyrus (vDG)   Primary Function: Stress Regulation, Social Behavior, & Emotional Processing.
+
+
+
+
+                                                                            Neurogenesis                                                   Social Isolation Effect
+                                                                                                                      Social           Social isolation causes selective
+                                                                               in vDG                                                  reductions of cell proliferation in
+                                                                                                                      Effect                    (but not dDG).
+
+
+
+
+                                                             Confers resilience to                       Directly links isolation to affective
+                                                               chronic stress.                             & behavioral consequences.
+
+
+
+
+                                   Figure 2. Functional and anatomical dissociation of dorsal and ventral dentate gyrus in social
+                                   isolation. Conceptual schematic highlighting differential involvement of dorsal and ventral dentate
+                                   gyrus in cognitive versus affective responses to social isolation. dDG, dorsal dentate gyrus; vDG,
+                                   ventral dentate gyrus.
+
+                                        Moreover, longer or repeated periods of isolation appear more likely to yield persistent
+                                   structural or neurogenic alterations, consistent with reports showing that even intermediate
+                                   isolation protocols (e.g., ~14 days) can produce measurable reductions in hippocampal
+                                   neurogenesis and associated behavioral changes in adult rodents [43].
+                                        Table 1 provides an overview of empirical findings describing the behavioral and
+                                   neurobiological consequences of social isolation across early life, adolescence, and adult-
+                                   hood in both animal models and human populations. Early-life isolation is associated
+                                   with long-term anxiety-like phenotypes and broad neuroendocrine and neurochemical
+                                   disruptions [44]. Adolescence represents a particularly sensitive window, with chronic
+                                   isolation yielding persistent alterations in reward-related behavior, anxiety-like responses,
+                                   ethanol consumption, and fear extinction [45,46]. In early adulthood, longitudinal anal-
+                                   yses indicate that loneliness or social isolation significantly predict depressive episodes
+                                   and deteriorated mental health [47]. Isolation initiated in adulthood induces limited but
+                                   measurable behavioral effects alongside transcriptomic changes in monoaminergic path-
+                                   ways [48], whereas long-term isolation leads to neuroendocrine and behavioral alterations
+                                   in rodent models [49]. Human data from short-term quarantine further support these
+                                   associations, showing elevated anxiety and depressive symptoms influenced by behavioral
+                                   and sociodemographic factors [50].
+
+
+
+
+                                                                                                                         https://doi.org/10.3390/ijms27052471
+Int. J. Mol. Sci. 2026, 27, 2471                                                                                                                                                                                        7 of 28
+
+
+
+                                      Table 1. Behavioral and Neurobiological Effects of Social Isolation Across Developmental Stages.
+
+                                                                 Developmental                                                   Primary Endpoint
+ Species/Model                     Sex                                                           Isolation Protocol                                              Main Findings                           Reference
+                                                                 Window                                                          Assessed
+                                                                                                                                 Behavioral (anxiety-like        Increased anxiety-like behavior;
+                                                                 Post-weaning →
+ Rat (Sprague–Dawley)              Male                                                          Early-life social isolation     tests); neuroendocrine &        altered oxytocin, melatonin,            [44]
+                                                                 adulthood
+                                                                                                                                 monoaminergic markers           ghrelin, and monoamine levels
+                                                                                                                                                                 Altered stress-coping and
+                                                                                                                                 Behavioral (forced swim;
+ Rat (Sprague–Dawley)              Female                        Adolescence (P30–50)            Chronic isolation                                               reward-related behavior                 [46]
+                                                                                                                                 sucrose preference)
+                                                                                                                                                                 (sex-specific)
+                                                                                                                                 Behavioral (anxiety tests;      Increased anxiety-like behavior
+ Rat (Long–Evans)                  Male                          Adolescence                     Chronic isolation               ethanol intake; fear            and ethanol intake; impaired            [45]
+                                                                                                                                 extinction)                     fear extinction
+                                                                                                                                 Molecular (RNA-seq;             Differential expression of
+                                                                                                 Short-term social
+ Rat                               Male                          Adulthood (10 days)                                             monoaminergic                   monoaminergic-related genes in          [48]
+                                                                                                 isolation
+                                                                                                                                 signaling genes)                mPFC
+                                                                                                                                 Molecular (∆FosB;               Reduced ∆FosB in dentate
+                                                                                                 Long-term single
+ Mouse (C57BL/6)                   Male                          Adulthood (30 weeks)                                            BDNF); Behavioral               gyrus; reduced BDNF in CA3;             [49]
+                                                                                                 housing
+                                                                                                                                 (memory)                        memory impairment
+ Human (university                                               Young adulthood                                                 Epidemiological                 Increased risk of major
+                                   Male & Female                                                 Loneliness exposure                                                                                     [47]
+ students)                                                       (longitudinal)                                                  (diagnostic outcomes)           depressive episodes over time
+ Human (COVID-19                                                                                                                 Epidemiological                 Increased anxiety and
+                                   Male & Female                 Adulthood                       Mandatory confinement                                                                                   [50]
+ cohort)                                                                                                                         (symptom scales)                depressive symptom severity
+                                      None of the studies summarized in this table directly assessed adult neurogenesis; findings represent behavioral, molecular, or epidemiological evidence associated with social isolation.
+                                      Abbreviations: mPFC, medial prefrontal cortex; ∆FosB, truncated FosB transcription factor; BDNF, brain-derived neurotrophic factor; CA3, cornu ammonis 3 (hippocampal subfield).
+
+
+
+
+                                                                                                                                                                                       https://doi.org/10.3390/ijms27052471
+Int. J. Mol. Sci. 2026, 27, 2471                                                                                            8 of 28
+
+
+
+                                   4. Social Hierarchy
+                                         Systematic evidence in rodents suggests that social status-related paradigms can
+                                   modulate adult hippocampal neurogenesis, but effects depend strongly on how “hierarchy”
+                                   is operationalized. The review notes that tube-test outcomes are not consistently associated
+                                   with neurogenesis changes unless social dominance is explicitly established, whereas
+                                   paradigms involving dominance interactions and/or aggressive encounters, as well as
+                                   repeated social defeat, more reliably map onto changes in dentate gyrus neurogenesis
+                                   markers [11]. The authors emphasize variability across paradigms and outcomes, and
+                                   reiterate the importance of anchoring interpretations in direct neurogenesis measures
+                                   (proliferation, immature neuron markers, survival) rather than inferring neurogenic effects
+                                   from social behavior alone [11].
+                                         Dominance or hierarchy stress refers to chronic subordination or repeated social defeat
+                                   within established social hierarchies, which differs mechanistically from simple isolation or
+                                   deprivation paradigms.
+                                         It is well documented that social groups exhibit a distribution of roles that emerges
+                                   from competition for limited resources. Dominance and submission have been studied
+                                   using several paradigms, including the visible burrow system [51]. Dominance not only
+                                   confers priority access to food, mates, and territory but is also associated with measurable
+                                   neural differences. Kozorovitskiy and Gould [52] reported increased production of new
+                                   neurons in the dentate gyrus of dominant male rats compared to subordinates; however,
+                                   there is no evidence of neurogenesis suppression in subordinate individuals [53–55]. This
+                                   suggests that hierarchy-related variation in neurogenesis depends on circulating hormone
+                                   concentrations. For example, dominant rats exhibit high levels of testosterone and luteiniz-
+                                   ing hormone [56], whereas subordinate rats show elevated corticosteroid levels [51,56].
+                                         Behaviorally, subordinate rats display reduced aggression and decreased locomo-
+                                   tor, sexual, and social activity [57], which may limit their engagement in behaviors that
+                                   themselves promote neurogenesis, such as sexual interaction. Notably, increased adult neu-
+                                   rogenesis has also been observed in dominant baboons compared with subordinates, even
+                                   when both have access to sexual interaction [58], indicating a specific effect of hierarchical
+                                   status independent of mating opportunities.
+                                         Finally, disrupting an established social status produces divergent effects. Subor-
+                                   dinate naked mole-rats, when removed from their colony and isolated, show increased
+                                   proliferation in the ventral dentate gyrus—likely reflecting the release of social and re-
+                                   productive suppression [59]. In contrast, disruption of dominant status in other social
+                                   species is associated with stress-related reductions in hippocampal plasticity, including
+                                   decreased neurogenesis and altered expression of neuromodulatory systems involved in
+                                   social behavior. Although specific effects vary across taxa, loss of dominance has been
+                                   proposed to engage glucocorticoid-dependent mechanisms that may suppress neuronal
+                                   survival and remodel limbic circuits supporting social and emotional regulation.
+                                         Repeated social defeat in rodents results in robust and persistent social avoidance and,
+                                   in susceptible mice, reduced sucrose preference indicative of anhedonia. Chronic defeat
+                                   also induces anxiety-like behaviors. Molecular profiling reveals marked transcriptional
+                                   adaptations in mesolimbic reward regions (NAc, VTA) and the medial prefrontal cortex
+                                   (mPFC) that sharply differentiate susceptible from resilient animals. These circuit-level and
+                                   molecular changes have been consistently observed across studies using the standardized
+                                   social defeat paradigm [60,61]. Pharmacological studies further show that glutamatergic
+                                   NMDA signaling in the basolateral amygdala is required for both the acquisition and ex-
+                                   pression of conditioned defeat, whereas GABAA -mediated inactivation of the ventromedial
+                                   prefrontal cortex abolishes dominance-related resistance to defeat [62,63].
+
+
+
+
+                                                                                               https://doi.org/10.3390/ijms27052471
+Int. J. Mol. Sci. 2026, 27, 2471                                                                                              9 of 28
+
+
+
+                                         In contrast, adolescent social instability stress—brief daily isolation paired with fre-
+                                   quent changes of cage partners—produces more subtle yet enduring alterations in social
+                                   behavior, accompanied by subregion-specific dendritic and synaptic remodeling within
+                                   the medial amygdala and lateral septum [64]. This paradigm also induces pronounced
+                                   sex-dependent changes in the neuroendocrine–immune–gut axis, with females showing the
+                                   strongest alterations in inflammatory signaling, microbial composition, and stress respon-
+                                   sivity [65]. Finally, single-unit recordings indicate that anxiety-related firing patterns in the
+                                   mPFC are tightly coupled to ventral hippocampal input during exploration of anxiogenic
+                                   environments, highlighting a broader vHPC–mPFC–amygdala circuit through which both
+                                   defeat and social instability stress may bias emotional processing and social behavior [66].
+                                         In parallel to behavioral and neurogenic differences, social hierarchy is also shaped by
+                                   hormonal and molecular mechanisms that modulate plasticity within stress- and reward-
+                                   related circuits. Dominant males exhibit elevated testosterone and luteinizing hormone,
+                                   whereas subordinate individuals show sustained increases in corticosterone [51,56]—a pro-
+                                   file consistent with divergent engagement of androgen-responsive pathways that promote
+                                   neuronal survival in the dentate gyrus [67,68] versus glucocorticoid-dependent suppression
+                                   of plasticity under chronic subordination [69]. At the molecular level, hierarchy-related
+                                   differences in neurotrophic and transcriptional signaling have been described across social
+                                   stress paradigms. Chronic social defeat produces robust remodeling of mesolimbic cir-
+                                   cuits, including differential activation of BDNF- and CREB-related pathways in susceptible
+                                   versus resilient animals [39,60,61]. These adaptations intersect with glucocorticoid-receptor-
+                                   dependent mechanisms known to regulate stress responsivity and long-term behavioral
+                                   outcomes [69]. Together, these endocrine and molecular mechanisms provide a coher-
+                                   ent framework linking hierarchical status to stress vulnerability, circuit plasticity, and
+                                   individual differences in resilience.
+
+                                   5. Social Buffering
+                                         In this section, “social buffering” refers specifically to the attenuation of physiological
+                                   or behavioral stress responses in the presence of a conspecific during or immediately
+                                   following a stressor. This construct is distinguished from general social support or co-
+                                   housing conditions not explicitly paired with stress exposure.
+                                         A recent multisystem meta-analysis in rats quantitatively benchmarks the magnitude
+                                   and consistency of social buffering effects across behavioral and physiological stress read-
+                                   outs, and proposes a translational framework for stress resilience grounded in convergent
+                                   endpoints rather than single-marker inference [70]. Importantly, this synthesis highlights
+                                   that buffering effects are not uniform across all outcomes or paradigms, and that heterogene-
+                                   ity in stressor type, timing, and social context can moderate effect direction and magnitude.
+                                   We therefore treat social buffering as a graded, context-dependent phenomenon and inter-
+                                   pret putative neurogenic links as plausible but not universally demonstrated unless cellular
+                                   endpoints are concurrently measured.
+                                         Across development and species, supportive social partners have been shown to
+                                   dampen HPA-axis activity and reduce cortisol/corticosterone output [71,72]. In rodents, the
+                                   presence of an adult conspecific during threat exposure markedly suppresses freezing and
+                                   attenuates corticosterone responses, demonstrating that social cues buffer both behavioral
+                                   and endocrine components of the stress reaction [73,74]. Human studies similarly show
+                                   that attachment figures reduce cortisol reactivity to social-evaluative stress, indicating an
+                                   evolutionarily conserved mechanism for regulating HPA-axis responsivity [71].
+                                         At the mechanistic level, social buffering operates by dampening stress-hormone sig-
+                                   naling and preserving plasticity within stress-sensitive hippocampal circuits. In the absence
+                                   of affiliative social contact, chronic stress leads to sustained activation of the HPA axis,
+
+
+
+                                                                                                 https://doi.org/10.3390/ijms27052471
+Int. J. Mol. Sci. 2026, 27, 2471                                                                                                            10 of 28
+
+
+
+                                   elevated glucocorticoids, and suppression of cell proliferation and survival in the dentate
+                                   gyrus. By contrast, the presence of an affiliative conspecific has been shown to attenuate
+                                   corticosterone responses, maintains neurotrophic support, and has been associated with
+                                   attenuation of stress-related suppression of hippocampal neurogenesis in paradigms that
+                                   directly quantify cellular endpoints (Figure 3).
+
+
+                                     Harmful Pathway (Stress + Isolation)
+
+
+
+                                                                                                         Suppressed /
+                                                                     Increased                           Decreased Cell
+                                                                     Corticosterone/                     Cell Proliferation
+                                                                     Glucocorticoids       Suppression   & Survival in DG
+                                                                     HPA-axis                            Dentate Gyrus (DG)
+                                      Chronic Stress
+
+
+
+
+                                                                              Social Buffering
+
+
+                                     Protective Pathway (Stress + Stress +
+                                     Social Buffering)                    Protection
+
+                                                                                                              Prevented Decrease
+                                                                                                              in Neurogenesis
+                                                       Affiliative          Attenuated
+                                                       Conspecific
+                                                       Presence
+                                                                     +      Corticosterone
+                                                                            HPA-axis       Protection    Maintained / Restored
+                                      Chronic Stress                                                     Neurotrophic Factors
+                                                                                                         (BDNF, NGF)
+                                                                                                         in DG
+
+
+
+
+                                                                         Social Buffering Mechanism
+
+                                   Figure 3. Social buffering as a conceptual framework for attenuating stress-related suppression of
+                                   neurogenesis. Conceptual overview illustrating how affiliative social interactions attenuate stress-
+                                   hormone signaling and may help preserve hippocampal neurogenesis when directly quantified. DG,
+                                   dentate gyrus; HPA, hypothalamic–pituitary–adrenal axis.
+
+                                         At the neural and plasticity level, social buffering mitigates the deleterious effects
+                                   of chronic stress on mesolimbic and hippocampal circuits. Rewarding social interaction
+                                   reverses stress-induced behavioral and molecular alterations in limbic regions [17], whereas
+                                   socially impoverished or unstable environments reduce hippocampal neurogenesis and
+                                   dysregulate stress-hormone profiles—often in sex-specific ways [30,31,36]. These findings
+                                   converge with evidence that increased neurogenesis in the ventral dentate gyrus promotes
+                                   resilience by inhibiting stress-responsive granule cells and limiting pathological engage-
+                                   ment of stress circuits [41]. Together, these results position social buffering as a multilevel
+                                   protective framework—hormonal and neurocircuit-level, with conditional support for
+                                   neurogenic involvement—that stabilizes HPA-axis output, maintains ventral hippocampal
+                                   plasticity, and may reduce vulnerability to stress-related psychopathology, particularly in
+                                   paradigms where cellular neurogenesis endpoints are directly assessed.
+
+                                   6. Social Learning & Social Memory
+                                         Social learning depends on the ability to acquire information from conspecifics, a
+                                   process grounded in social recognition memory—the capacity to discriminate familiar
+                                   from unfamiliar individuals and to encode socially relevant cues. This form of memory
+                                   is strongly regulated by the neuropeptides oxytocin (OXT) and vasopressin (AVP), which
+                                   modulate olfactory–limbic circuits supporting identity recognition [75,76]. Extensive re-
+
+
+                                                                                                                https://doi.org/10.3390/ijms27052471
+Int. J. Mol. Sci. 2026, 27, 2471                                                                                           11 of 28
+
+
+
+                                   views show that disrupting OXT/AVP signaling—whether pharmacologically, genetically,
+                                   or circuit-specifically—reliably impairs social recognition across rodent models, under-
+                                   scoring the central role of these neuropeptide systems in encoding and retrieving social
+                                   identities [75–77].
+                                         Within the hippocampal formation, the CA2 subregion and ventral CA1 constitute key
+                                   nodes of a circuit specialized for social memory. Converging evidence shows that disrupting
+                                   CA2 function—or its direct input from the lateral entorhinal cortex—selectively impairs the
+                                   ability of rodents to discriminate familiar from novel conspecifics, while leaving non-social
+                                   memory domains intact [78,79]. In particular, optogenetic silencing of LEC→CA2 projec-
+                                   tions abolishes social recognition memory without affecting object recognition, indicating
+                                   that CA2-dependent computations are specifically tuned to socially relevant cues [79]. As
+                                   reviewed by Wang & Zhan [78], social memory representations in CA2 and vCA1 interface
+                                   with broader limbic and motivational circuits—including septal, prefrontal, and nucleus ac-
+                                   cumbens pathways—that encode social salience, identity, and motivational value, situating
+                                   CA2 as a central hub within the social information-processing network.
+                                         Adult hippocampal neurogenesis provides an additional layer of plasticity for so-
+                                   cial information processing. Experimental suppression of adult-born granule cells im-
+                                   pairs social recognition memory in rodents, indicating that new neurons contribute to the
+                                   stability, maintenance, and updating of social representations [80]. Conversely, environ-
+                                   mental enrichment—which enhances adult neurogenesis—restores social memory deficits
+                                   induced by previous isolation, and this improvement is abolished when cell proliferation is
+                                   pharmacologically blocked, supporting a causal role for neurogenesis in social memory
+                                   persistence [81]. Complementary systematic reviews highlight that social behaviors both
+                                   influence and depend on neurogenesis within hippocampal and olfactory circuits, inte-
+                                   grating adult-born neurons into a broader network supporting social learning [11]. These
+                                   mechanisms also shape how rodents adapt to socially structured environments, including
+                                   the formation of stable dominance hierarchies. Dominant males exhibit greater survival
+                                   of adult-born neurons in the dentate gyrus compared with subordinate males, indicating
+                                   that hierarchical status modulates hippocampal plasticity. Although this study did not
+                                   directly examine social memory or identity encoding, adult-born granule cells are broadly
+                                   implicated in contextual and affective processing, suggesting that neurogenesis may influ-
+                                   ence how animals navigate complex social situations. However, the specific encoding of
+                                   individual identity, rank, or social network structure requires evidence from other research
+                                   domains and is beyond the scope of Kozorovitskiy & Gould [52].
+
+                                   7. Sex Differences and Sexual Dimorphism
+                                         A comprehensive review of sex differences in hippocampal cognition and adult neu-
+                                   rogenesis highlights that net neurogenesis reflects coordinated changes in proliferation,
+                                   differentiation, and survival, and that sex differences can emerge at specific stages and
+                                   under specific challenges [82]. Under basal conditions, several studies report sex differences
+                                   in dentate gyrus cell proliferation (often modulated by estrous phase or season), whereas
+                                   most studies do not find robust sex differences in survival of new neurons across rodents,
+                                   with exceptions in some datasets [82]. Importantly, the review emphasizes that neurogene-
+                                   sis responses to stress and hippocampus-dependent learning can be sex-dependent and
+                                   may interact with learning strategy and hormonal milieu, underscoring sex as a biological
+                                   variable that can shape both neurogenic dynamics and behavioral readouts [82].
+                                         Sex differences and sexual dimorphism shape how mammals integrate social experi-
+                                   ence, stress, and reproductive demands into neural plasticity and behavior. In this context,
+                                   sex differences refer to quantitative variations in traits shared by both sexes—such as the
+                                   magnitude of hormonal responses, levels of neurogenesis, or behavioral intensity—whereas
+
+
+
+                                                                                               https://doi.org/10.3390/ijms27052471
+Int. J. Mol. Sci. 2026, 27, 2471                                                                                           12 of 28
+
+
+
+                                   sexual dimorphism denotes qualitative distinctions in phenotype, physiology, or behavior
+                                   that arise from sex-specific developmental pathways, leading males and females to express
+                                   partially non-overlapping strategies or neural specializations.
+                                         Males and females exhibit distinct neuroendocrine and behavioral responses to social
+                                   stress. Males often show stress-induced reductions in hippocampal neurogenesis and
+                                   alterations in defensive behavior, whereas females display sex-specific changes in anxiety,
+                                   social motivation, and stress responsivity [36,54,83,84]. These dimorphisms extend to
+                                   parental care, mating, and aggression, where the hormonal milieu modulates hippocampal
+                                   plasticity and social circuits. In males, androgens enhance adult-born neuron survival and
+                                   influence sexually motivated behavior and aggression [67,85,86]. In females, neurogenesis is
+                                   dynamically regulated across pregnancy, lactation, and the postpartum period by estrogens,
+                                   progesterone, adrenal steroids, and prolactin [87–89].
+                                         Emerging evidence also indicates that males and females rely on partially distinct
+                                   neural pathways for processing social information, social memory, and social buffering,
+                                   reflecting dimorphic organization of corticolimbic and hypothalamic systems [12,28,90].
+                                         Collectively, these findings support the growing field of sex-informed neuroscience,
+                                   which conceptualizes sex as a biological variable that systematically modulates neurogene-
+                                   sis, hormone–brain interactions, stress vulnerability, parental and reproductive strategies,
+                                   and the adaptive use of social environments across the lifespan.
+                                         Importantly, the evidence base synthesized in this review is not evenly distributed
+                                   across sexes or paradigms. Direct cellular neurogenesis endpoints under social stress
+                                   have been evaluated in both sexes in some designs (e.g., chronic stress combined with
+                                   individual vs. social housing), but several stress paradigms remain male-weighted in
+                                   the literature, whereas reproductive transitions provide necessarily female-specific evi-
+                                   dence. In this domain, pregnancy has been linked to increased progenitor production in
+                                   the forebrain SVZ with downstream addition of olfactory interneurons [87], while post-
+                                   partum and parity-related effects on adult neurogenesis have been directly quantified in
+                                   the dentate gyrus, including suppressed proliferation and/or survival in early postpartum
+                                   depending on reproductive experience [89]. Conversely, androgen-linked modulation
+                                   of adult-born neuron survival has been characterized primarily in male-focused stud-
+                                   ies and is expressed mainly at the level of cell survival (not proliferation) via androgen
+                                   receptor-dependent mechanisms [67]. Studies that explicitly test sex in stress responsiv-
+                                   ity and hippocampal outcomes further support sex-dependent mechanisms, while also
+                                   underscoring the need for balanced factorial designs that quantify matched neurogenesis
+                                   components (proliferation, survival, maturation/integration) in both sexes under com-
+                                   parable social manipulations [28,36,54,90]. Together, these patterns suggest that current
+                                   conclusions reflect both biological sex-dependent regulation and methodological asym-
+                                   metries in sampling and endpoint selection, motivating more systematically sex-balanced
+                                   approaches in future work.
+
+                                   8. Parenting
+                                        Early-life adversity has been synthesized in a three-level meta-analysis of rodent
+                                   studies demonstrating that developmental adversity produces robust but heterogeneous
+                                   behavioral phenotypes, with effect sizes moderated by methodological and biological
+                                   factors (e.g., type and timing of adversity, sex, and testing domain) [91]. This meta-analytic
+                                   structure underscores that “early-life adversity” is not a single manipulation and that out-
+                                   come direction and magnitude vary systematically with moderators rather than reflecting
+                                   a unitary effect. Accordingly, when we discuss maternal care/adversity in relation to adult
+                                   neurogenesis, we explicitly separate (i) meta-analytic behavioral evidence, (ii) mechanistic
+
+
+
+
+                                                                                               https://doi.org/10.3390/ijms27052471
+Int. J. Mol. Sci. 2026, 27, 2471                                                                                           13 of 28
+
+
+
+                                   pathway plausibility, and (iii) direct cellular neurogenesis findings, avoiding causal smooth-
+                                   ing when these tiers are not measured within the same studies.
+                                         Like other social behaviors, parenting is strongly modulated by hormonal changes [84],
+                                   particularly during pregnancy and throughout contact with the infant, including breast-
+                                   feeding [12]. However, its effects on neurogenesis vary depending on the specific stage of
+                                   caregiving. During lactation [92] and the postpartum period [93], elevated corticosterone
+                                   levels have been reported, suppressing the generation of new neurons and suggesting that
+                                   the stressful component of parenting can negatively impact hippocampal plasticity.
+                                         Conversely, other findings point to positive neuroplastic effects associated with mater-
+                                   nity. Leuner and Gould [88] reported increased dendritic spine density in the hippocampus
+                                   and medial prefrontal cortex, and a buffering effect of motherhood on stress-induced
+                                   learning deficits has also been described [94]. In addition, some rodent studies report
+                                   parenting-associated increases in proliferation and/or survival of adult-born neurons [89].
+                                         Taken together, these results suggest that parenting exerts bidirectional effects on
+                                   neurogenesis: positive, reward-related influences hypothesized to relate to hedonic and
+                                   affiliative components of caregiving, and negative influences associated with the physio-
+                                   logical stress inherent to parental demands.
+                                         Beyond the general effects of parenting on hippocampal plasticity, important dis-
+                                   tinctions emerge between maternal and paternal care. In mothers, pregnancy, lactation,
+                                   and infant contact produce marked fluctuations in estrogens, progesterone, oxytocin, and
+                                   prolactin—a hormone that directly stimulates neural progenitor proliferation in the sub-
+                                   ventricular zone and facilitates maternal behavioral responsiveness [87,95].
+                                         In fathers, parenting induces different forms of neural plasticity: paternal experience
+                                   suppresses adult hippocampal neurogenesis in Peromyscus californicus, whereas father-
+                                   hood increases dendritic spine density in dentate gyrus granule cells and CA1 pyramidal
+                                   neurons and reduces anxiety-like behavior—changes that reflect circuit-level adaptations
+                                   supporting paternal care [96–98].
+                                         Human EEG and neuroimaging studies similarly show that the postpartum period
+                                   involves experience-dependent changes in prefrontal–parietal synchronization and reward-
+                                   related activity when mothers process infant cues, revealing cortical plasticity that enhances
+                                   sensitivity to infant signals [99,100].
+                                         Taken together, parenting integrates both a stress component—reflected in corticosterone-
+                                   associated suppression of neurogenesis—and a rewarding component mediated by
+                                   prolactin-, oxytocin-, and dopamine-related mechanisms that promote attachment and
+                                   motivation [12,94,101]. The interplay between these stress-related and hedonic pathways
+                                   determines the direction and magnitude of plastic changes across hippocampal and pre-
+                                   frontal systems during the parental period.
+                                         To provide a structured synthesis of parental-stage-dependent plasticity, Table 2 reor-
+                                   ganizes the evidence according to species, sex, reproductive stage, and specific caregiving
+                                   context, explicitly differentiating direct adult neurogenesis measurements from indirect
+                                   structural or functional adaptations. Where available, neurogenesis endpoints are specified
+                                   by component (e.g., proliferation or survival) and brain region (SVZ or dentate gyrus),
+                                   along with the reported direction of effect. Human neuroimaging and circuit-level studies
+                                   are presented separately as indirect evidence of structural or functional plasticity. This
+                                   organization clarifies which parental adaptations are supported by direct cellular markers
+                                   and which reflect broader neuroendocrine or network-level remodeling, thereby reducing
+                                   interpretive overextension while preserving the developmental logic of caregiving-related
+                                   brain plasticity.
+
+
+
+
+                                                                                               https://doi.org/10.3390/ijms27052471
+Int. J. Mol. Sci. 2026, 27, 2471                                                                                                                                                                                         14 of 28
+
+
+
+                                   Table 2. Endocrine and neurobiological changes across stages of parental behavior.
+
+                                                               Social
+                                       Reproductive                                 Neurogenesis
+ Species/Strain         Sex                                    Manipulation                                Component               Brain Region       Direction         Evidence Type       Evidence Strength    Reference
+                                       Stage/Manipulation                           Readout
+                                                               Characteristics
+                                                               Natural pregnancy;                                                                                                           Limited (single
+ Mouse (CD1)            Female         Pregnancy (GD7)                              BrdU, Ki67             Proliferation           SVZ                ↑                 Direct                                   [87]
+                                                               BrdU labeling                                                                                                                primary study)
+                                                               Natural lactation                           Proliferation ↓                            ↓ (baseline);                         Limited–mixed
+                                                                                    BrdU; cell survival;
+ Rat (Wistar)           Female         Lactation (LD2–LD13)    ± repeated                                  (baseline lactation);   Dentate gyrus      normalization     Direct              (condition-          [93]
+                                                                                    differentiation
+                                                               restraint stress                            stress reverses ↓                          with stress                           dependent)
+                                                                                    SVZ &
+                                                               Endogenous           hippocampal
+ Rodent (review                                                                                            Proliferation &                            Context-          Direct +
+                        Female         Peripartum              prolactin            neurogenesis                                   SVZ; DG                                                  Mixed                [95]
+ synthesis)                                                                                                survival                                   dependent         mechanistic
+                                                               elevations           (reviewed
+                                                                                    evidence)
+ California mouse
+                                                               Cohabitation with                                                                                                            Limited
+ (Peromyscus            Male           Paternal experience                          BrdU                   Proliferation/survival Dentate gyrus       ↓                 Direct                                   [97]
+                                                               mate and offspring                                                                                                           (species-specific)
+ californicus)
+                                                                                    Dendritic spine
+                                                               Natural paternal                            Structural                                                   Indirect
+ California mouse       Male           Fatherhood                                   density (not                                   Hippocampus        ↑ spine density                       Limited              [98]
+                                                               experience                                  plasticity                                                   (structural)
+                                                                                    neurogenesis)
+                                                                                                                                                                        Indirect (no
+                                       Early postpartum (2–4                        VBM gray matter                                PFC, parietal,
+ Human                  Female                                 Longitudinal MRI                            Structural volume                          ↑ GM volume       neurogenesis        Limited              [101]
+                                       wks to 3–4 months)                           volume                                         midbrain
+                                                                                                                                                                        measure)
+                                                               Infant-cue
+                                                                                    Functional
+ Human                  Female         Postpartum              exposure during                             Network activity        PFC–parietal       Modulation        Indirect            Limited              [100]
+                                                                                    synchronization
+                                                               fMRI
+                                                               Hormonal             Neurobiological                                                   Context-                              Narrative
+ Human (review)         Female         Peripartum                                                          Conceptual              Multiple regions                     Indirect                                 [99]
+                                                               transition           adaptations                                                       dependent                             synthesis
+                                                               Hormonal shifts
+ Rodent (review                                                                     DG neurogenesis                                                                     Direct +
+                        Female         Parenting               (prolactin,                                 Proliferation/survival Dentate gyrus       Mixed                                 Mixed                [12]
+ synthesis)                                                                         (reviewed)                                                                          mechanistic
+                                                               oxytocin)
+                                   Evidence type: Direct = neurogenesis markers measured (BrdU, Ki67, survival, differentiation); Indirect = structural MRI, dendritic morphology, network activity without neurogenesis
+                                   markers. Evidence strength: Limited = single or few independent primary studies; Mixed = condition- or context-dependent findings; Narrative synthesis = review-level integration
+                                   without new primary data. Abbreviations: SVZ, subventricular zone; DG, dentate gyrus; PFC, prefrontal cortex; BrdU, bromodeoxyuridine; Ki67, proliferation marker; VBM, voxel-based
+                                   morphometry; GD, gestation day; LD, lactation day.
+
+
+
+
+                                                                                                                                                                                        https://doi.org/10.3390/ijms27052471
+Int. J. Mol. Sci. 2026, 27, 2471                                                                                             15 of 28
+
+
+
+                                   9. Sexual Interaction
+                                         An integrative review on the regulation of adult hippocampal neurogenesis by sexual,
+                                   cognitive, and physical activity summarizes evidence that sexual experience can increase
+                                   dentate gyrus neurogenesis, including after single or repeated exposure in middle-aged
+                                   rodents, and that longer-term repeated access may coincide with improvements in cognitive
+                                   performance while mating persists [102]. The authors highlight the motivational context
+                                   of sexual behavior as a reward state that may promote repeated engagement, and they
+                                   note that repeated sexual experience has been proposed to promote incorporation of
+                                   new neurons and to protect against stress-related suppression of neurogenesis in some
+                                   paradigms [102]. They also emphasize translational limits, noting that there are no human
+                                   data directly demonstrating that sexual behavior induces hippocampal neurogenesis [102].
+                                         Sexual interaction is a potent social reinforcer that engages motivational and reward
+                                   circuits while producing hormone-dependent effects on adult hippocampal plasticity. In
+                                   rodents and other mammals, copulation and sexually relevant cues recruit mesolimbic
+                                   dopamine pathways—particularly within the nucleus accumbens—in ways that parallel
+                                   other natural rewards. Dopaminergic signaling contributes to the incentive value of sexual
+                                   stimuli and to the formation of conditioned partner and place preferences, even though
+                                   dopamine is not required for the motor execution of copulation itself [103,104]. Through
+                                   these mechanisms, sexual interaction influences not only reproductive outcomes but also
+                                   the motivational and affective components of social behavior.
+                                         In females, estradiol has been shown to rapidly increase proliferation on neural progen-
+                                   itors in the dentate gyrus. Estradiol surges—whether naturally occurring during proestrus
+                                   or experimentally induced—transiently increase the number of dividing hippocampal
+                                   cells [105,106]. These effects fluctuate across the estrous cycle, with proestrus/high-estradiol
+                                   phases enhancing both sexual receptivity and hippocampal cell proliferation. Because estra-
+                                   diol also facilitates appetitive aspects of sexual behavior and modulates dopaminergic
+                                   responses to sexual stimuli, estrous-cycle variation likely coordinates reward-circuit recruit-
+                                   ment with periods of heightened neurogenic plasticity [103,107].
+                                         In males, testosterone has been shown to influence the survival and maturation
+                                   of adult-born granule neurons. Experimental studies suggest that testosterone and di-
+                                   hydrotestosterone increase the survival of newly generated neurons through androgen
+                                   receptor-dependent mechanisms [67,86]. Sexual activity elevates testosterone and engages
+                                   these pathways, potentially linking mating to long-term changes in hippocampal circuit
+                                   integration [85]. Thus, estradiol predominantly influences proliferative phases in females,
+                                   whereas testosterone modulates survival and functional incorporation of new neurons
+                                   in males.
+                                         The integrity of gonadal hormone signaling appears critical for the neuroplastic and
+                                   motivational effects of sexual interaction. Peripubertal social isolation has been shown to
+                                   reduce adult testosterone levels and weaken sexually motivated behavior without necessar-
+                                   ily impairing copulatory performance [26,27]. Moreover, the typical association between
+                                   testosterone fluctuations and limbic theta activity observed in socially housed males is
+                                   disrupted following adolescent isolation [27]. These findings indicate that early social
+                                   environment may shape later neuroendocrine responsiveness to sexual stimuli, potentially
+                                   influencing how reproductive behaviors interface with adult plasticity mechanisms.
+                                         Sexual experience has been associated with changes in stress reactivity and emotional
+                                   resilience. Although mating can acutely elevate glucocorticoids, repeated sexual interac-
+                                   tion has been reported to increase hippocampal neurogenesis in some rodent paradigms,
+                                   and to coincide with improvements in anxiety- and stress-related behaviors [88]. These
+                                   effects likely arise from interactions among mesolimbic dopamine, gonadal steroids, and
+                                   hippocampal plasticity mechanisms. Sexual reward recruits neuromodulatory systems
+
+
+
+                                                                                                 https://doi.org/10.3390/ijms27052471
+Int. J. Mol. Sci. 2026, 27, 2471                                                                                           16 of 28
+
+
+
+                                   that can buffer stress-related suppression of neurogenesis and promote adaptive emotional
+                                   regulation [12].
+                                        Collectively, sexual interaction influences adult neurogenesis through four coordinated
+                                   mechanisms:
+                                   1.   recruitment of mesolimbic dopamine circuits as a socially rewarding stimulus;
+                                   2.   estradiol-dependent increases in progenitor proliferation across the estrous cycle;
+                                   3.   testosterone-dependent enhancement of new-neuron survival; and
+                                   4.   experience-driven modulation of reward and stress pathways that jointly support
+                                        adaptive hippocampal plasticity.
+
+                                   10. Neurochemical Pathways of Socialization
+                                         A recent mechanistic synthesis proposes that adult hippocampal neurogenesis may
+                                   bias hippocampal computations toward enhanced contextual discrimination (pattern sep-
+                                   aration) and adaptive stress regulation, thereby shaping downstream behavioral and
+                                   neuroendocrine responses [108]. The authors argue that adult-born neurons are not neces-
+                                   sarily required for all baseline hippocampal functions, but may fine-tune specific processes
+                                   relevant to stress adaptation and memory precision, offering a useful framework for inter-
+                                   preting how stress- and social-interaction–engaged pathways could converge on neurogenic
+                                   regulation [108].
+                                         As noted above, diverse forms of social behavior influence adult neurogenesis through
+                                   multiple physiological, hormonal, and neurochemical pathways. These effects are particu-
+                                   larly evident in the two principal neurogenic niches of the adult brain—the subventricular
+                                   zone (SVZ), which supplies newborn neurons to the olfactory bulb, and the dentate gyrus
+                                   of the hippocampus [109,110]. Socially induced changes in neurogenesis are broadly reg-
+                                   ulated by neuroendocrine systems and by the synthesis, release, and receptor-mediated
+                                   actions of several neuromodulators and trophic factors.
+                                         Social interaction can be either reinforcing or aversive, and correspondingly may
+                                   promote or suppress neurogenesis. These bidirectional effects are largely orchestrated
+                                   by hormones of the hypothalamic–pituitary–adrenal (HPA) and hypothalamic–pituitary–
+                                   gonadal (HPG) axes [29]. Reinforcing social experiences—such as mating, bonding, or
+                                   parental contact— are associated with activation of gonadal-steroid systems that has been
+                                   proposed to facilitate neurogenic processes, whereas aversive experiences, including social
+                                   defeat or chronic isolation, activate glucocorticoid pathways that inhibit neurogenesis.
+                                         Gonadal hormones exert particularly strong and dynamic influences on neural progen-
+                                   itor proliferation and survival. Estradiol is closely associated with increased production of
+                                   new neurons [12]. Acute estradiol administration stimulates hippocampal cell proliferation
+                                   within 2–4 h, although this effect disappears by 48 h [111]. However, high-dose estra-
+                                   diol [105,112] or chronic administration at any dose does not enhance proliferation [107].
+                                   These suppressive outcomes observed at elevated estradiol levels appear to be mediated
+                                   by glucocorticoids [113]. Moreover, estradiol’s effects on neurogenesis and dendritic
+                                   spine density vary as a function of sex [114], age, and reproductive status [115]. For in-
+                                   stance, females in proestrus display higher rates of hippocampal cell proliferation than
+                                   males [106], although this pattern is not preserved across all species. The hippocampus
+                                   contains abundant receptors for gonadal steroids, oxytocin, luteinizing hormone (LH),
+                                   and prolactin—hormones strongly implicated in sexual behavior and parental care [29].
+                                   Prolactin receptors are present in both the SVZ and the hippocampus [116]. Exposure
+                                   to pheromones from a dominant male increases cell proliferation in the olfactory bulb
+                                   and hippocampus of female mice [95], while pregnancy induces pronounced proliferation
+                                   in the SVZ [87]. These effects appear to be mediated by prolactin in the olfactory bulb
+                                   and by LH in the hippocampus [117]. Additionally, prolactin may confer neuroprotective
+
+
+
+                                                                                               https://doi.org/10.3390/ijms27052471
+Int. J. Mol. Sci. 2026, 27, 2471                                                                                                                    17 of 28
+
+
+
+                                   effects during chronic stress. Notably, however, early postnatal administration of prolactin
+                                   (postnatal day 14) reduces neurogenesis, indicating that the hormone’s effects are strongly
+                                   age-dependent.
+                                        Adult neurogenesis is tightly regulated by endocrine signals that differentially influ-
+                                   ence distinct stages of the neurogenic process. Gonadal hormones, prolactin, and glucocor-
+                                   ticoids exert stage-specific and context-dependent effects on progenitor proliferation and
+                                   neuronal survival, with outcomes shaped by dose, duration of exposure, developmental
+                                   stage, and behavioral state. A comparative overview of these hormone-specific actions is
+                                   provided in Figure 4.
+
+                                                                                                        Key Modulation or Dependence
+                                        Hormone         Effect on Proliferation    Effect on Survival
+                                                                                                             (Dose/Time/Context)
+
+                                        Estrogen            Stimulates                                          High or chronic doses
+                                                            (transient effect,      Increases            High   can suppress it via
+                                      (17β-estradiol)       2-4 hours)
+                                                                                                         Dose
+                                                                                                                glucocorticoids
+
+
+                                                                                                                Effect varies by species
+                                      Testosterone /        No association with                                 and treatment duration
+                                                                                    Increases
+                                       Androgens            proliferation.                                      (treatments shorter than     <30
+                                                                                                                                             days
+                                                                                                                30 days can be inhibitory)
+
+                                                            Induces                 Functions as        Effect is age-dependent
+                                                            proliferation (e.g.,    neuroprotector
+                                        Prolactin           via pheromones
+                                                                                                        (early administration can
+                                                                                    against chronic     decrease neurons)
+                                                            or pregnancy)           stress
+
+                                                                                                        Related to increased anxiety.
+                                     Glucocorticoids                                                    However, interaction with
+                                                            Inhibition              Inhibition          sexual behavior (hedonic
+                                     (Corticosterone)                                                   component) can have a
+                                                                                                        promoting effect.
+
+
+                                   Figure 4. Hormonal modulation of adult neurogenesis. Schematic overview of hormone-specific
+                                   effects on neurogenic stages under different physiological contexts.
+
+                                         Beyond hormonal and classical neurochemical pathways, adverse social experiences
+                                   also have been shown to involve immune–glial mechanisms that modulate adult neu-
+                                   rogenesis. Long-term social isolation in middle-aged mice decreases ∆FosB expression
+                                   in the dentate gyrus and reduces BDNF levels in CA3, without increasing hippocampal
+                                   oxidative damage. These findings indicate a state of reduced neuronal activation and
+                                   diminished trophic support that likely contributes to impaired plasticity [49]. Shorter
+                                   isolation periods in adult rats induce transcriptional reorganization of monoaminergic and
+                                   peptidergic signaling in the medial prefrontal cortex—downregulating RGS9, HTR2C, and
+                                   Pdyn, among others—alongside measurable alterations in social behavior, demonstrating
+                                   that isolation stress rapidly reshapes prefrontal neuromodulatory dynamics [48]. Comple-
+                                   mentary evidence from chronic social defeat shows that repeated social stress suppresses
+                                   cell proliferation in the dentate gyrus and elicits robust microglial activation in hippocam-
+                                   pal and prefrontal regions, including hypertrophic, cytokine-expressing phenotypes [118].
+                                   Taken together, these findings suggest that microglial and inflammatory processes—acting
+                                   in concert with monoaminergic and neurotrophic changes—may represent a critical inter-
+                                   face through which adverse social environments remodel synaptic function and constrain
+                                   adult neurogenic plasticity.
+                                         Estrogens influence every stage of neurogenesis—including proliferation, differentia-
+                                   tion, migration, and maturation. Administration of selective agonists for the alpha (ERα)
+                                   and beta (ERβ) estrogen receptors regulates cell proliferation in adult female rats [119]. The
+                                   survival of newly generated neurons depends on the type of estrogen administered, the
+                                   timing of administration, and the behavioral context in which it occurs. For instance, ad-
+                                   ministration of 17β-estradiol (the most potent endogenous estrogen) increases the survival
+                                   of newborn neurons in rats performing a maze task, whereas administration of estrone
+                                   decreases neuronal survival [120].
+
+
+
+                                                                                                         https://doi.org/10.3390/ijms27052471
+Int. J. Mol. Sci. 2026, 27, 2471                                                                                           18 of 28
+
+
+
+                                         Androgens constitute another major class of gonadal hormones influencing adult
+                                   neurogenesis, and their levels increase following sexual interaction [85]. The dentate
+                                   gyrus as well as the CA1 and CA3 subfields of the hippocampus contain androgen recep-
+                                   tors [67], which mediate their specific neurogenic effects. Testosterone and its metabolite
+                                   dihydrotestosterone enhance the survival of newly generated neurons but do not increase
+                                   proliferation [12]. Conversely, castrated rats exhibit reduced neuronal survival [86], while
+                                   adolescent macaques that underwent gonadectomy show increased hippocampal neuronal
+                                   survival [121]. These findings indicate that, similar to estrogens, androgen effects vary
+                                   across species, age, sex, and treatment duration. For example, testosterone treatment lasting
+                                   fewer than 30 days has been associated with an inhibitory effect on neuronal survival [122].
+                                         Hormones of the hypothalamic–pituitary–adrenal (HPA) axis also regulate stress
+                                   effects on neurogenesis and interact bidirectionally with hormones of the hypothalamic–
+                                   pituitary–gonadal (HPG) axis. Spritzer et al. [68] reported that castrated adult male rats
+                                   show fewer dentate gyrus cells after one month of isolation compared with intact males.
+                                   Increased glucocorticoid levels are typically associated with reduced cell proliferation
+                                   and heightened anxiety [69,123], as well as elevated corticosterone and estradiol levels
+                                   during aging [113]. However, elevated glucocorticoids do not invariably produce negative
+                                   effects on neurogenesis; for example, the interaction between sexual activity and stress
+                                   can promote neurogenesis despite increased glucocorticoid release—a phenomenon likely
+                                   driven by the hedonic component of sexual interaction [12]. As with other modulators of
+                                   neurogenesis, these effects are not unidirectional: outcomes depend on complex interactions
+                                   among hormonal, environmental, and individual variables.
+                                         Together, these findings indicate that social experience does not act on adult neurogen-
+                                   esis through a single pathway, but rather through coordinated endocrine, neurochemical,
+                                   and environmental mechanisms that converge on distinct stages of the neurogenic pro-
+                                   cess. Socially reinforcing behaviors, such as mating, affiliation, and parental interaction,
+                                   preferentially engage gonadal hormones and neurotrophic signaling to promote neuronal
+                                   survival and integration, whereas aversive conditions—including chronic isolation and
+                                   social stress—activate glucocorticoid-dependent pathways that suppress proliferation and
+                                   impair maturation. Importantly, these effects are stage-specific and context-dependent,
+                                   highlighting adult neurogenesis as a dynamic interface between social experience and brain
+                                   plasticity (Figure 5).
+                                         To provide a structured synthesis of the hormonal and neurochemical systems dis-
+                                   cussed above, Table 3 reorganizes the evidence according to species, experimental context,
+                                   specific adult neurogenesis endpoints, and brain region. Where available, studies directly
+                                   measuring proliferation or survival (e.g., BrdU-based assays in the dentate gyrus or sub-
+                                   ventricular zone) are distinguished from indirect mechanistic or synaptic findings that do
+                                   not include cellular neurogenesis markers. This differentiation clarifies which endocrine
+                                   signals (e.g., estradiol, androgens, prolactin) have been shown to modulate defined com-
+                                   ponents of adult neurogenesis, and which systems (e.g., oxytocin, BDNF, monoaminergic
+                                   and stress-related pathways) are supported primarily by circuit-level, molecular, or review-
+                                   based evidence. By explicitly specifying endpoint type, anatomical region, and direction of
+                                   reported effects, the table aims to reduce overgeneralization while preserving the functional
+                                   relevance of these systems to social behavior.
+
+
+
+
+                                                                                               https://doi.org/10.3390/ijms27052471
+Int. J. Mol. Sci. 2026, 27, 2471                                                                                                                                                          19 of 28
+
+
+
+
+                                                                  Exogenous Factors
+                                                                   (Environmental)
+
+                                                            Estrogen              BDNF
+                                                            Testosterone          NGF
+                                                            Prolactin             Neurotrophic factors
+
+
+
+
+                                                                               Internal Systems:
+                                                                               Growth, Survival,
+                                                                               Integration
+                                                     Glucocorticoids
+
+
+
+
+                                                                                  1. Proliferation          2. Differetation    3. Survival     4. Integration
+
+
+
+
+                                                                                                         Exogenous Factors
+                                                                                                          (Environmental)
+
+
+
+
+                                                  Physical Activity         Enriched                   Enriched          Social           Reduced             Sleep
+                                                   BDNF pathway,           Environment                 Density          Isolation        Sociability        Deprivation
+                                                  Memory/Learning                                  All Neurogenic
+                                                                                                        Stages
+
+
+
+
+                                           Figure 5. Social and endocrine modulation of adult neurogenesis across neurogenic stages. Adult
+                                           neurogenesis proceeds through sequential stages of proliferation, differentiation, survival, and
+                                           functional integration, which are dynamically regulated by internal endocrine systems and external
+                                           environmental factors. Social experiences can either promote or suppress neurogenic plasticity
+                                           by engaging gonadal hormones, neurotrophic signaling, or stress-related glucocorticoid pathways,
+                                           thereby shaping hippocampal and subventricular neurogenesis in a context-dependent manner. DG,
+                                           dentate gyrus; SVZ, subventricular zone; BDNF, brain-derived neurotrophic factor; NGF, nerve
+                                           growth factor.
+
+                                           Table 3. Hormonal and Neurochemical Modulators of Adult Hippocampal Neurogenesis.
+
+                                                  Manipulation                    Neurogenesis
+ Hormone/System          Species/Sex                                                                                    Direction of Effect            Evidence Type         Strength
+                                                  Context                         Endpoint (Region)
+                                                                                                                        ↑ Proliferation (dose-
+                         Adult                    Acute
+ Estradiol (17β-E2,                                                               Cell proliferation                    and                                                  Limited (acute
+                         ovariectomized           administration (30                                                                                   Direct (BrdU)
+ E1, E3) [105]                                                                    (Dentate Gyrus)                       timing-dependent;                                    paradigm)
+                         female rats              min–4 h exposure)
+                                                                                                                        transient)
+                                                  Castration +
+ Testosterone/                                    androgen                        Cell survival                         ↑ Survival; no effect          Direct (BrdU 30-day   Consistent (within
+                         Adult male rats
+ DHT [86]                                         replacement (30                 (Dentate Gyrus)                       on proliferation               survival)             study)
+                                                  days)
+                                                  Pregnancy-induced                                                     ↑ Proliferation
+                                                                                  Proliferation (SVZ                                                                         Limited (pregnancy
+ Prolactin [87]          Adult female mice        elevation; prolactin                                                  (blocked by                    Direct (BrdU)
+                                                                                  → OB)                                                                                      context)
+                                                  infusion                                                              prolactin antagonist)
+                                                                                  No direct
+                                                                                  neurogenesis
+ Oxytocin/                                        Endogenous                                                            Modulate synaptic
+                         Rodents (review)                                         measures; synaptic                                                   Indirect (review)     Indirect
+ Vasopressin [77]                                 neuromodulation                                                       transmission
+                                                                                  modulation
+                                                                                  (hippocampus)
+ BDNF/                   Multiple species         Activity-dependent              Supports survival &                                                  Indirect–
+                                                                                                                        ↑ Survival/plasticity                                Review-based
+ Neurotrophins [39]      (review)                 expression                      integration (DG)                                                     mechanistic
+                                                                                                                                                       Direct (BrdU in
+ Monoaminergic &                                                                  Proliferation (mPFC;
+                                                  Chronic social                                                        ↓ Proliferation                mPFC) + indirect      Mixed/context-
+ Stress Pathways         Rats/mice                                                DG markers
+                                                  stress/isolation                                                      (context-dependent)            hippocampal           dependent
+ [48,49,104,118]                                                                  indirect)
+                                                                                                                                                       markers
+                                           Evidence type: Direct = studies measuring adult neurogenesis markers (e.g., BrdU-based proliferation or survival
+                                           assays); Indirect = synaptic, molecular, or circuit-level adaptations without direct neurogenesis endpoints; Review-
+                                           based = narrative or integrative syntheses without primary cellular measurements. Direction of effect refers to
+                                           reported changes relative to control or baseline conditions. Abbreviations: DG, dentate gyrus; SVZ, subventricular
+                                           zone; mPFC, medial prefrontal cortex; DHT, dihydrotestosterone; BrdU, bromodeoxyuridine.
+
+
+
+
+                                                                                                                                                         https://doi.org/10.3390/ijms27052471
+Int. J. Mol. Sci. 2026, 27, 2471                                                                                           20 of 28
+
+
+
+                                   11. Critical Considerations and Conceptual Gaps
+                                         While the present review synthesizes converging evidence linking social experience
+                                   and adult neurogenesis, several conceptual considerations merit attention.
+                                         First, much of the available literature derives from rodent models, and the magnitude
+                                   and direction of neurogenic effects appear to vary across species, sexes, and social contexts.
+                                   This variability suggests that social modulation of neurogenesis is contingent rather than
+                                   uniform.
+                                         Second, a substantial portion of the evidence is correlational or context-dependent, as
+                                   social manipulations often co-occur with alterations in stress physiology, metabolic state, or
+                                   environmental complexity. Disentangling these interacting variables remains an important
+                                   methodological challenge.
+                                         Third, the directionality of the relationship remains incompletely resolved. While
+                                   social experiences influence neurogenic processes, hippocampal plasticity may also shape
+                                   social behavior, raising the possibility of bidirectional regulation.
+                                         Addressing these issues will be essential for refining translational interpretations and
+                                   clarifying the adaptive significance of socially regulated neurogenesis across species.
+
+                                   11.1. Evidence Stratification and Causal Boundaries
+                                         The literature reviewed integrates findings from multiple levels of analysis, which
+                                   differ substantially in evidentiary strength. First, direct adult neurogenesis evidence de-
+                                   rives from studies quantifying cellular endpoints (e.g., BrdU, Ki67, DCX) in the dentate
+                                   gyrus or subventricular zone, allowing conclusions regarding proliferation, survival, or
+                                   maturation. Second, mechanistic studies examining oxytocinergic, glucocorticoid, inflam-
+                                   matory, or monoaminergic pathways frequently do not include concurrent neurogenesis
+                                   markers and therefore provide pathway-level plausibility rather than direct demonstra-
+                                   tion of neurogenic modulation. Third, behavioral outcomes—such as social avoidance,
+                                   dominance-related stress phenotypes, or parental responsiveness—are functionally rele-
+                                   vant but do not constitute evidence of altered adult neurogenesis unless cellular measures
+                                   are included.
+                                         Accordingly, causal interpretations should be graded. In several domains, links
+                                   between social experience and adult neurogenesis remain hypothesis-driven or context-
+                                   dependent rather than definitively established. Recognizing these distinctions prevents arti-
+                                   ficial smoothing of causal chains and highlights the need for integrative designs combining
+                                   cellular, mechanistic, and behavioral endpoints within the same experimental framework.
+
+                                   11.2. Methodological Confounds and Unit-of-Analysis Constraints
+                                         Interpretation of socially induced neurogenic changes is further complicated by
+                                   methodological confounds inherent to many experimental paradigms. Social manipu-
+                                   lations frequently co-occur with alterations in stress intensity, environmental enrichment,
+                                   locomotor activity, sleep patterns, metabolic state, and sensory stimulation. As a result, ob-
+                                   served changes in proliferation or survival may reflect composite physiological adaptations
+                                   rather than isolated effects of a single social variable. Disentangling deprivation, threat,
+                                   affiliative buffering, and enrichment components remains a central challenge in the field.
+                                         In addition, housing-based paradigms raise concerns regarding the appropriate unit
+                                   of analysis. In many social isolation or group-housing designs, the experimental manipu-
+                                   lation is applied at the cage level, whereas statistical analyses are often conducted at the
+                                   individual animal level. When clustering effects are not explicitly accounted for, this may
+                                   inflate statistical power and overestimate effect robustness. These design considerations di-
+                                   rectly influence strength-of-evidence grading and should be considered when interpreting
+                                   reported neurogenic outcomes.
+
+
+
+                                                                                               https://doi.org/10.3390/ijms27052471
+Int. J. Mol. Sci. 2026, 27, 2471                                                                                                                            21 of 28
+
+
+
+                                                Greater methodological precision—including multilevel modeling approaches, ex-
+                                          plicit reporting of clustering, and factorial designs separating social, stress-related, and
+                                          enrichment variables—will be essential for strengthening causal inference in future studies.
+
+                                          12. Comparative Models
+                                                Comparative models across mammals, birds, and other vertebrates provide crucial
+                                          insights into how social structure, mating systems, and communication demands shape
+                                          adult neurogenesis. Species such as prairie voles, naked mole-rats, nonhuman primates,
+                                          and songbirds illustrate the diversity of neural adaptations supporting monogamy, euso-
+                                          ciality, hierarchical organization, and vocal-based social learning. These models reveal
+                                          that sociality can either amplify or suppress neurogenic activity depending on ecological
+                                          pressures and behavioral specialization, offering an evolutionary lens through which to
+                                          interpret rodent findings.
+                                                Comparative species models—including socially monogamous prairie voles, eusocial
+                                          mole-rats, nonhuman primates, songbirds, and teleost fish—provide a framework for
+                                          examining how distinct forms of social organization relate to adult neurogenesis across taxa.
+                                          As summarized in Table 4, some models offer direct experimental evidence that specific
+                                          social contexts (e.g., pair bonding, social valence, seasonal communication) modulate
+                                          defined neurogenic endpoints, whereas others provide comparative or descriptive data
+                                          on baseline neurogenesis rates under different ecological or social structures. By explicitly
+                                          distinguishing experimentally demonstrated modulation from interspecies variation, the
+                                          table clarifies which associations are supported by direct cellular measurements and which
+                                          remain ecological or translational in nature.
+
+                                          Table 4. Comparative species models linking social organization to adult neurogenesis.
+
+                                                        Direct Adult Neurogenesis
+                             Type of Social                                               Social
+ Model/Species                                          Evidence                                                     Evidence Tier              References
+                             Organization                                                 Context/Manipulation
+                                                        (Region/Readout/Direction)
+                             Social monogamy; stable    ↑ Survival of adult-born cells    Cohabitation with
+ Prairie vole (Microtus                                                                                              Direct (experimental;
+                             pair bonds; biparental     (BrdU) in DG and olfactory        mating; opposite-sex                                  [124,125]
+ ochrogaster)                                                                                                        sex-dependent)
+                             care                       bulb; sex-dependent effects       social exposure
+                                                        Low baseline hippocampal
+                                                                                          Natural caste/status
+ Eusocial mole-rats (incl.   Eusocial colonies;         AHN (proliferation markers);                                 Direct (compara-
+                                                                                          comparison (no acute                                  [126,127]
+ naked mole-rat)             reproductive castes        slow maturation; status-related                              tive/ecological)
+                                                                                          manipulation)
+                                                        differences
+                                                        Presence of AHN in DG;                                       Direct (descriptive; no
+ Nonhuman primates           Complex hierarchies;                                         No experimental social
+                                                        markedly lower rates than                                    social modulation          [128,129]
+ (macaques)                  long-term alliances                                          manipulation
+                                                        rodents; prolonged maturation                                tested)
+                                                        Robust adult neurogenesis in
+                             Learned vocal
+ Songbirds (oscine                                      HVC/RA; recruitment               Photoperiod; singing       Direct (behavior-linked;
+                             communication;                                                                                                     [130,131]
+ species)                                               regulated by season and           activity; social context   strong evidence)
+                             seasonal territoriality
+                                                        activity
+                                                        Extensive adult proliferation     Positive vs. negative
+ Teleost fish (e.g.,                                                                                                 Direct (experimental
+                             Shoaling/group living      across multiple zones; social     social context;                                       [132,133]
+ zebrafish)                                                                                                          social modulation)
+                                                        valence modulates proliferation   cortisol-independent
+                                          Abbreviations: DG, dentate gyrus; HVC, high vocal center; RA, robust nucleus of the arcopallium; BrdU, 5-bromo-
+                                          2′ -deoxyuridine. Evidence tier: Direct = study measured adult neurogenesis markers. Comparative/ecological =
+                                          interspecies comparison without experimental manipulation.
+
+
+                                          13. Conclusions and Future Directions
+                                               Across the evidence reviewed, social experience emerges as a significant modulator of
+                                          adult neurogenesis, influencing every stage of the neurogenic trajectory—from progenitor
+                                          proliferation to neuronal survival and functional integration. Social interaction, parenting,
+                                          sexual behavior, hierarchy formation, and group living have been shown in multiple
+                                          paradigms to modulate neurogenesis through coordinated endocrine and neurochemical
+                                          pathways involving gonadal and adrenal hormones, oxytocin- and vasopressin-dependent
+                                          systems, neurotrophic signaling, and monoaminergic modulation. Conversely, adverse
+
+
+                                                                                                                        https://doi.org/10.3390/ijms27052471
+Int. J. Mol. Sci. 2026, 27, 2471                                                                                                     22 of 28
+
+
+
+                                   conditions such as social isolation or chronic social stress have been consistently associated
+                                   with reductions in hippocampal plasticity, particularly within ventral dentate gyrus circuits
+                                   that govern emotional regulation and stress responsivity.
+                                         A core conclusion is that the neurogenic impact of social behavior is highly context-
+                                   dependent, shaped by developmental stage, sex, hormonal milieu, species-specific ecology,
+                                   and the duration and valence (reinforcing vs. aversive) of the social experience. Parenting
+                                   illustrates this duality: prolactin-, oxytocin-, and reward-related mechanisms can enhance
+                                   progenitor activity, whereas corticosterone elevations during stressful caregiving demands
+                                   suppress hippocampal neurogenesis. Similarly, hierarchy formation and social status
+                                   modulate neurogenesis through contrasting hormonal profiles, with dominant individuals
+                                   often showing enhanced neuronal survival.
+                                         Comparative models reinforce this diversity. Socially monogamous voles, eusocial
+                                   mole-rats, primates with complex hierarchies, songbirds with vocal learning systems, and
+                                   teleost fish with high regenerative capacity demonstrate that sociality can either amplify or
+                                   constrain neurogenesis depending on evolutionary pressures and behavioral specialization.
+                                   These species illustrate that adult neurogenesis is not a monolithic phenomenon, but a
+                                   plastic process embedded within ecological and social adaptations.
+                                         Future work should refine how specific social behaviors and hormonal contexts are
+                                   associated with distinct neurogenic outcomes across development, sex, and species, par-
+                                   ticularly in paradigms where current evidence remains limited or context-dependent.
+                                   Integrating cellular endpoints (proliferation, survival, maturation), endocrine dynamics,
+                                   and circuit-level analyses within the same experimental frameworks will be important
+                                   for determining when socially related changes in neurogenesis are directly demonstrated
+                                   versus mechanistically inferred. As synthesized in the revised tables, the available data
+                                   suggest that social experience can modulate adult neurogenesis under specific biological
+                                   and environmental conditions; however, the magnitude, direction, and functional sig-
+                                   nificance of these effects vary across paradigms and species. A graded interpretation of
+                                   this literature therefore suggests cautious but convergent evidence that socially relevant
+                                   contexts interact with neurogenic processes, while underscoring the need for balanced,
+                                   factorial, and translationally disciplined designs.
+
+                                   Author Contributions: A.T.-D.-J. conceived the initial idea and preliminary structure; J.A.M.-L.
+                                   expanded and refined this framework, adding thematic sections and reorganizing the conceptual
+                                   flow. Both authors conducted literature analysis and co-wrote all manuscript sections. J.A.M.-L. led
+                                   the editorial revision and narrative integration. M.H.B.-J. created all figures, contributed technical
+                                   and theoretical guidance, and critically reviewed the manuscript. All authors have read and agreed
+                                   to the published version of the manuscript.
+
+                                   Funding: The División de Investigación y Posgrado and the Department of Health of the Universidad
+                                   Iberoamericana Ciudad de México funded this research. J.A.M.-L, A.T.-D.-J. and M.H.B.-J. were
+                                   supported by Sistema Nacional de Investigadoras e Investigadores grants from the Secretaría de
+                                   Ciencia, Humanidades, Tecnología e Innovación of México.
+
+                                   Data Availability Statement: No new data were created or analyzed in this study. Data sharing is
+                                   not applicable to this article.
+
+                                   Conflicts of Interest: The authors declare no conflicts of interest. The funders had no role in the design
+                                   of the study; in the collection, analyses, or interpretation of data; in the writing of the manuscript; or
+                                   in the decision to publish the results.
+
+
+
+
+                                                                                                        https://doi.org/10.3390/ijms27052471
+Int. J. Mol. Sci. 2026, 27, 2471                                                                                               23 of 28
+
+
+
+                                   Abbreviations
+                                   The following abbreviations are used in this manuscript:
+
+                                   AHN         Adult Hippocampal Neurogenesis
+                                   AVP         Arginine Vasopressin
+                                   BDNF        Brain-Derived Neurotrophic Factor
+                                   BrdU        Bromodeoxyuridine
+                                   CA1         Cornu Ammonis 1
+                                   CA2         Cornu Ammonis 2
+                                   CA3         Cornu Ammonis 3
+                                   DCX         Doublecortin
+                                   DG          Dentate Gyrus
+                                   dDG         Dorsal Dentate Gyrus
+                                   DHT         Dihydrotestosterone
+                                   EEG         Electroencephalography
+                                   ERα         Estrogen Receptor Alpha
+                                   ERβ         Estrogen Receptor Beta
+                                   HPA axis    Hypothalamic–Pituitary–Adrenal Axis
+                                   HPG axis    Hypothalamic–Pituitary–Gonadal Axis
+                                   HVC         High Vocal Center
+                                   LH          Luteinizing Hormone
+                                   mPFC        Medial Prefrontal Cortex
+                                   NAc         Nucleus Accumbens
+                                   NGF         Nerve Growth Factor
+                                   OXT         Oxytocin
+                                   PFC         Prefrontal Cortex
+                                   RA          Robust Nucleus of the Arcopallium
+                                   RNA-seq     RNA Sequencing
+                                   SVZ         Subventricular Zone
+                                   TrkB        Tropomyosin Receptor Kinase B
+                                   vDG         Ventral Dentate Gyrus
+                                   VTA         Ventral Tegmental Area
+                                   ∆FosB       Truncated FosB Transcription Factor
+
+References
+1.    Taverna, E.; Götz, M.; Huttner, W.B. The Cell Biology of Neurogenesis: Toward an Understanding of the Development and
+      Evolution of the Neocortex. Annu. Rev. Cell Dev. Biol. 2014, 30, 465–502. [CrossRef] [PubMed]
+2.    Gross, C.G. Neurogenesis in the Adult Brain: Death of a Dogma. Nat. Rev. Neurosci. 2000, 1, 67–73. [CrossRef] [PubMed]
+3.    Jorgensen, C.; Wang, Z. Hormonal Regulation of Mammalian Adult Neurogenesis: A Multifaceted Mechanism. Biomolecules 2020,
+      10, 1151. [CrossRef] [PubMed]
+4.    Kempermann, G. Environmental Enrichment, New Neurons and the Neurobiology of Individuality. Nat. Rev. Neurosci. 2019, 20,
+      235–245. [CrossRef]
+5.    Jorgensen, C. Adult Mammalian Neurogenesis and Motivated Behaviors. Integr. Zool. 2018, 13, 655–672. [CrossRef]
+6.    Liu, P.Z.; Nusslock, R. Exercise-Mediated Neurogenesis in the Hippocampus via BDNF. Front. Neurosci. 2018, 12, 52. [CrossRef]
+7.    Choi, D.-H.; Lee, K.-H.; Lee, J. Effect of Exercise-Induced Neurogenesis on Cognitive Function Deficit in a Rat Model of Vascular
+      Dementia. Mol. Med. Rep. 2016, 13, 2981–2990. [CrossRef]
+8.    Ma, C.-L.; Ma, X.-T.; Wang, J.-J.; Liu, H.; Chen, Y.-F.; Yang, Y. Physical Exercise Induces Hippocampal Neurogenesis and Prevents
+      Cognitive Decline. Behav. Brain Res. 2017, 317, 332–339. [CrossRef]
+9.    Duzel, E.; Van Praag, H.; Sendtner, M. Can Physical Exercise in Old Age Improve Memory and Hippocampal Function? Brain
+      2016, 139, 662–673. [CrossRef]
+10.   Bekinschtein, P.; Oomen, C.A.; Saksida, L.M.; Bussey, T.J. Effects of Environmental Enrichment and Voluntary Exercise on
+      Neurogenesis, Learning and Memory, and Pattern Separation: BDNF as a Critical Variable? Semin. Cell Dev. Biol. 2011, 22,
+      536–542. [CrossRef]
+
+
+
+
+                                                                                                   https://doi.org/10.3390/ijms27052471
+Int. J. Mol. Sci. 2026, 27, 2471                                                                                                   24 of 28
+
+
+
+11.   García-Gómez, L.; Castillo-Fernández, I.; Perez-Villalba, A. In the Pursuit of New Social Neurons. Neurogenesis and Social
+      Behavior in Mice: A Systematic Review. Front. Cell Dev. Biol. 2022, 10, 1011657. [CrossRef] [PubMed]
+12.   Opendak, M.; Briones, B.A.; Gould, E. Social Behavior, Hormones and Adult Neurogenesis. Front. Neuroendocrinol. 2016, 41,
+      71–86. [CrossRef] [PubMed]
+13.   Leal-Galicia, P.; Chávez-Hernández, M.E.; Mata, F.; Mata-Luévanos, J.; Rodríguez-Serrano, L.M.; Tapia-de-Jesús, A.; Buenrostro-
+      Jáuregui, M.H. Adult Neurogenesis: A Story Ranging from Controversial New Neurogenic Areas and Human Adult Neurogenesis
+      to Molecular Regulation. Int. J. Mol. Sci. 2021, 22, 11489. [CrossRef] [PubMed]
+14.   O’Connell, L.A.; Hofmann, H.A. Evolution of a Vertebrate Social Decision-Making Network. Science 2012, 336, 1154–1157.
+      [CrossRef]
+15.   Frith, C.D.; Frith, U. Mechanisms of Social Cognition. Annu. Rev. Psychol. 2012, 63, 287–313. [CrossRef]
+16.   Leblanc, H.; Ramirez, S. Linking Social Cognition to Learning and Memory. J. Neurosci. 2020, 40, 8782–8798. [CrossRef]
+17.   Lemos, C.; Salti, A.; Amaral, I.M.; Fontebasso, V.; Singewald, N.; Dechant, G.; Hofer, A.; El Rawas, R. Social Interaction Reward in
+      Rats Has Anti-stress Effects. Addict. Biol. 2021, 26, e12878. [CrossRef]
+18.   Seebacher, F.; Krause, J. Physiological Mechanisms Underlying Animal Social Behaviour. Philos. Trans. R. Soc. B Biol. Sci. 2017,
+      372, 20160231. [CrossRef]
+19.   Holmes, M.M. Social Regulation of Adult Neurogenesis: A Comparative Approach. Front. Neuroendocrinol. 2016, 41, 59–70.
+      [CrossRef]
+20.   Bell, M.R.; De Lorme, K.C.; Figueira, R.J.; Kashy, D.A.; Sisk, C.L. Adolescent Gain in Positive Valence of a Socially Relevant
+      Stimulus: Engagement of the Mesocorticolimbic Reward Circuitry. Eur. J. Neurosci. 2013, 37, 457–468. [CrossRef]
+21.   Krimberg, J.S.; Lumertz, F.S.; Orso, R.; Viola, T.W.; De Almeida, R.M.M. Impact of Social Isolation on the Oxytocinergic System: A
+      Systematic Review and Meta-Analysis of Rodent Data. Neurosci. Biobehav. Rev. 2022, 134, 104549. [CrossRef] [PubMed]
+22.   Ibi, D.; Takuma, K.; Koike, H.; Mizoguchi, H.; Tsuritani, K.; Kuwahara, Y.; Kamei, H.; Nagai, T.; Yoneda, Y.; Nabeshima, T.; et al.
+      Social Isolation Rearing-induced Impairment of the Hippocampal Neurogenesis Is Associated with Deficits in Spatial Memory
+      and Emotion-related Behaviors in Juvenile Mice. J. Neurochem. 2008, 105, 921–932. [CrossRef] [PubMed]
+23.   Rivera, D.S.; Lindsay, C.B.; Oliva, C.A.; Codocedo, J.F.; Bozinovic, F.; Inestrosa, N.C. Effects of Long-Lasting Social Isolation and
+      Re-Socialization on Cognitive Performance and Brain Activity: A Longitudinal Study in Octodon degus. Sci. Rep. 2020, 10, 18315.
+      [CrossRef] [PubMed]
+24.   Arzate-Mejía, R.G.; Lottenbach, Z.; Schindler, V.; Jawaid, A.; Mansuy, I.M. Long-Term Impact of Social Isolation and Molecular
+      Underpinnings. Front. Genet. 2020, 11, 589621. [CrossRef]
+25.   He, J.; Crews, F.T. Neurogenesis Decreases during Brain Maturation from Adolescence to Adulthood. Pharmacol. Biochem. Behav.
+      2007, 86, 327–333. [CrossRef]
+26.   González, M.H.; Arteaga, E.H.; Guevara, M.Á.; Jaime, H.B.; Silva, M.A. Electroencephalographic changes and testosterone levels
+      in a pubertal stress animal model: Effects on adult sexual motivation. Salud Ment. 2020, 43, 11–19. [CrossRef]
+27.   Hernández-Arteaga, E.; Hernández-González, M.; Bonilla-Jaime, H.; Guevara, M.A.; Ågmo, A. Pubertal Stress Decreases Sexual
+      Motivation and Supresses the Relation between Cerebral Theta Rhythms and Testosterone Levels in Adult Male Rats. Brain Res.
+      2020, 1745, 146937. [CrossRef]
+28.   Duarte-Guterman, P.; Yagi, S.; Chow, C.; Galea, L.A.M. Hippocampal Learning, Memory, and Neurogenesis: Effects of Sex and
+      Estrogens across the Lifespan in Adults. Horm. Behav. 2015, 74, 37–52. [CrossRef]
+29.   Galea, L.A.M.; Wainwright, S.R.; Roes, M.M.; Duarte-Guterman, P.; Chow, C.; Hamson, D.K. Sex, Hormones and Neurogenesis in
+      the Hippocampus: Hormonal Modulation of Neurogenesis and Potential Functional Implications. J. Neuroendocrinol. 2013, 25,
+      1039–1061. [CrossRef]
+30.   McCormick, C.M.; Nixon, F.; Thomas, C.; Lowie, B.; Dyck, J. Hippocampal Cell Proliferation and Spatial Memory Performance
+      after Social Instability Stress in Adolescence in Female Rats. Behav. Brain Res. 2010, 208, 23–29. [CrossRef]
+31.   Lu, L.; Bao, G.; Chen, H.; Xia, P.; Fan, X.; Zhang, J.; Pei, G.; Ma, L. Modification of Hippocampal Neurogenesis and Neuroplasticity
+      by Social Environments. Exp. Neurol. 2003, 183, 600–609. [CrossRef] [PubMed]
+32.   Rizzi, S.; Bianchi, P.; Guidi, S.; Ciani, E.; Bartesaghi, R. Neonatal Isolation Impairs Neurogenesis in Thedentate Gyrus of the
+      Guinea Pig. Hippocampus 2007, 17, 78–91. [CrossRef] [PubMed]
+33.   Bloch, J.; Kaeser, M.; Sadeghi, Y.; Rouiller, E.M.; Redmond, D.E.; Brunet, J. Doublecortin-positive Cells in the Adult Primate
+      Cerebral Cortex and Possible Role in Brain Plasticity and Development. J. Comp. Neurol. 2011, 519, 775–789. [CrossRef] [PubMed]
+34.   Dranovsky, A.; Picchini, A.M.; Moadel, T.; Sisti, A.C.; Yamada, A.; Kimura, S.; Leonardo, E.D.; Hen, R. Experience Dictates Stem
+      Cell Fate in the Adult Hippocampus. Neuron 2011, 70, 908–923. [CrossRef]
+35.   Lieberwirth, C.; Liu, Y.; Jia, X.; Wang, Z. Social Isolation Impairs Adult Neurogenesis in the Limbic System and Alters Behaviors
+      in Female Prairie Voles. Horm. Behav. 2012, 62, 357–366. [CrossRef]
+36.   Westenbroek, C.; Den Boer, J.A.; Veenhuis, M.; Ter Horst, G.J. Chronic Stress and Social Housing Differentially Affect Neurogenesis
+      in Male and Female Rats. Brain Res. Bull. 2004, 64, 303–308. [CrossRef]
+
+
+
+                                                                                                      https://doi.org/10.3390/ijms27052471
+Int. J. Mol. Sci. 2026, 27, 2471                                                                                                   25 of 28
+
+
+
+37.   Biggio, F.; Mostallino, M.C.; Talani, G.; Locci, V.; Mostallino, R.; Calandra, G.; Sanna, E.; Biggio, G. Social Enrichment Reverses
+      the Isolation-Induced Deficits of Neuronal Plasticity in the Hippocampus of Male Rats. Neuropharmacology 2019, 151, 45–54.
+      [CrossRef]
+38.   Scaccianoce, S.; Del Bianco, P.; Paolone, G.; Caprioli, D.; Modafferi, A.M.E.; Nencini, P.; Badiani, A. Social Isolation Selectively
+      Reduces Hippocampal Brain-Derived Neurotrophic Factor without Altering Plasma Corticosterone. Behav. Brain Res. 2006, 168,
+      323–325. [CrossRef]
+39.   Kowiański, P.; Lietzau, G.; Czuba, E.; Waśkow, M.; Steliga, A.; Moryś, J. BDNF: A Key Factor with Multipotent Impact on Brain
+      Signaling and Synaptic Plasticity. Cell. Mol. Neurobiol. 2018, 38, 579–593. [CrossRef]
+40.   Castrén, E.; Antila, H. Neuronal Plasticity and Neurotrophic Factors in Drug Responses. Mol. Psychiatry 2017, 22, 1085–1095.
+      [CrossRef]
+41.   Anacker, C.; Luna, V.M.; Stevens, G.S.; Millette, A.; Shores, R.; Jimenez, J.C.; Chen, B.; Hen, R. Hippocampal Neurogenesis
+      Confers Stress Resilience by Inhibiting the Ventral Dentate Gyrus. Nature 2018, 559, 98–102. [CrossRef]
+42.   Hanif, S.; Sclar, M.; Lee, J.; Nichols, C.; Likhtik, E.; Burghardt, N.S. Social Isolation during Adolescence Differentially Affects
+      Spatial Learning in Adult Male and Female Mice. Learn. Mem. 2025, 32, a054059. [CrossRef]
+43.   Karimian, M.; Famitafreshi, H.; Fanaei, H.; Attari, F.; Fatima, S. Social Isolation Is Associated with Reduced Neurogenesis,
+      Impaired Spatial Working Memory Performance, and Altered Anxiety Levels in Male Rats. Open Access Anim. Physiol. 2015, 7,
+      87–95. [CrossRef]
+44.   Dimonte, S.; Sikora, V.; Bove, M.; Morgese, M.G.; Tucci, P.; Schiavone, S.; Trabace, L. Social Isolation from Early Life Induces
+      Anxiety-like Behaviors in Adult Rats: Relation to Neuroendocrine and Neurochemical Dysfunctions. Biomed. Pharmacother. 2023,
+      158, 114181. [CrossRef] [PubMed]
+45.   Skelly, M.J.; Chappell, A.E.; Carter, E.; Weiner, J.L. Adolescent Social Isolation Increases Anxiety-like Behavior and Ethanol Intake
+      and Impairs Fear Extinction in Adulthood: Possible Role of Disrupted Noradrenergic Signaling. Neuropharmacology 2015, 97,
+      149–159. [CrossRef] [PubMed]
+46.   Hong, S.; Flashner, B.; Chiu, M.; Ver Hoeve, E.; Luz, S.; Bhatnagar, S. Social Isolation in Adolescence Alters Behaviors in the
+      Forced Swim and Sucrose Preference Tests in Female but Not in Male Rats. Physiol. Behav. 2012, 105, 269–275. [CrossRef]
+47.   Hysing, M.; Petrie, K.J.; Harvey, A.G.; Sivertsen, B. From Loneliness to Depression: A Longitudinal Diagnostic Study among
+      Norwegian University Students. Soc. Psychiatry Psychiatr. Epidemiol. 2025. [CrossRef]
+48.   Csikós, V.; Dóra, F.; Láng, T.; Darai, L.; Szendi, V.; Tóth, A.; Cservenák, M.; Dobolyi, A. Social Isolation Induces Changes in the
+      Monoaminergic Signalling in the Rat Medial Prefrontal Cortex. Cells 2024, 13, 1043. [CrossRef]
+49.   Benfato, I.D.; Quintanilha, A.C.S.; Henrique, J.S.; Souza, M.A.; Rosário, B.D.A.; Filho, J.I.A.B.; Santos, R.L.O.; Ribeiro, A.M.;
+      Maluf, L.L.S.; De Oliveira, C.A.M. Effects of Long-Term Social Isolation on Central, Behavioural and Metabolic Parameters in
+      Middle-Aged Mice. Behav. Brain Res. 2022, 417, 113630. [CrossRef]
+50.   Paz, C.; Mascialino, G.; Adana-Díaz, L.; Rodríguez-Lorenzana, A.; Simbaña-Rivera, K.; Gómez-Barreno, L.; Troya, M.; Paez, M.I.;
+      Cárdenas, J.; Gerstner, R.M.; et al. Behavioral and Sociodemographic Predictors of Anxiety and Depression in Patients under
+      Epidemiological Surveillance for COVID-19 in Ecuador. PLoS ONE 2020, 15, e0240008. [CrossRef]
+51.   Blanchard, D.C.; Spencer, R.L.; Weiss, S.M.; Blanchard, R.J.; McEwen, B.; Sakai, R.R. Visible Burrow System as a Model of Chronic
+      Social Stress: Behavioral and Neuroendocrine Correlates. Psychoneuroendocrinology 1995, 20, 117–134. [CrossRef] [PubMed]
+52.   Kozorovitskiy, Y.; Gould, E. Dominance Hierarchy Influences Adult Neurogenesis in the Dentate Gyrus: Figure 1. J. Neurosci.
+      2004, 24, 6755–6759. [CrossRef] [PubMed]
+53.   Pallé, A.; Zorzo, C.; Luskey, V.E.; Mcgreevy, K.R.; Fernández, S.; Trejo, J.L. Social Dominance Differentially Alters Gene Expression
+      in the Medial Prefrontal Cortex without Affecting Adult Hippocampal Neurogenesis or Stress and Anxiety-like Behavior. FASEB
+      J. 2019, 33, 6995–7008. [CrossRef] [PubMed]
+54.   Falconer, E.M.; Galea, L.A.M. Sex Differences in Cell Proliferation, Cell Death and Defensive Behavior Following Acute Predator
+      Odor Stress in Adult Rats. Brain Res. 2003, 975, 22–36. [CrossRef]
+55.   Holmes, M.M.; Galea, L.A.M. Defensive Behavior and Hippocampal Cell Proliferation: Differential Modulation by Naltrexone
+      during Stress. Behav. Neurosci. 2002, 116, 160–168. [CrossRef]
+56.   Hardy, M.P.; Sottas, C.M.; Ge, R.; McKittrick, C.R.; Tamashiro, K.L.; McEwen, B.S.; Haider, S.G.; Markham, C.M.; Blanchard,
+      R.J.; Blanchard, D.C.; et al. Trends of Reproductive Hormones in Male Rats During Psychosocial Stress: Role of Glucocorticoid
+      Metabolism in Behavioral Dominance1. Biol. Reprod. 2002, 67, 1750–1755. [CrossRef]
+57.   Blanchard, R.J.; Yudko, E.; Dulloog, L.; Blanchard, D.C. Defense Changes in Stress Nonresponsive Subordinate Males in a Visible
+      Burrow System. Physiol. Behav. 2001, 72, 635–642. [CrossRef]
+58.   Wu, M.V.; Shamy, J.L.; Bedi, G.; Choi, C.-W.J.; Wall, M.M.; Arango, V.; Boldrini, M.; Foltin, R.W.; Hen, R. Impact of Social Status
+      and Antidepressant Treatment on Neurogenesis in the Baboon Hippocampus. Neuropsychopharmacology 2014, 39, 1861–1871.
+      [CrossRef]
+
+
+
+
+                                                                                                      https://doi.org/10.3390/ijms27052471
+Int. J. Mol. Sci. 2026, 27, 2471                                                                                                26 of 28
+
+
+
+59.   Peragine, D.E.; Simpson, J.A.; Mooney, S.J.; Lovern, M.B.; Holmes, M.M. Social Regulation of Adult Neurogenesis in a Eusocial
+      Mammal. Neuroscience 2014, 268, 10–20. [CrossRef]
+60.   Golden, S.A.; Covington, H.E.; Berton, O.; Russo, S.J. A Standardized Protocol for Repeated Social Defeat Stress in Mice. Nat.
+      Protoc. 2011, 6, 1183–1191, Erratum in Nat. Protoc. 2015, 10, 643. https://doi.org/10.1038/nprot.2011.361.. [CrossRef]
+61.   Krishnan, V.; Han, M.-H.; Graham, D.L.; Berton, O.; Renthal, W.; Russo, S.J.; LaPlant, Q.; Graham, A.; Lutter, M.; Lagace, D.C.;
+      et al. Molecular Adaptations Underlying Susceptibility and Resistance to Social Defeat in Brain Reward Regions. Cell 2007, 131,
+      391–404. [CrossRef] [PubMed]
+62.   Morrison, K.E.; Bader, L.R.; McLaughlin, C.N.; Cooper, M.A. Defeat-Induced Activation of the Ventral Medial Prefrontal Cortex Is
+      Necessary for Resistance to Conditioned Defeat. Behav. Brain Res. 2013, 243, 158–164. [CrossRef] [PubMed]
+63.   Jasnow, A.M.; Cooper, M.A.; Huhman, K.L. N-Methyl-d-Aspartate Receptors in the Amygdala Are Necessary for the Acquisition
+      and Expression of Conditioned Defeat. Neuroscience 2004, 123, 625–634. [CrossRef] [PubMed]
+64.   Hodges, T.E.; Louth, E.L.; Bailey, C.D.C.; McCormick, C.M. Adolescent Social Instability Stress Alters Markers of Synaptic
+      Plasticity and Dendritic Structure in the Medial Amygdala and Lateral Septum in Male Rats. Brain Struct. Funct. 2019, 224,
+      643–659. [CrossRef]
+65.   McCormick, C.M.; Smith, K.; Baumbach, J.L.; De Lima, A.P.N.; Shaver, M.; Hodges, T.E.; Marcolin, M.L.; Ismail, N. Adolescent
+      Social Instability Stress Leads to Immediate and Lasting Sex-Specific Changes in the Neuroendocrine-Immune-Gut Axis in Rats.
+      Horm. Behav. 2020, 126, 104845. [CrossRef]
+66.   Adhikari, A.; Topiwala, M.A.; Gordon, J.A. Single Units in the Medial Prefrontal Cortex with Anxiety-Related Firing Patterns Are
+      Preferentially Influenced by Ventral Hippocampal Activity. Neuron 2011, 71, 898–910. [CrossRef]
+67.   Hamson, D.K.; Wainwright, S.R.; Taylor, J.R.; Jones, B.A.; Watson, N.V.; Galea, L.A.M. Androgens Increase Survival of Adult-Born
+      Neurons in the Dentate Gyrus by an Androgen Receptor-Dependent Mechanism in Male Rats. Endocrinology 2013, 154, 3294–3304.
+      [CrossRef]
+68.   Spritzer, M.D.; Ibler, E.; Inglis, W.; Curtis, M.G. Testosterone and Social Isolation Influence Adult Neurogenesis in the Dentate
+      Gyrus of Male Rats. Neuroscience 2011, 195, 180–190. [CrossRef]
+69.   Schoenfeld, T.J.; Gould, E. Stress, Stress Hormones, and Adult Neurogenesis. Exp. Neurol. 2012, 233, 12–21. [CrossRef]
+70.   Sarapultsev, A.; Komelkova, M.; Gusev, E.; Hu, D.; Naumenko, V. Social Buffering of Stress in Rats: A Multisystem Meta-Analysis
+      and Translational Framework for Stress Resilience. Physiol. Behav. 2026, 307, 115242. [CrossRef]
+71.   Hostinar, C.E.; Sullivan, R.M.; Gunnar, M.R. Psychobiological Mechanisms Underlying the Social Buffering of the Hypothalamic–
+      Pituitary–Adrenocortical Axis: A Review of Animal Models and Human Studies across Development. Psychol. Bull. 2014, 140,
+      256–282. [CrossRef] [PubMed]
+72.   Gunnar, M.R.; Donzella, B. Social Regulation of the Cortisol Levels in Early Human Development. Psychoneuroendocrinology 2002,
+      27, 199–220. [CrossRef] [PubMed]
+73.   Kiyokawa, Y.; Takeuchi, Y.; Mori, Y. Two Types of Social Buffering Differentially Mitigate Conditioned Fear Responses. Eur. J.
+      Neurosci. 2007, 26, 3606–3613. [CrossRef] [PubMed]
+74.   Kiyokawa, Y.; Hiroshima, S.; Takeuchi, Y.; Mori, Y. Social Buffering Reduces Male Rats’ Behavioral and Corticosterone Responses
+      to a Conditioned Stimulus. Horm. Behav. 2014, 65, 114–118. [CrossRef]
+75.   Caldwell, H.K. Oxytocin and Vasopressin: Powerful Regulators of Social Behavior. Neuroscientist 2017, 23, 517–528. [CrossRef]
+76.   Bielsky, I.F.; Young, L.J. Oxytocin, Vasopressin, and Social Recognition in Mammals. Peptides 2004, 25, 1565–1574. [CrossRef]
+77.   Cilz, N.I.; Cymerblit-Sabba, A.; Young, W.S. Oxytocin and Vasopressin in the Rodent Hippocampus. Genes Brain Behav. 2019, 18,
+      e12535. [CrossRef]
+78.   Wang, X.; Zhan, Y. Regulation of Social Recognition Memory in the Hippocampal Circuits. Front. Neural Circuits 2022, 16, 839931.
+      [CrossRef]
+79.   Lopez-Rojas, J.; De Solis, C.A.; Leroy, F.; Kandel, E.R.; Siegelbaum, S.A. A Direct Lateral Entorhinal Cortex to Hippocampal CA2
+      Circuit Conveys Social Information Required for Social Memory. Neuron 2022, 110, 1559–1572.e4. [CrossRef]
+80.   Cope, E.C.; Waters, R.C.; Diethorn, E.J.; Pagliai, K.A.; Dias, C.G.; Tsuda, M.; Cameron, H.A.; Gould, E. Adult-Born Neurons in the
+      Hippocampus Are Essential for Social Memory Maintenance. eNeuro 2020, 7, ENEURO.0182-20.2020. [CrossRef]
+81.   Monteiro, B.M.M.; Moreira, F.A.; Massensini, A.R.; Moraes, M.F.D.; Pereira, G.S. Enriched Environment Increases Neurogenesis
+      and Improves Social Memory Persistence in Socially Isolated Adult Mice. Hippocampus 2014, 24, 239–248. [CrossRef] [PubMed]
+82.   Yagi, S.; Galea, L.A.M. Sex Differences in Hippocampal Cognition and Neurogenesis. Neuropsychopharmacology 2019, 44, 200–213.
+      [CrossRef] [PubMed]
+83.   Bangasser, D.A.; Wicks, B. Sex-specific Mechanisms for Responding to Stress. J. Neurosci. Res. 2017, 95, 75–82. [CrossRef]
+      [PubMed]
+84.   Gobinath, A.R.; Mahmoud, R.; Galea, L.A.M. Influence of Sex and Stress Exposure across the Lifespan on Endophenotypes of
+      Depression: Focus on Behavior, Glucocorticoids, and Hippocampus. Front. Neurosci. 2015, 8, 420. [CrossRef]
+
+
+
+
+                                                                                                    https://doi.org/10.3390/ijms27052471
+Int. J. Mol. Sci. 2026, 27, 2471                                                                                                27 of 28
+
+
+
+85.  Bonilla-Jaime, H.; Vázquez-Palacios, G.; Arteaga-Silva, M.; Retana-Márquez, S. Hormonal Responses to Different Sexually Related
+     Conditions in Male Rats. Horm. Behav. 2006, 49, 376–382. [CrossRef]
+86. Spritzer, M.D.; Galea, L.A.M. Testosterone and Dihydrotestosterone, but Not Estradiol, Enhance Survival of New Hippocampal
+     Neurons in Adult Male Rats. Dev. Neurobiol. 2007, 67, 1321–1333. [CrossRef]
+87. Shingo, T.; Gregg, C.; Enwere, E.; Fujikawa, H.; Hassam, R.; Geary, C.; Cross, J.C.; Weiss, S. Pregnancy-Stimulated Neurogenesis
+     in the Adult Female Forebrain Mediated by Prolactin. Science 2003, 299, 117–120. [CrossRef]
+88. Leuner, B.; Glasper, E.R.; Gould, E. Parenting and Plasticity. Trends Neurosci. 2010, 33, 465–473. [CrossRef]
+89. Pawluski, J.L.; Galea, L.A.M. Reproductive Experience Alters Hippocampal Neurogenesis during the Postpartum Period in the
+     Dam. Neuroscience 2007, 149, 53–67. [CrossRef]
+90. Bale, T.L.; Epperson, C.N. Sex Differences and Stress across the Lifespan. Nat. Neurosci. 2015, 18, 1413–1420. [CrossRef]
+91. Bonapersona, V.; Kentrop, J.; Van Lissa, C.J.; van der Veen, R.; Joëls, M.; Sarabdjitsingh, R.A. The Behavioral Phenotype of Early
+     Life Adversity: A 3-Level Meta-Analysis of Rodent Studies. Neurosci. Biobehav. Rev. 2019, 102, 299–307. [CrossRef]
+92. Leuner, B.; Mirescu, C.; Noiman, L.; Gould, E. Maternal Experience Inhibits the Production of Immature Neurons in the
+     Hippocampus during the Postpartum Period through Elevations in Adrenal Steroids. Hippocampus 2007, 17, 434–442. [CrossRef]
+93. Hillerer, K.M.; Neumann, I.D.; Couillard-Despres, S.; Aigner, L.; Slattery, D.A. Lactation-induced Reduction in Hippocampal
+     Neurogenesis Is Reversed by Repeated Stress Exposure. Hippocampus 2014, 24, 673–683. [CrossRef] [PubMed]
+94. Maeng, L.Y.; Shors, T.J. Once a Mother, Always a Mother: Maternal Experience Protects Females from the Negative Effects of
+     Stress on Learning. Behav. Neurosci. 2012, 126, 137–141. [CrossRef] [PubMed]
+95. Torner, L. Actions of Prolactin in the Brain: From Physiological Adaptations to Stress and Neurogenesis to Psychopathology.
+     Front. Endocrinol. 2016, 7, 25. [CrossRef] [PubMed]
+96. Saltzman, W.; Ziegler, T.E. Functional Significance of Hormonal Changes in Mammalian Fathers. J. Neuroendocrinol. 2014, 26,
+     685–696. [CrossRef]
+97. Glasper, E.R.; Kozorovitskiy, Y.; Pavlic, A.; Gould, E. Paternal Experience Suppresses Adult Neurogenesis without Altering
+     Hippocampal Function in Peromyscus californicus. J. Comp. Neurol. 2011, 519, 2271–2281. [CrossRef]
+98. Glasper, E.R.; Hyer, M.M.; Katakam, J.; Harper, R.; Ameri, C.; Wolz, T. Fatherhood Contributes to Increased Hippocampal Spine
+     Density and Anxiety Regulation in California Mice. Brain Behav. 2016, 6, e00416. [CrossRef]
+99. Cárdenas, E.F.; Kujawa, A.; Humphreys, K.L. Neurobiological Changes during the Peripartum Period: Implications for Health
+     and Behavior. Soc. Cogn. Affect. Neurosci. 2020, 15, 1097–1110. [CrossRef]
+100. Aguirre, R.M.H.; González, M.H.; Hernández, M.P.; Gutiérrez, C.D.C.A.; Guevara, M.Á. Observing Baby or Sexual Videos
+     Changes the Functional Synchronization between the Prefrontal and Parietal Cortices in Mothers in Different Postpartum Periods.
+     Soc. Neurosci. 2020, 15, 489–504. [CrossRef]
+101. Kim, P.; Leckman, J.F.; Mayes, L.C.; Feldman, R.; Wang, X.; Swain, J.E. The Plasticity of Human Maternal Brain: Longitudinal
+     Changes in Brain Anatomy during the Early Postpartum Period. Behav. Neurosci. 2010, 124, 695–700. [CrossRef] [PubMed]
+102. Leal-Galicia, P.; Romo-Parra, H.; Rodríguez-Serrano, L.M.; Buenrostro-Jáuregui, M. Regulation of Adult Hippocampal Neu-
+     rogenesis Exerted by Sexual, Cognitive and Physical Activity: An Update. J. Chem. Neuroanat. 2019, 101, 101667. [CrossRef]
+     [PubMed]
+103. Pfaus, J.G. Pathways of Sexual Desire. J. Sex. Med. 2009, 6, 1506–1533. [CrossRef]
+104. Paredes, R.G.; Ågmo, A. Has Dopamine a Physiological Role in the Control of Sexual Behavior? Prog. Neurobiol. 2004, 73, 179–225.
+     [CrossRef] [PubMed]
+105. Barha, C.K.; Lieblich, S.E.; Galea, L.A.M. Different Forms of Oestrogen Rapidly Upregulate Cell Proliferation in the Dentate Gyrus
+     of Adult Female Rats. J. Neuroendocrinol. 2009, 21, 155–166. [CrossRef]
+106. Tanapat, P.; Hastings, N.B.; Reeves, A.J.; Gould, E. Estrogen Stimulates a Transient Increase in the Number of New Neurons in the
+     Dentate Gyrus of the Adult Female Rat. J. Neurosci. 1999, 19, 5792–5801. [CrossRef]
+107. Pawluski, J.L.; Brummelte, S.; Barha, C.K.; Crozier, T.M.; Galea, L.A.M. Effects of Steroid Hormones on Neurogenesis in the
+     Hippocampus of the Adult Female Rodent during the Estrous Cycle, Pregnancy, Lactation and Aging. Front. Neuroendocrinol.
+     2009, 30, 343–357. [CrossRef]
+108. Surget, A.; Belzung, C. Adult Hippocampal Neurogenesis Shapes Adaptation and Improves Stress Response: A Mechanistic and
+     Integrative Perspective. Mol. Psychiatry 2022, 27, 403–421. [CrossRef]
+109. Fares, J.; Diab, Z.B.; Nabha, S.; Fares, Y. Neurogenesis in the Adult Hippocampus: History, Regulation, and Prospective Roles. Int.
+     J. Neurosci. 2019, 129, 598–611. [CrossRef]
+110. di Robilant, V.N.; Scardigli, R.; Strimpakos, G.; Tirone, F.; Middei, S.; Scopa, C.; De Bardi, M.; Battistini, L.; Saraulli, D.;
+     Vecchioli, S.F. Running-Activated Neural Stem Cells Enhance Subventricular Neurogenesis and Improve Olfactory Behavior in
+     P21 Knockout Mice. Mol. Neurobiol. 2019, 56, 7534–7556. [CrossRef]
+111. Overall, R.W.; Walker, T.L.; Leiter, O.; Lenke, S.; Ruhwald, S.; Kempermann, G. Delayed and Transient Increase of Adult
+     Hippocampal Neurogenesis by Physical Exercise in DBA/2 Mice. PLoS ONE 2013, 8, e83797. [CrossRef] [PubMed]
+
+
+
+                                                                                                    https://doi.org/10.3390/ijms27052471
+Int. J. Mol. Sci. 2026, 27, 2471                                                                                               28 of 28
+
+
+
+112. Barha, C.K.; Ishrat, T.; Epp, J.R.; Galea, L.A.M.; Stein, D.G. Progesterone Treatment Normalizes the Levels of Cell Proliferation
+     and Cell Death in the Dentate Gyrus of the Hippocampus after Traumatic Brain Injury. Exp. Neurol. 2011, 231, 72–81. [CrossRef]
+     [PubMed]
+113. Ormerod, B.K.; Lee, T.T.; Galea, L.A.M. Estradiol Initially Enhances but Subsequently Suppresses (via Adrenal Steroids) Granule
+     Cell Proliferation in the Dentate Gyrus of Adult Female Rats. J. Neurobiol. 2003, 55, 247–260. [CrossRef] [PubMed]
+114. Mahmoud, R.; Wainwright, S.R.; Galea, L.A.M. Sex Hormones and Adult Hippocampal Neurogenesis: Regulation, Implications,
+     and Potential Mechanisms. Front. Neuroendocrinol. 2016, 41, 129–152. [CrossRef]
+115. Nugent, B.; Tobet, S.; Lara, H.; Lucion, A.; Wilson, M.; Recabarren, S.; Paredes, A. Hormonal Programming Across the Lifespan.
+     Horm. Metab. Res. 2012, 44, 577–586. [CrossRef]
+116. Nogami, H.; Hoshino, R.; Ogasawara, K.; Miyamoto, S.; Hisano, S. Region-Specific Expression and Hormonal Regulation of
+     the First Exon Variants of Rat Prolactin Receptor mRNA in Rat Brain and Anterior Pituitary Gland. J. Neuroendocrinol. 2007, 19,
+     583–593. [CrossRef]
+117. Mak, G.K.; Enwere, E.K.; Gregg, C.; Pakarainen, T.; Poutanen, M.; Huhtaniemi, I.; Weiss, S. Male Pheromone—Stimulated
+     Neurogenesis in the Adult Female Brain: Possible Role in Mating Behavior. Nat. Neurosci. 2007, 10, 1003–1011. [CrossRef]
+118. Czéh, B.; Müller-Keuker, J.I.H.; Rygula, R.; Abumaria, N.; Hiemke, C.; Domenici, E.; Fuchs, E. Chronic Social Stress Inhibits
+     Cell Proliferation in the Adult Medial Prefrontal Cortex: Hemispheric Asymmetry and Reversal by Fluoxetine Treatment.
+     Neuropsychopharmacology 2007, 32, 1490–1503. [CrossRef]
+119. Mazzucco, C.A.; Lieblich, S.E.; Bingham, B.I.; Williamson, M.A.; Viau, V.; Galea, L.A.M. Both Estrogen Receptor α and Estrogen
+     Receptor β Agonists Enhance Cell Proliferation in the Dentate Gyrus of Adult Female Rats. Neuroscience 2006, 141, 1793–1800.
+     [CrossRef]
+120. McClure, R.E.S.; Barha, C.K.; Galea, L.A.M. 17β-Estradiol, but Not Estrone, Increases the Survival and Activation of New Neurons
+     in the Hippocampus in Response to Spatial Memory in Adult Female Rats. Horm. Behav. 2013, 63, 144–157. [CrossRef]
+121. Allen, K.M.; Fung, S.J.; Rothmond, D.A.; Noble, P.L.; Weickert, C.S. Gonadectomy Increases Neurogenesis in the Male Adolescent
+     Rhesus Macaque Hippocampus: Gonadectomy and Adolescent Neurogenesis. Hippocampus 2014, 24, 225–238. [CrossRef]
+     [PubMed]
+122. Carrier, N.; Kabbaj, M. Extracellular Signal-Regulated Kinase 2 Signaling in the Hippocampal Dentate Gyrus Mediates the
+     Antidepressant Effects of Testosterone. Biol. Psychiatry 2012, 71, 642–651. [CrossRef] [PubMed]
+123. Schoenfeld, T.J.; Rada, P.; Pieruzzini, P.R.; Hsueh, B.; Gould, E. Physical Exercise Prevents Stress-Induced Activation of Granule
+     Neurons and Enhances Local Inhibitory Mechanisms in the Dentate Gyrus. J. Neurosci. 2013, 33, 7770–7777. [CrossRef] [PubMed]
+124. Castro, A.E.; Domínguez-Ordoñez, R.; Young, L.J.; Camacho, F.J.; Ávila-González, D.; Paredes, R.G.; Díaz, N.F.; Portillo, W. Pair-
+     Bonding and Social Experience Modulate New Neurons Survival in Adult Male and Female Prairie Voles (Microtus ochrogaster).
+     Front. Neuroanat. 2022, 16, 987229. [CrossRef]
+125. Potretzke, S.; Ryabinin, A.E. The Prairie Vole Model of Pair-Bonding and Its Sensitivity to Addictive Substances. Front. Psychol.
+     2019, 10, 2477. [CrossRef]
+126. Amrein, I.; Becker, A.S.; Engler, S.; Huang, S.; Müller, J.; Slomianka, L.; Oosthuizen, M.K. Adult Neurogenesis and Its Anatomical
+     Context in the Hippocampus of Three Mole-Rat Species. Front. Neuroanat. 2014, 8, 39. [CrossRef]
+127. Oosthuizen, M.K.; Amrein, I. Trading New Neurons for Status: Adult Hippocampal Neurogenesis in Eusocial Damaraland
+     Mole-Rats. Neuroscience 2016, 324, 227–237. [CrossRef]
+128. Kornack, D.R.; Rakic, P. Continuation of Neurogenesis in the Hippocampus of the Adult Macaque Monkey. Proc. Natl. Acad. Sci.
+     USA 1999, 96, 5768–5773. [CrossRef]
+129. Li, Y.; Xu, N.-N.; Hao, Z.-Z.; Liu, S. Adult Neurogenesis in the Primate Hippocampus. Zool. Res. 2023, 44, 315–322. [CrossRef]
+130. Larson, T.A.; Wang, T.-W.; Gale, S.D.; Miller, K.E.; Thatra, N.M.; Caras, M.L.; Perkel, D.J.; Brenowitz, E.A. Postsynaptic Neural
+     Activity Regulates Neuronal Addition in the Adult Avian Song Control System. Proc. Natl. Acad. Sci. USA 2013, 110, 16640–16644.
+     [CrossRef]
+131. Brenowitz, E.A.; Larson, T.A. Neurogenesis in the Adult Avian Song-Control System. Cold Spring Harb Perspect Biol 2015, 7,
+     a019000. [CrossRef]
+132. Ganz, J.; Brand, M. Adult Neurogenesis in Fish. Cold Spring Harb. Perspect. Biol. 2016, 8, a019018. [CrossRef]
+133. Teles, M.C.; Faustino, F.; Chanfana, C.; Cunha, A.; Esteves, M.; Oliveira, R.F. Social Enhancement of Adult Neurogenesis in
+     Zebrafish Is Not Regulated by Cortisol. Neuroscience 2023, 509, 51–62. [CrossRef]
+
+
+Disclaimer/Publisher’s Note: The statements, opinions and data contained in all publications are solely those of the individual
+author(s) and contributor(s) and not of MDPI and/or the editor(s). MDPI and/or the editor(s) disclaim responsibility for any injury to
+people or property resulting from any ideas, methods, instructions or products referred to in the content.
+
+
+
+
+                                                                                                   https://doi.org/10.3390/ijms27052471
+

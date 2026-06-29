@@ -1,0 +1,999 @@
+                                                        Beyond Token Eviction: Mixed-Dimension Budget Allocation
+                                                                  for Efficient KV Cache Compression
+
+
+                                              Ruijie Miao * 1 Zhiming Wang * 1 Wang Li * 1 Shiwei Wu 2 Shufan Liu 2 Yanbing Jiang 1 Tong Yang 1
+
+
+                                                                     Abstract                                  Research community has explored tremendous methods for
+                                              Key-value (KV) caching is widely used to ac-                     KV cache compression (Xiao et al., 2024; Chen et al., 2024;
+                                                                                                               Tang et al., 2024a; Tu et al., 2024). Token eviction (Zhang
+
+
+
+
+arXiv:2603.20616v1 [cs.LG] 21 Mar 2026
+                                              celerate transformer inference, but its memory
+                                              cost grows linearly with input length, limiting                  et al., 2023; Xiao et al., 2023; Li et al., 2024) is one of
+                                              long-context deployment. Existing token evic-                    the representative methods due to its simplicity, feasibility,
+                                              tion methods reduce memory by discarding less                    and effectiveness. The key idea is to maintain the “im-
+                                              important tokens, which can be viewed as a                       portant” tokens in the cache and evict “unimportant” ones.
+                                              coarse form of dimensionality reduction that as-                 Recently, some works (Chang et al., 2024; Saxena et al.,
+                                              signs each token either zero or full dimension.                  2024; Chang et al., 2025) have explored the possibility of
+                                              We propose MixedDimKV, a mixed-dimension                         KV cache compression via dimensionality reduction, which
+                                              KV cache compression method that allocates                       compress the keys and values to a fixed dimension. Our
+                                              dimensions to tokens at a more granular level,                   inspiration comes from such a perspective: in the token
+                                              and MixedDimKV-H, which further integrates                       eviction scheme, the evicted tokens can be considered as
+                                              head-level importance information. Experiments                   compressed to 0 dimensions, and the maintained tokens can
+                                              on long-context benchmarks show that Mixed-                      be considered as maintaining the full dimensions. Therefore,
+                                              DimKV outperforms prior KV cache compression                     the token eviction scheme can be regarded as a special case
+                                              methods that do not rely on head-level importance                for dimensionality reduction scheme, where each token is
+                                              profiling. When equipped with the same head-                     compressed to either 0 dimension or full dimension. Then
+                                              level importance information, MixedDimKV-H                       a natural question arises: Can we allocate dimensions to
+                                              consistently outperforms HeadKV. Notably, our                    tokens at a more granular level to maximize information
+                                              approach achieves comparable performance to                      retention under a fixed budget?
+                                              full attention on LongBench with only 6.25% of                   We propose MixedDimKV, a novel KV cache compression
+                                              the KV cache. Furthermore, in the Needle-in-a-                   scheme that enables fine-grained budget allocation. As illus-
+                                              Haystack test, our solution maintains 100% accu-                 trated in Figure 1, our framework operates on a pre-defined
+                                              racy at a 50K context length while using as little               set of candidate compression ratios, specifying the fractional
+                                              as 0.26% of the cache.                                           budgets for keys and values. Then our solution efficiently
+                                                                                                               prunes the KV cache by assigning more dimensions to keys
+                                                                                                               and values that are most sensitive to information loss. To
+                                         1. Introduction                                                       utilize every bit of budget space as efficiently as possible
+                                         Support for long context is emerging as a core capability of          while considering inference computational efficiency, we
+                                         large language models (LLMs) (Comanici et al., 2025; Yang             have made the following designs:
+                                         et al., 2025; Zeng et al., 2025), enabling complex tasks like         Measuring information loss via attention output. To
+                                         information retrieval from large-scale documents. However,            determine the optimal dimensionality for each token, we
+                                         this capacity is often constrained by the KV cache, which             establish a scoring metric that quantifies the deviation in-
+                                         stores the key-value states of the previous tokens to avoid           duced by compression. Our methodology is centered on
+                                         re-computation. As the sequence length grows, the KV                  the joint impact of a token’s attention significance, value
+                                         cache size increases linearly, leading to a massive memory            magnitude, and inherent compressibility across varying di-
+                                         footprint and memory access overhead during the decoding              mensions. While traditional methods often rely on attention
+                                         stage, which ultimately results in poor inference efficiency.         weights to select tokens, which only consider the impact of
+                                           1
+                                             Peking University 2 ByteDance Seed. Correspondence to: Tong       keys, our approach evaluates the attention output directly to
+                                         Yang <yangtong@pku.edu.cn>.                                           capture how these three factors interact to determine actual
+                                                                                                               information loss. Based on this analysis, we design our met-
+                                         Preprint. March 24, 2026.
+
+                                                                                                           1
+              Beyond Token Eviction: Mixed-Dimension Budget Allocation for Efficient KV Cache Compression
+
+
+
+
+Figure 1. The two-stage dimension allocation process for KV cache compression. Candidate compression ratios are evaluated for each
+token to compute loss scores. An optimization objective is then applied to minimize total loss under the specified memory budget.
+
+
+ric as a conservative estimation, specifically the upper bound       2. Related Works
+of the deviation of the attention output, to ensure maximum
+information retention for critical tokens. This formulation          Token eviction. A common KV cache compression strategy
+is further optimized for efficient batched computation, en-          is to analyze token importance and evict the less important
+suring that our fine-grained dimension allocation remains            ones. StreamingLLM (Xiao et al., 2023) marks the initial
+scalable even for extremely long sequences.                          tokens and the tokens in the recent window as important.
+                                                                     H2O (Zhang et al., 2023) identifies important tokens via
+Optimal dimension allocation via bisection search. Lever-            cumulative attention scores and dynamically updates KV
+aging the computed loss scores, we formulate the dimension           cache. SnapKV (Li et al., 2024) scores the token importance
+allocation task as a constrained optimization problem, aim-          based on the attention score with an observation window.
+ing to minimize the aggregate accuracy loss under a memory           PyramidKV (Cai et al., 2024) ranks tokens in the lower layer
+budget. While such discrete problems are generally chal-             as more important and allocates more budget. HeadKV (Fu
+lenging, we show that in long-context settings, the duality          et al., 2024) further evaluates the importance of individ-
+gap between the primal problem and its Lagrangian dual               ual heads and incorporates these estimates into KV cache
+becomes negligible. By exploiting the monotonic relation-            allocation process.
+ship between allocated dimensionality and accuracy loss,
+we employ an efficient bisection-based search to determine           Dimension reduction. Several previous works have rec-
+the optimal per-token dimensions.                                    ognized the low-rank nature of KV cache and leveraged
+                                                                     it for compression. Palu (Chang et al., 2024) proposes a
+In implementing MixedDimKV, we favor head-wise com-                  low-rank decomposition for the linear projection matrices,
+pression over joint-head compression to strike a balance             which naturally reduces the hidden dimension of KV cache.
+between allocation flexibility and computational efficiency.         Eigen Attention (Saxena et al., 2024) conducts low-rank
+Furthermore, to ensure compatibility with established head-          decomposition on KV cache and proposes a layer-wise rank
+level importance estimation schemes, we propose a vari-              allocation algorithm to decide each layer’s compression ra-
+ant, MixedDimKV-H. On LongBench and RULER, Mixed-                    tio. ShadowKV (Sun et al., 2024) conducts low-rank decom-
+DimKV significantly outperforms prior methods without                position for pre-RoPE keys, which requires reconstructing
+head-level profiling, while MixedDimKV-H consistently ex-            them during the decoding stage. None of these works has
+ceeds HeadKV when using the same head-level information.             considered assigning different ranks to tokens with varying
+Notably, our approach achieves comparable performance to             levels of importance.
+full attention on LongBench with only 6.25% (KV size =
+512) of the KV cache. In the Needle-in-a-Haystack test, our          Sparse attention. Some works store the entire KV cache but
+solution maintains 100% accuracy at a 50K context length             dynamically load a small portion of KV during the decoding
+while using as little as 0.26% (KV size = 128) of the cache.         stage. Quest (Tang et al., 2024b) approximates keys by
+Furthermore, our solution is highly efficient, reducing per-         the channel-wise minimal and maximal values and selects
+token decoding latency to 55% of full attention.                     important pages of tokens by estimating attention weights.
+                                                                     SparQ (Ribar et al., 2023) selects important channels of
+                                                                     keys to estimate attention weights, and then fetches keys
+                                                                     and values with high contribution. PQCache (Zhang et al.,
+                                                                     2025) applies Product Quantization techniques to retrieve
+
+                                                                 2
+               Beyond Token Eviction: Mixed-Dimension Budget Allocation for Efficient KV Cache Compression
+
+top-k relevant key-value pairs.                                        Table 1. Comparison of head-wise and joint-head compression.
+                                                                       Head-wise compression reduces projection overhead and enhances
+Quantization. Many works compress KV cache by reduc-                   inference efficiency. Its support for head-level budget allocation
+ing the bit width. KVQuant (Hooper et al., 2024) applies               ensures competitive compression performance.
+several techniques to achieve a 3-bit quantization. Polar-
+Quant (Wu et al., 2025) encodes KV caches with quantized                              Projection Matrices Computational Compression
+                                                                       Granularity
+radii and angles. While these works achieve good perfor-                                   Overhead         Efficiency    Quality
+mance, they are orthogonal to our method.                              Joint-head              ×                  ×               ✓
+                                                                       Head-wise               ✓                  ✓               ✓
+3. Preliminary
+3.1. Attention Mechanism and KV Cache                                  The complete process is formulated as
+In transformer-based models, the multi-head attention                                                          qPK Kc⊤
+(MHA) module with H heads projects the input sequence                        Attn(q, Kc , Vc ) = sof tmax(       √     )Vc PV⊤
+                                                                                                                   d
+of embeddings into H sets of queries, keys, and values. The
+attention output for each head i is computed as:                       4. Solution
+                                        Qi K ⊤
+         Attn(Qi , Ki , Vi ) = sof tmax( √ i )Vi                       To process the KV cache of a user prompt, we partition the
+                                           d                           prompt into a local window Q consisting of the last α tokens
+                                                                       and the remaining tokens. The local window is fully retained
+During the decoding stage, to avoid excessive recomputation            (i.e., 100% compression ratio), while the remaining tokens
+for the keys and values of previous tokens, the key-value              are assigned compression ratios from a predefined candidate
+pairs are cached. The memory overhead of KV cache scales               set. To maximize performance under a KV cache budget, we
+linearly with the number of heads and sequence length,                 prioritize higher dimensions for important, less compress-
+leading to prohibitive memory costs.                                   ible tokens. For dimension reduction, we apply PCA to
+To mitigate this, grouped-query attention (GQA) (Ainslie               each head independently rather than across all heads jointly,
+et al., 2023) partitions the H query heads into G groups.              owing to the superior efficiency and flexibility (Section 4.1).
+Within each group, multiple queries share one key and value            We quantify the impact of compression by computing an
+head. By reducing the number of KV heads from H to G,                  accuracy loss score, defined as the deviation in attention
+the KV cache size is substantially reduced. Many recent                output, for each token-dimension pair (Section 4.2). The
+LLMs (Yang et al., 2025; Jiang et al., 2023; Grattafiori et al.,       dimension allocation is then formulated as a constrained op-
+2024) have applied GQA architecture in their models.                   timization problem, which we solve using an efficient search
+                                                                       algorithm to find the optimal assignment (Section 4.3).
+3.2. Principal Component Analysis
+                                                                       4.1. Head-wise Compression
+We employ Principal Component Analysis (PCA) (Abdi
+& Williams, 2010) algorithm to compress the KV cache.                  Let Hkv be the number of KV heads, N be the number of
+Specifically, for a key matrix K ∈ Rn×d , PCA performs                 tokens in the KV cache, and D be the head dimension. We
+singular value decomposition on the covariance-like matrix             denote X ∈ RHkv ×N ×D as either the key or value cache.
+K ⊤ K/n, yielding K ⊤ K/n = U ΣU ⊤ . To achieve a ρ                    There are two ways to conduct PCA for X.
+compression ratio, we construct a projection matrix PK =
+Ur ∈ Rd×r , where Ur consists of the first r = d · ρ columns           1. Head-wise compression. We make dimensional reduc-
+of U corresponding to the largest eigenvalues. The original               tion for each head individually. On each head, we com-
+key K is projected to a lower-dimensional representation                  press dimensions from D to a specific ratio.
+Kc = K · PK ∈ Rn×r . Similarly, the value matrix V is
+                                                                       2. Joint-head compression. Heads are concatenated to
+compressed into Vc = V PV using its respective projection
+                                                                          form Xjoint ∈ RN ×(Hkv ·D) . We compress dimensions
+matrix PV . Our method reduces the KV cache storage from
+                                                                          from Hkv · D to a specific ratio.
+2nd to 2nr, and also introduces a fixed overhead of 2dr to
+store the projection matrices.
+                                                                       Although prior work (Chang et al., 2024) has observed a bet-
+During inference, we first project the query q into the r-             ter low-rank property for joint-head compression, it may not
+dimensional subspace: q̂ = qPK . The attention weights                 lead to overall performance improvement. As summarized
+are then efficiently computed in this reduced space. After             in Table 1, head-wise compression consistently exceeds or
+obtaining the weighted sum of compressed values Vc , we                matches joint-head compression across multiple aspects.
+project the result back to the original d-dimensional space.           We justify this choice through the following three factors.
+
+                                                                   3
+              Beyond Token Eviction: Mixed-Dimension Budget Allocation for Efficient KV Cache Compression
+
+First, head-wise compression is more memory-efficient re-             Algorithm 1 Loss Score Computation
+garding projection matrices. For a compression ratio ρ,                 Input: Key K ∈ RN ×d , Value V ∈ RN ×d , Query Q ∈
+head-wise compression brings an overhead of Hkv D2 ρ,                   RM ×d , compression ratio ρ, head dimension d
+while joint-head compression requires (Hkv D)2 ρ, which                 Output: Loss score vector L ∈ RN
+is Hkv × higher. For a GQA model (H = 32, Hkv = 8,                                          ⊤
+                                                                        P ← Sof tmax( QK  √ )                     // P ∈ RM ×N
+D = 128) at a compression ratio of ρ = 25%, the joint-head                                 d
+overhead is equivalent to storing 64 full tokens per layer per          if ρ == 0% then
+head, which is prohibitive for constrained budget settings                 E ← 2 · P ⊙ ∥V ∥2
+(e.g., 128 tokens).                                                     else if ρ == 100% then
+                                                                           E ← 0M ×N
+Second, joint-head compression brings higher computation                else
+complexity. Since attention is a head-level operation, joint-              K ′ , V ′ ← Compressed(K, V, ρ)
+head compression requires either reconstructing the full                                       ′⊤
+                                                                           P ′ ← Sof tmax( QK√
+                                                                                               d
+                                                                                                  )
+KV cache, which negates any efficiency gains, or operating
+on a joint subspace. For example, at ρ = 25% with 8                        E ← |P − P | ⊙ ∥V ∥2 + P ⊙ ∥V − V ′ ∥2
+                                                                                     ′
+
+heads, the joint dimension becomes 2× the original head                 end ifP
+                                                                                  M
+dimension, increasing rather than decreasing the per-head               L ← i=1 E[i, :]                    // Sum across queries
+computational burden.
+Third, and most importantly, joint-head compression en-
+                                                                      Then we can efficiently compute the scores for the entire
+forces uniform behavior across all heads, ignoring the non-
+                                                                      input sequences in batches. As shown in Algorithm 1, we
+uniform importance across heads. Recent work (Fu et al.,
+                                                                      first compute the error matrix E = |P ′ − P | · ∥V ∥2 + P ·
+2024) has pointed out that allocating non-uniform budgets
+                                                                      ∥V −V ′ ∥2 , where Eij estimates the impact of the j-th token
+to different heads can yield better performance. Head-
+                                                                      on the i-th query’s output. Then we compute
+                                                                                                               PM the loss score
+wise compression naturally supports this spatial adaptivity,
+                                                                      by summing across queries, i.e., L = i=1 E[i, :]. Our
+whereas the gains from joint-head low-rankness are often
+                                                                      algorithm also accounts for two boundary cases where the
+canceled out by the lack of head-level adaptivity, which is
+                                                                      compression ratio ρ is either 100% or 0%. When ρ = 100%,
+confirmed by experiments in Section 6.5.
+                                                                      i.e., no compression is applied, we simply set the error
+                                                                      matrix to zero. When ρ = 0%, i.e., evicted tokens, we
+4.2. Accuracy Loss Score
+                                                                      zero out both the attention weights and the value vectors,
+To assess the impact of compressing a specific token, we              yielding an error matrix of 2 · P ⊙ ∥V ∥2 .
+employ an analysis that isolates the error introduced by the          Generalization of Token Eviction. SnapKV (Li et al.,
+tth token, assuming all other tokens remain unchanged. We             2024) focuses on token eviction by retaining only those
+target at the change of attention output
+                                     P for queries in the             tokens with the highest attention weights within an observa-
+local window Q and formulate it as q∈Q ∥p′q,t Vt′ −pq V ∥2 ,          tion window. If we set the candidate compression ratios to
+where pq,t refers to the attention scores for query q with the        {0%, 100%}, our solution also functions as token eviction.
+changed tth token, and Vt′ refers to the values with changed          In such aPcase, to minimize the total loss score, tokens with
+tth entry. Given that the local window provides only a                                  (t)
+                                                                      highest q∈Q pq ∥V (t) ∥2 are maintained. Compared to
+partial sampling of the queries, we adopt a conservative              SnapKV, our accuracy loss score incorporates both attention
+score estimation to ensure that critical tokens retain their          importance and value magnitudes, offering a more nuanced
+original information as much as possible. We consider the             sensitivity metric for cache management.
+upper bound
+               X
+                    ∥∆pq,t V ∥2 + ∥p′q,t ∆V ∥2                        4.3. Latent dimension allocation
+               q∈Q                                                    With token-wise loss scores computed, we then select the
+To simplify the computation and facilitate efficient batched          optimal dimension for each token to minimize the total loss
+processing, we consider all tokens to be compressed at a              while adhering to the KV cache budget. Let D denote the set
+specific ratio, yielding attention score p′q for query q. Due         of candidate dimensions, di ∈ D be the dimension allocated
+to the low-rankness of the key-values and the sparsity of             to the i-th token, Li (di ) be the corresponding accuracy loss,
+attention scores, we regard the p′q to be a slight perturbation       and B be the total budget. The allocation is formulated as a
+of p′q,t . Therefore, we define the scoring metric as                 constrained discrete optimization problem:
+
+                                                                                            N                       N
+          X
+ Lt =         ∥(p′q − pq )(t) · V (t) ∥2 + ∥p(t)   ′     (t)
+                                             q · (V − V ) ∥2
+                                                                                            X                       X
+                                                                                  min             Li (di )   s.t.         di ≤ B.   (1)
+       q∈Q                                                                     {di ∈D}N
+                                                                                      i=1   i=1                     i=1
+
+                                                                  4
+              Beyond Token Eviction: Mixed-Dimension Budget Allocation for Efficient KV Cache Compression
+
+Although the problem is non-convex due to the discrete                5. Implementation
+domain, the primal–dual gap is negligible, especially for
+long-context scenarios.                                               In this section, we discuss the practical implementation of
+                                                                      our solution, focusing on memory layout and projection
+Theorem 4.1. The gap between Equation (1) and its La-
+                                                                      matrix management.
+grangian dual is bounded by a small constant ∆ indepen-
+dent of the sequence length N .                                       To optimize the memory layout and the computational effi-
+                                                                      ciency, we reorganize the compressed KV cache by packing
+We defer the proof and related discussion in Section A.               tokens with identical dimensions into contiguous tensors.
+Therefore, we consider its Lagrangian dual:                           This layout enables vectorized attention kernels to operate
+                                                       !!             on each group independently, with the results aggregated
+                   N
+                   X                    N
+                                        X                             subsequently. To avoid excessive memory fragmentation
+       max min           Li (di ) + λ         di − B        (2)       and kernel launch overhead, we limit the number of candi-
+       λ≥0 {di }
+                   i=1                  i=1                           date ratios. Although this rearranges the physical memory,
+For a fixed λ, the optimization decouples into N indepen-             mathematical correctness is preserved as the positional infor-
+dent sub-problems:                                                    mation (e.g., RoPE) is already explicitly embedded within
+                                                                      the representations.
+              d∗i (λ) = arg min Li (d) + λd
+                                            
+                                                      (3)
+                             d∈D                                      Regarding projection storage, we exploit the nested structure
+We adopt the natural assumption that Li (d) is monotoni-              of our matrices. Since projection bases are derived from the
+cally decreasing with respect to d, as higher-dimensional             eigenvectors of K ⊤ K/N and V ⊤ V /N through truncation,
+representations typically preserve more information. Conse-           the basis for a lower dimension is a subset of the higher-
+quently, a higher λ encourages selecting                              dimension one. Consequently, we only store the maximum-
+                                        Pa smaller d, making
+the total budget consumption C(λ) = i d∗i (λ) a monoton-              rank projection matrix (for the largest ρ < 100%). Any
+ically non-increasing step function of λ. This monotonicity           lower-rank matrix is obtained by simply slicing the maxi-
+allows us to efficiently find the optimal λ∗ via bisection            mum matrix, reducing the fixed memory footprint.
+search. In each iteration, we update λ and determine the cor-
+responding {d∗i } until the aggregate budget C(λ) converges           6. Experiments
+to the target B.
+                                                                      6.1. Setup
+4.4. Inter-head vs. Intra-head Optimization                           Models and Datasets. We conduct experiments on
+Our proposed framework is highly versatile and can operate            open-sourced state-of-the-art LLMs: Llama-3-8B-Instruct
+under two distinct settings depending on the availability of          (Grattafiori et al., 2024), the long-context finetuned variant
+external information.                                                 Llama-3-8B-Instruct-Gradient-1048K (Gradient AI, 2024),
+                                                                      and Mistral-7B-Instruct-v0.3 (Jiang et al., 2023). We com-
+If no external information on the importance of layers and            pare our solution with baselines on representative bench-
+heads is given, the basic MixedDimKV distributes the bud-             marks, including Longbench (Bai et al., 2024), RULER
+get evenly across all layers. The optimization problem in             (Hsieh et al., 2024), and Needle-in-a-Haystack (Kamradt,
+Equation (1) is formulated across all heads and tokens within         2023). The experiments are conducted on NVIDIA A100
+a single layer. By solving this problem, the basic Mixed-             80GB GPUs.
+DimKV inherently enables joint budget allocation at both
+the inter-head and inter-token levels. If some heads have a           Baselines. We use the following baselines:
+higher impact on the attention output, they will be allocated         • H2O (Zhang et al., 2023) applies an update policy to
+a higher budget.                                                        maintain a set of heavy-hitter tokens.
+MixedDimKV is also compatible with existing methods that              • SnapKV (Li et al., 2024) uses an observation window
+provide explicit importance of layers and heads. HeadKV                 consisting of the last α tokens to compute attention scores
+(Fu et al., 2024) profiles head-level importance by contex-             of the remaining tokens. Tokens with a higher sum of
+tual QA tasks, and partitions the total budget among heads              attention scores are maintained in the KV cache.
+of all layers according to their estimated saliency. We can           • PyramidKV (Cai et al., 2024) allocates more budget to
+retain the head-level quotas established by HeadKV, while               lower layers and less budget to higher layers, and within
+employing our mixed-dimension optimization scheme to re-                each layer it applies SnapKV for KV selection.
+fine the token-wise distribution within each head. Under this         • HeadKV (Fu et al., 2024) allocates budget to each head
+setting, the optimization problem in Equation (2) is formu-             according to the head’s importance, and for each head, it
+lated independently for each head, focusing on intra-head               applies SnapKV for KV selection.
+token selection. We denote this variant as MixedDimKV-H.
+
+                                                                  5
+                                      Beyond Token Eviction: Mixed-Dimension Budget Allocation for Efficient KV Cache Compression
+
+                   52                           HeadKV                 MixedDimKV-H                         Due to space constraints, we present primary results here
+                                       Llama 3                                  Mistral
+
+
+
+
+LongBench Avg. Score
+                   50                                                                                       and provide the full results in Section C.1.
+                   48                                                           47.0 47.5   47.5 48.0
+                   46                                               45.7 46.0                               As shown in Table 2, MixedDimKV significantly outper-
+                   44                                                                                       forms baselines lacking head-level importance profiling
+                                        41.7 42.1   42.0 42.4
+                   42     40.8 41.4                                                                         (H2O, SnapKV, PyramidKV), especially under tight bud-
+                   40                                                                                       gets (KV size = 128). At a KV size of 512, MixedDimKV
+                   38
+                   36                                                                                       matches full-attention performance on Llama-3. Figure 2
+                            128           256         512             128         256         512           further shows that MixedDimKV-H consistently exceeds
+                                                    KV Cache Size                                           HeadKV using identical head-importance profiling data,
+                                                                                                            confirming the efficacy of mixed-dimension compression.
+                       Figure 2. Comparison of HeadKV and MixedDimKV-H.
+                                                                                                            Notably, even without profiling, MixedDimKV outperforms
+                  95.0                                              70
+                                                                                                            HeadKV at 128 KV size on both Llama-3 (41.07 vs. 40.84)
+                  92.5                                              65                                      and Mistral (46.56 vs. 45.74). We attribute this to HeadKV’s
+                  90.0                89.1 89.5                                            62.6
+                                                                                      60.4
+                  87.5           87.2                               60                                      reliance on static, offline metrics derived from extensive
+ Score            85.0
+                  82.5 81.0 81.0
+                                                            Score   55
+                                                                                 49.8
+                                                                                                            Needle-in-a-Haystack tests. While these metrics capture
+                                                                    50 49.2
+                  80.0                                                      45.3                            general head importance, they fail to identify which heads
+                  77.5                                              45
+                  75.0                                              40                                      are more critical within the current KV cache context. In
+                       SKV PKV MD HKV MD-H                             SKV PKV MD HKV MD-H                  contrast, our method dynamically adapts to the current input,
+                       (a) 8K Context Length                         (b) 32K Context Length                 enabling more precise head-level allocation when resources
+                                                                                                            are limited.
+   Figure 3. Performance comparison on RULER. The terms ‘SKV’,
+   ‘PKV’, ‘MD’, ‘HKV’, ‘MD-H’ denote SnapKV, PyramidKV,                                                     Figure 3 presents the comparison of the average score on
+   MixedDimKV, HeadKV, MixedDimKV-H, respectively.                                                          RULER with context lengths of 8K and 32K, using a fixed
+                                                                                                            KV cache size of 256. We omit H2O from the visualization
+                                                                                                            due to its significantly lower scores, and the full results can
+     Both our solution and many of the baselines will sample α                                              be found in Section C.2. The results on RULER exhibit a
+     last tokens for further KV cache compression, and for fair-                                            similar trend. MixedDimKV consistently surpasses SnapKV
+     ness we set α the same for all solutions in one experiment.                                            and PyramidKV in overall performance. Notably, in the
+     PyramidKV involves a parameter β to control the layer-wise                                             more challenging 32K setting, MixedDimKV-H not only
+     budget allocation, and we set β = 20 as recommended in                                                 achieves the highest score but also broadens its lead over the
+     its paper. HeadKV involves a parameter β to control the                                                competitive HeadKV baseline, reaching a peak performance
+     head-wise budget allocation, and we set β = 1.1 for both                                               of 62.64. This indicates our mixed-dimension compression
+     HeadKV and MixedDimKV-H, which is one of the recom-                                                    enables more efficient memory usage when the budget is
+     mended parameter settings in its paper. When computing                                                 extremely limited.
+     the KV budget consumption, the projection matrices are
+     also counted in our solution. We set the candidate compres-                                            6.3. Needle-in-a-Haystack Test
+     sion ratios to {0%, 12.5%, 25%, 100%}, and we discuss this
+     choice in Section B.                                                                                   We evaluate the long-context information retrieval perfor-
+                                                                                                            mance of different KV cache compression schemes using
+     Beyond the general comparisons above, we further evaluate
+                                                                                                            the Needle-in-a-Haystack test. For Llama-3-8B-Instruct-
+     MixedDimKV against Palu, the SOTA solution that focuses
+                                                                                                            1048k, we set the maximum context length to 50K, the KV
+     on KV cache dimension reduction. The detailed results are
+                                                                                                            size to 128, and the query window size to 32. As shown
+     presented in Section C.3.
+                                                                                                            in Figure 4, our solution successfully retrieves important
+                                                                                                            information under long-context scenarios. MixedDimKV
+     6.2. Main Results on Long-Context Benchmarks                                                           significantly outperforms the baselines that do not rely on
+    We evaluate our solution on long-context benchmarks, in-                                                additional head-level information (SnapKV, PyramidKV),
+    cluding LongBench and RULER.                                                                            and achieves a score close to HeadKV, which requires a time-
+                                                                                                            consuming profiling process. Equipped with the same head-
+    We evaluate performance on LongBench using equivalent                                                   level information, MixedDimKV-H achieves a 100 score
+    KV sizes of 128, 256, and 512. Following (Cai et al., 2024;                                             and outperforms HeadKV, indicating our mixed-dimension
+    Fu et al., 2024), a KV size T denotes a total budget of                                                 compression scheme is beneficial to the space utility of KV
+    H × T × D, where H is the number of heads and D is the                                                  cache. In Section C.4 we present the Needle-in-a-Haystack
+    head dimension. Since our approach introduces dimension                                                 results on Mistral-7B-Instruct, which show the same trend
+    reduction and projection overhead, this metric represents                                               as on Llama-3-8B-Instruct-1048K.
+    the equivalent memory budget rather than raw token counts.
+
+                                                                                                        6
+              Beyond Token Eviction: Mixed-Dimension Budget Allocation for Efficient KV Cache Compression
+
+Table 2. Performance comparison on LongBench. MixedDimKV (MD) is compared against KV cache compression methods that do not
+rely on additional head-level importance profiling.
+
+              Single-Doc QA            Multi-Doc QA        Summarization      Few-shot Learning      Synthetic       Code
+   Method                                                q                                      m      nt                      Avg.
+               A       per    en   Q       QA    us QG
+                                                     MRe p                                  M       PC        e   Lc    RB
+            N      as        M      A               M  Su m                                  Su             PR      c     -P
+             Q     Q          F-   H     2W     M     N
+                                                     TR
+                                                     TQ
+                                                        ew
+                                                        EC s
+                                                                                           SA         ou
+                                                         A
+                                                    Llama-3-8B-Instruct KV size = 128
+   Full    25.56 32.30 39.71 43.56 35.49 21.14 28.58           23.22   26.67 74.00 90.48    42.29    4.80   69.75 59.13 54.02 41.92
+   H2O     23.52 13.74 25.26 29.07 22.72 14.67 21.94           21.34   24.01 46.50 87.99    35.12    5.36   68.21 54.77 48.73 33.93
+   SnapKV 22.39 15.98 30.97 40.78 28.60 19.35 19.76            21.88   21.40 65.50 89.72    38.77    5.75   69.00 58.76 54.73 37.71
+   Pyramid 21.40 16.92 31.62 38.45 28.72 18.59 19.97           22.48   20.96 66.50 89.35    38.39    5.92   69.00 57.86 51.80 37.37
+   MD      25.22 29.07 38.30 43.20 33.84 19.58 24.53           23.12   26.03 72.00 90.61    42.16    5.54   69.50 59.32 55.16 41.07
+                                                    Llama-3-8B-Instruct KV size = 512
+   Full    25.56 32.30 39.71 43.56 35.49 21.14 28.58           23.22   26.67 74.00 90.48    42.29    4.80   69.75 59.13 54.02 41.92
+   H2O     23.76 21.56 31.57 40.54 30.36 17.79 24.89           22.15   25.74 69.00 90.67    40.33    6.05   68.07 61.00 56.26 39.36
+   SnapKV 25.53 23.59 38.58 43.78 33.33 19.85 23.10            22.52   24.19 71.00 90.57    40.48    5.51   69.50 61.10 57.23 40.62
+   Pyramid 24.83 23.33 35.20 43.29 31.87 20.55 23.43           22.80   24.29 71.50 90.61    40.81    5.91   69.50 59.60 54.71 40.14
+   MD      25.56 32.11 39.71 43.56 35.55 21.18 28.66           23.29   26.70 73.50 90.48    42.47    4.80   69.25 59.15 54.13 41.88
+                                                    Mistral-7B-Instruct KV size = 128
+   Full    29.07 41.54 52.88 49.37 39.01 28.58 35.07           25.71   27.73 76.00 88.59    47.51    6.00   98.50 61.48 62.68 48.11
+   H2O     26.48 29.11 37.10 45.26 32.37 22.33 25.20           20.91   25.02 68.50 86.04    38.79    5.50   81.50 47.28 45.06 39.78
+   SnapKV 26.78 30.63 48.03 47.58 35.09 25.35 21.90            22.12   21.83 69.50 88.59    43.91    6.00   94.00 55.70 55.14 43.26
+   Pyramid 26.65 29.71 48.84 48.01 35.85 25.06 22.31           22.36   21.17 68.00 88.80    43.87    4.50   94.00 55.39 52.57 42.94
+   MD      29.88 38.09 51.57 48.91 38.40 26.95 27.12           25.08   27.03 69.50 88.81    47.44    5.50   98.00 61.25 61.45 46.56
+                                                    Mistral-7B-Instruct KV size = 512
+   Full    29.07 41.54 52.88 49.37 39.01 28.58 35.07           25.71   27.73 76.00 88.59    47.51    6.00   98.50 61.48 62.68 48.11
+   H2O     26.95 35.27 43.65 47.13 35.25 23.68 28.70           22.72   26.51 74.50 88.76    42.92    5.50   91.00 57.08 52.08 43.86
+   SnapKV 29.22 36.49 54.05 49.70 38.72 26.72 26.01            24.24   25.26 75.00 89.44    46.85    5.00   96.00 60.27 60.66 46.48
+   Pyramid 27.86 36.07 52.99 49.35 38.10 26.97 25.67           23.91   24.92 73.50 89.91    45.83    5.00   96.50 59.37 59.20 45.95
+   MD      30.06 38.72 52.04 48.30 38.64 27.20 27.86           25.26   27.20 72.00 88.81    47.39    5.50   97.50 61.52 61.64 46.85
+
+
+6.4. Inference Efficiency                                              solution under different numbers of candidate dimensions,
+                                                                       indicating that a more fine-grained compression leads to
+In this section, we implement our solution in FlashAttention
+                                                                       better performance. In Section C.5 we report the number
+(Dao, 2023) and evaluate the inference efficiency on Llama-
+                                                                       of tokens compressed to each dimension to guarantee it
+3-8B-Instruct-1048K. Figure 5 reports decoding latency
+                                                                       does not degenerate to the token eviction scheme. The fol-
+for 128K inputs across varying generation lengths, and
+                                                                       lowing experiments are conducted on the LongBench with
+peak memory usage across different context lengths with
+                                                                       Llama-3-8B-Instruct.
+generation length set to 1. We construct these inputs from
+the Needle-in-a-Haystack dataset. When the generation                  Head-wise vs. joint-head compression. We conducted
+length is 1, the decoding latency represents the pre-filling           an ablation study by replacing head-wise compression with
+latency, and our solution introduces minimal overhead, with            joint-head compression on keys to evaluate its impact. Be-
+latency only slightly higher than full attention (around 5s for        cause heads are combined for compression, the latent di-
+128K input). For a generation length of 4096, our solution             mension allocation process only searches for an optimal
+reduces total and per-token latency to 61.31% and 55.18%               token-level budget distribution. Both strategies share the
+of the baselines, respectively. With 128K contexts, our                same set of candidate dimension compression ratios and use
+solution lowers the peak memory usage to 66.44%.                       no extra information of head-level importance. As shown in
+                                                                       Figure 6, head-wise compression achieves much better per-
+6.5. Ablation Study                                                    formance under a low budget (e.g., 128 KV size), due to its
+                                                                       reduced projection matrices overhead. Even with a higher
+In this section, we further conduct extensive ablation stud-           budget size, the joint-head compression does not show an
+ies. By comparing head-wise and joint-head compression                 advantage. We believe this is because head-wise compres-
+schemes, we show that joint-head compression does not                  sion can distribute budget more flexibly as compression is
+outperform head-wise compression. We also evaluate our                 conducted at the head-level.
+
+                                                                   7
+                                                Beyond Token Eviction: Mixed-Dimension Budget Allocation for Efficient KV Cache Compression
+
+
+
+
+                                                              (a) FullKV Score: 100                                                                            (b) SnapKV Score: 85.80
+
+
+
+
+                                                        (c) PyramidKV Score: 89.40                                                                             (d) HeadKV Score: 99.00
+
+
+
+
+                                                   (e) MixedDimKV Score: 98.00                                                                             (f) MixedDimKV-H Score: 100.00
+                                                    Figure 4. Results of Needle-in-a-Haystack test on Llama-3-8B-Instruct-1048K with KV size 128.
+
+
+                                               FullKV            Ours                                                FullKV        Ours       Table 3. Comparison of SnapKV and MixedDimKV with
+
+
+
+
+                                                                            Peak Memory Usage (GB)
+                               350                                                                   45                                       two granularity of candidate ratio sets: {0%, 100%}, and
+                               300                                                                   40                                       {0%, 12.5%, 25%, 100%}.
+
+                 Latency (s)
+                               250                                                                   35
+                               200                                                                   30
+                               150                                                                   25                                        Method SnapKV {0%, 100%} {0%, 12.5%, 25%, 100%}
+                               100                                                                   20
+                                50                                                                                                             Score      39.77      40.93               41.76
+                                                                                                     15
+                                     0     1000    2000       3000   4000                                 4K    8K     16K 32K 64K 128K
+                                           Generation Length                                                      Context Length
+                                Figure 5. Decoding latency and peak memory usage.
+
+                                                                                                                                              allocation mechanism inherently supports distinct budget ra-
+                   50                                           Head-wise                                       Joint-head                    tios for different attention heads, in contrast to SnapKV,
+                                                  Llama 3                                                              Mistral
+
+
+
+
+LongBench Avg. Score
+                   48                                                                                                                         which enforces identical budget consumption across all
+                   46                                                                                                                         heads. Moreover, the performance leap from {0%, 100%}
+                   44                                                                                                                         to {0%, 12.5%, 25%, 100%} indicates that progressively
+                   42                                                                                                                         finer-grained dimension ratio design leads to better results.
+                   40
+                   38
+                   36                                                                                                                         7. Conclusion
+                                         128            256          512                                  128             256       512
+                                                                     KV Cache Size                                                            In this paper, we present MixedDimKV, an efficient KV
+                                                                                                                                              cache compression scheme. MixedDimKV maximizes the
+       Figure 6. Comparison of head-wise and joint-head compression.                                                                          budget utilization by compressing tokens to suitable dimen-
+                                                                                                                                              sions based on their impact on the attention output. When
+                                                                                                                                              information of head-level importance is available, we fur-
+     Granularity of mixed-dimension ratios.              We in-                                                                               ther propose MixedDimKV-H, which combines the benefits
+     vestigate the influence of dimension granularity by                                                                                      of mixed-dimension compression and head-level budget al-
+     evaluating two candidate ratio sets:           {0%, 100%}                                                                                location. Experiments on long-context benchmarks show
+     and {0%, 12.5%, 25%, 100%}, which represent mixed-                                                                                       that MixedDimKV significantly outperforms prior meth-
+     dimension compression at varying levels of granularity. We                                                                               ods without head-level profiling, while MixedDimKV-H
+     set the KV size to 256, and use SnapKV as the baseline. As                                                                               consistently exceeds HeadKV. On an A100, MixedDimKV
+     shown in Table 3, {0%, 100%} outperforms the SnapKV                                                                                      reduces the per-token decoding latency to 55% compared
+     baseline, and we attribute the superior performance to two                                                                               with full attention. These results demonstrate that Mixed-
+     advantages. First, our solution adopts a more rational score                                                                             DimKV significantly alleviates the memory bottleneck of
+     design that incorporates value information, while SnapKV                                                                                 LLMs, thereby extending the scalability of LLMs to long-
+     only considers the impact of keys. Second, our dimension                                                                                 context tasks within limited hardware budgets.
+
+                                                                                                                                          8
+              Beyond Token Eviction: Mixed-Dimension Budget Allocation for Efficient KV Cache Compression
+
+Impact Statement                                                     Dao, T. Flashattention-2: Faster attention with bet-
+                                                                       ter parallelism and work partitioning. arXiv preprint
+This paper presents work whose goal is to advance the field            arXiv:2307.08691, 2023.
+of Machine Learning, and more specifically, the resource-
+efficiency of LLM inference. Our solution facilitates the            Fu, Y., Cai, Z., Asi, A., Xiong, W., Dong, Y., and Xiao, W.
+efficient deployment of LLMs in resource-constrained en-               Not all heads matter: A head-level kv cache compression
+vironments, thereby democratizing access to cutting-edge               method with integrated retrieval and reasoning. arXiv
+AI for small organizations and independent researchers. As             preprint arXiv:2410.19258, 2024.
+a technical optimization for KV cache efficiency, this work
+does not introduce new ethical concerns or negative societal         Gradient AI.         Llama-3-8b-instruct-gradient-
+consequences regarding its deployment or use.                          1048k (revision 84c083a),  2024.          URL
+                                                                       https://huggingface.co/gradientai/
+                                                                       Llama-3-8B-Instruct-Gradient-1048k.
+References
+                                                                     Grattafiori, A., Dubey, A., Jauhri, A., Pandey, A., Kadian,
+Abdi, H. and Williams, L. J. Principal component analysis.
+                                                                       A., Al-Dahle, A., Letman, A., Mathur, A., Schelten, A.,
+ Wiley interdisciplinary reviews: computational statistics,
+                                                                       Vaughan, A., et al. The llama 3 herd of models. arXiv
+  2(4):433–459, 2010.
+                                                                       preprint arXiv:2407.21783, 2024.
+Ainslie, J., Lee-Thorp, J., De Jong, M., Zemlyanskiy, Y.,            Hooper, C., Kim, S., Mohammadzadeh, H., Mahoney,
+  Lebrón, F., and Sanghai, S. Gqa: Training generalized               M. W., Shao, Y. S., Keutzer, K., and Gholami, A.
+  multi-query transformer models from multi-head check-                Kvquant: Towards 10 million context length llm infer-
+  points. arXiv preprint arXiv:2305.13245, 2023.                       ence with kv cache quantization. Advances in Neural
+                                                                      Information Processing Systems, 37:1270–1303, 2024.
+Bai, Y., Lv, X., Zhang, J., Lyu, H., Tang, J., Huang, Z.,
+  Du, Z., Liu, X., Zeng, A., Hou, L., et al. Longbench: A            Hsieh, C.-P., Sun, S., Kriman, S., Acharya, S., Rekesh, D.,
+  bilingual, multitask benchmark for long context under-               Jia, F., Zhang, Y., and Ginsburg, B. Ruler: What’s the
+  standing. In Proceedings of the 62nd Annual Meeting of               real context size of your long-context language models?
+  the Association for Computational Linguistics (Volume 1:             arXiv preprint arXiv:2404.06654, 2024.
+  Long Papers), pp. 3119–3137, 2024.
+                                                                     Jiang, A. Q., Sablayrolles, A., Mensch, A., Bamford, C.,
+Cai, Z., Zhang, Y., Gao, B., Liu, Y., Li, Y., Liu, T., Lu, K.,          Chaplot, D. S., de las Casas, D., Bressand, F., Lengyel,
+  Xiong, W., Dong, Y., Hu, J., et al. Pyramidkv: Dynamic                G., Lample, G., Saulnier, L., Lavaud, L. R., Lachaux, M.-
+  kv cache compression based on pyramidal information                   A., Stock, P., Scao, T. L., Lavril, T., Wang, T., Lacroix,
+  funneling. arXiv preprint arXiv:2406.02069, 2024.                     T., and Sayed, W. E. Mistral 7b, 2023. URL https:
+                                                                        //arxiv.org/abs/2310.06825.
+Chang, C.-C., Lin, W.-C., Lin, C.-Y., Chen, C.-Y., Hu, Y.-F.,
+  Wang, P.-S., Huang, N.-C., Ceze, L., Abdelfattah, M. S.,           Kamradt, G. Needle in a haystack - pressure testing llms,
+  and Wu, K.-C. Palu: Compressing kv-cache with low-                   2023. URL https://github.com/gkamradt/
+  rank projection. arXiv preprint arXiv:2407.21118, 2024.              LLMTest_NeedleInAHaystack.
+
+Chang, C.-C., Lin, C.-Y., Akhauri, Y., Lin, W.-C., Wu, K.-C.,        Li, Y., Huang, Y., Yang, B., Venkitesh, B., Locatelli, A., Ye,
+  Ceze, L., and Abdelfattah, M. S. xkv: Cross-layer svd for             H., Cai, T., Lewis, P., and Chen, D. Snapkv: Llm knows
+  kv-cache compression. arXiv preprint arXiv:2503.18893,               what you are looking for before generation. Advances
+  2025.                                                                 in Neural Information Processing Systems, 37:22947–
+                                                                        22970, 2024.
+Chen, Z., Sadhukhan, R., Ye, Z., Zhou, Y., Zhang, J., Nolte,
+                                                                     Ribar, L., Chelombiev, I., Hudlass-Galley, L., Blake, C.,
+  N., Tian, Y., Douze, M., Bottou, L., Jia, Z., et al. Mag-
+                                                                       Luschi, C., and Orr, D. Sparq attention: Bandwidth-
+  icpig: Lsh sampling for efficient llm generation. arXiv
+                                                                       efficient llm inference. arXiv preprint arXiv:2312.04985,
+  preprint arXiv:2410.16179, 2024.
+                                                                       2023.
+Comanici, G., Bieber, E., Schaekermann, M., Pasupat, I.,             Saxena, U., Saha, G., Choudhary, S., and Roy, K. Eigen
+  Sachdeva, N., Dhillon, I., Blistein, M., Ram, O., Zhang,             attention: Attention in low-rank space for kv cache com-
+  D., Rosen, E., et al. Gemini 2.5: Pushing the frontier               pression. arXiv preprint arXiv:2408.05646, 2024.
+  with advanced reasoning, multimodality, long context,
+  and next generation agentic capabilities. arXiv preprint           Starr, R. M. Quasi-equilibria in markets with non-convex
+  arXiv:2507.06261, 2025.                                              preferences. Econometrica, 37(1):25–38, 1969. doi: 10.
+
+                                                                 9
+              Beyond Token Eviction: Mixed-Dimension Budget Allocation for Efficient KV Cache Compression
+
+  2307/1909201. URL https://www.jstor.org/
+  stable/1909201.
+Sun, H., Chang, L.-W., Bao, W., Zheng, S., Zheng, N., Liu,
+  X., Dong, H., Chi, Y., and Chen, B. Shadowkv: Kv
+  cache in shadows for high-throughput long-context llm
+  inference. arXiv preprint arXiv:2410.21465, 2024.
+
+Tang, H., Lin, Y., Lin, J., Han, Q., Hong, S., Yao, Y., and
+  Wang, G. Razorattention: Efficient kv cache compression
+  through retrieval heads. arXiv preprint arXiv:2407.15891,
+  2024a.
+Tang, J., Zhao, Y., Zhu, K., Xiao, G., Kasikci, B., and Han,
+  S. Quest: Query-aware sparsity for efficient long-context
+  llm inference. arXiv preprint arXiv:2406.10774, 2024b.
+Tu, D., Vashchilenko, D., Lu, Y., and Xu, P. Vl-cache: Spar-
+  sity and modality-aware kv cache compression for vision-
+  language model inference acceleration. arXiv preprint
+  arXiv:2410.23317, 2024.
+
+Wu, S., Lv, A., Feng, X., Zhang, Y., Zhang, X., Yin, G., Lin,
+ W., and Yan, R. Polarquant: Leveraging polar transfor-
+ mation for efficient key cache quantization and decoding
+ acceleration. arXiv preprint arXiv:2502.00527, 2025.
+
+Xiao, G., Tian, Y., Chen, B., Han, S., and Lewis, M. Ef-
+  ficient streaming language models with attention sinks.
+  arXiv preprint arXiv:2309.17453, 2023.
+Xiao, G., Tang, J., Zuo, J., Guo, J., Yang, S., Tang, H.,
+  Fu, Y., and Han, S. Duoattention: Efficient long-context
+  llm inference with retrieval and streaming heads. arXiv
+  preprint arXiv:2410.10819, 2024.
+Yang, A., Li, A., Yang, B., Zhang, B., Hui, B., Zheng, B.,
+  Yu, B., Gao, C., Huang, C., Lv, C., et al. Qwen3 technical
+  report. arXiv preprint arXiv:2505.09388, 2025.
+
+Zeng, A., Lv, X., Zheng, Q., Hou, Z., Chen, B., Xie, C.,
+  Wang, C., Yin, D., Zeng, H., Zhang, J., et al. Glm-4.5:
+  Agentic, reasoning, and coding (arc) foundation models.
+  arXiv preprint arXiv:2508.06471, 2025.
+Zhang, H., Ji, X., Chen, Y., Fu, F., Miao, X., Nie, X., Chen,
+  W., and Cui, B. Pqcache: Product quantization-based
+  kvcache for long context llm inference. Proceedings of
+  the ACM on Management of Data, 3(3):1–30, 2025.
+Zhang, Z., Sheng, Y., Zhou, T., Chen, T., Zheng, L., Cai,
+  R., Song, Z., Tian, Y., Ré, C., Barrett, C., et al. H2o:
+  Heavy-hitter oracle for efficient generative inference of
+  large language models. Advances in Neural Information
+  Processing Systems, 36:34661–34710, 2023.
+
+
+
+
+                                                                10
+              Beyond Token Eviction: Mixed-Dimension Budget Allocation for Efficient KV Cache Compression
+
+A. Proof of Theorem 4.1 and Gap Analysis
+In this section, we provide the formal proof for Theorem 4.1 and analyze the duality gap. We first prove a sequence-length-
+independent upper bound, then show that the relative gap vanishes as the context length grows, and finally explain why the
+realized gap at the converged dual variable is typically much tighter than the worst-case bound.
+
+A.1. Proof of Theoretical Bound
+Recall the primal problem P ∗ in Eq. (1) and its dual D∗ in Eq. (2).
+
+Proof of Theorem 4.1. The problem consists of N separable terms subject to m = 1 linear constraint. The Shapley-
+Folkman-Starr Theorem (Starr, 1969) implies that the duality gap of a separable problem with m linear constraints can be
+bounded by the sum of non-convexities of at most m terms.
+Since we have exactly one constraint (m = 1), the gap is bounded by the non-convexity of a single term:
+
+                                             P ∗ − D∗ ≤ max ρ(Li ) =: ∆.                                                   (4)
+                                                           i=1,...,N
+
+
+Here, ρ(Li ) denotes the maximum deviation between Li and its convex envelope on the convexified domain conv(D).
+Crucially, this bound ∆ depends only on the properties of a single token’s loss function. Therefore, ∆ is a constant that
+remains independent of the sequence length N .
+
+A.2. Vanishing Relative Error
+This analysis suggests that the relative impact of the duality gap diminishes as the context length increases. Since the primal
+objective P ∗ (N ) is the summation of losses over N tokens, the total value naturally grows with the sequence length (i.e.,
+P ∗ ≈ O(N )).
+When comparing the bounded absolute gap against this growing total loss, the relative error tends to become negligible:
+
+                                               Γ         1
+                                                     ≈ O( ) → 0        as N → ∞.                                           (5)
+                                            P ∗ (N )     N
+
+This indicates that for long-context scenarios, the solution provided by the Lagrangian relaxation is asymptotically near-
+optimal.
+
+A.3. Gap Tightness at Converged λ∗
+While the theorem guarantees that the gap does not scale with N , the theoretical constant ∆ is a worst-case upper bound.
+Theoretically, the non-convexity ρ could be as large as the total loss of a significant token (”loss jump”), which might
+suggest a potentially loose bound.
+However, in practice, the duality gap is determined by the specific dual variable λ∗ to which our algorithm converges. Let dˆ
+be the final feasible allocation returned by our algorithm and let D(λ) be the dual objective. By weak duality, for any λ ≥ 0
+we have D(λ) ≤ D∗ ≤ P ∗ ≤ P (d),     ˆ hence
+
+                                                          ˆ − D(λ∗ ) =: Γ(λ∗ ).
+                                        Γ = P ∗ − D∗ ≤ P (d)                                                               (6)
+
+In Section A.4, we verify that the realized bound Γ(λ∗ ) is typically much smaller than the worst-case ∆.
+
+A.4. Empirical Verification
+We validate this analysis on the MultiFieldQA-en dataset from the LongBench benchmark. We sample sequences of
+varying lengths and evaluate the duality gap using Llama-3-8B-Instruct.
+Table 4 presents the results:
+
+   • Primal Loss (P ( ˆ
+                     d)): As expected, the total objective value grows with context length (from 63.83 to 104.59).
+
+                                                              11
+              Beyond Token Eviction: Mixed-Dimension Budget Allocation for Efficient KV Cache Compression
+
+
+                                       40
+                                       35
+                                       30
+                                       25
+                               Score   20
+                                       15                        K compression
+                                       10                        V compression
+                                        5                        Full
+                                              510 20 30 40 50 60 70 80 90 100
+                                                      Compression Ratio (%)
+                        Figure 7. Performance of MultiFieldQA-en under different KV compression ratios.
+
+
+
+   • Gap Upper Bound (Γ(λ∗ )): The upper bound of duality gap P ( ˆ
+                                                                 d) − D(λ∗ ) remains small and shows no systematic
+     growth with N .
+
+
+Consequently, the relative gap drops to below 0.15% for longer sequences, supporting the effectiveness of our approach for
+long-context tasks.
+In addition to the sequence-level averages in Table 4, Table 5 shows that this tightness holds across layers as well, indicating
+it remains small for the vast majority of layers.
+
+                              Table 4. Scalability of Duality Gap (MultiFieldQA-en from LongBench).
+
+    Context Length (N )                            ˆ
+                              Avg. Primal Loss (P (d))          Avg. Gap Upper Bound (Γ(λ∗ ))             Avg. Relative Gap (%)
+    2,005                                    63.83                             0.023                             0.033%
+    4,752                                    71.26                             0.010                             0.015%
+    6,186                                   104.59                             0.010                             0.011%
+
+
+
+                                             Table 5. Layer-wise Statistics (at N = 6, 186).
+
+            Metric                     Min           25th Percentile        Median        75th Percentile        Max
+                          ∗                    −5                −5                 −4                −4
+            Sensitivity (λ )       1.3 × 10            9.3 × 10           1.7 × 10             2.2 × 10        4.2 × 10−4
+            Relative Gap (%)         0.000%              0.000%             0.000%               0.010%          0.085%
+
+
+
+B. Parameter Choice
+For most experiments of our solution, we set the candidate set of compression ratios to {0%, 12.5%, 25%, 100%}. We evalu-
+ate the performance of KV dimensional reduction for Llama-3-8B-Instruct in one of the LongBench datasets (MultiFieldQA-
+en), where we vary the compression ratio for keys or values and report the scores. As shown in Figure 7, we observe a
+performance drop when the compression ratio is lower than 50%. When selecting the optional compression ratios, the 0%
+is selected to achieve low KV budget, and the 100% is selected to maintain the important information. Then We aim to
+select dimensions that yield substantial compression benefits while avoiding severe information loss caused by compressing
+important tokens along those dimensions. The optional dimensions should be powers of two, and the number of candidate
+options is kept limited to avoid computational fragmentation. We find that at 50% the performance degradation is noticeable
+but not severe, making the cost of compression difficult to distinguish; however, compressing important tokens to this
+dimensionality can still incur non-negligible information loss. Therefore, we skip 50% and choose 25% and 12.5%.
+
+                                                                   12
+                Beyond Token Eviction: Mixed-Dimension Budget Allocation for Efficient KV Cache Compression
+
+                                               Table 6. Additional results on LongBench.
+
+                Single-Doc QA        Multi-Doc QA          Summarization       Few-shot Learning      Synthetic        Code
+   Method                                                q                                       m        t                        Avg.
+             Q        er    en       A    QA        QG
+                                                     MRe p                                   M        ou      PR     Lc    RB
+              A    Qas     M     Q               us M  Su m                                   Su         n       e     c      -P
+            N          p    F-   H       2W     M     N
+                                                     TR
+                                                     TQ
+                                                        ew
+                                                       EC  s
+                                                                                            SA       PC
+                                                         A
+                                                    Llama-3-8B-Instruct KV size = 256
+   Full    25.56 32.30 39.71 43.56 35.49 21.14 28.58           23.22    26.67 74.00 90.48    42.29   4.80     69.75 59.13 54.02 41.92
+   H2O     23.09 18.56 29.02 36.01 28.07 15.70 23.31           21.48    24.57 60.50 88.70    38.55   5.37     68.04 58.52 52.73 37.01
+   SnapKV 23.36 20.2 37.36 42.37 33.18 19.96 21.76             22.00    22.83 71.00 90.86    40.03   5.83     69.50 60.16 55.91 39.77
+   Pyramid 23.99 20.51 36.06 42.47 31.34 20.28 21.36           22.68    22.83 71.00 90.48    39.86   5.83     69.25 58.64 54.06 39.42
+   MD      25.26 31.39 39.60 43.82 35.46 21.59 27.07           22.95    26.54 73.00 90.61    42.40   5.02     69.50 59.11 54.84 41.76
+                                                    Mistral-7B-Instruct KV size = 256
+   Full    29.07 41.54 52.88 49.37 39.01 28.58 35.07           25.71    27.73 76.00 88.59    47.51   6.00     98.50 61.48 62.68 48.11
+   H2O     25.93 34.24 42.34 46.22 33.65 22.8 26.90            21.61    25.89 72.50 87.69    40.96   6.50     88.00 53.94 47.76 42.31
+   SnapKV 27.72 33.18 51.59 47.58 37.60 27.73 23.98            23.12    23.21 73.00 88.79    44.88   5.00     96.00 58.05 58.12 44.97
+   Pyramid 27.60 33.36 52.23 48.48 38.11 27.10 23.64           23.20    23.25 72.50 89.56    45.14   5.50     96.00 56.90 55.62 44.89
+   MD      29.62 41.50 53.05 48.49 38.70 28.16 30.67           25.33    27.59 75.00 88.75    47.81   6.00     98.00 61.44 62.30 47.65
+
+
+
+C. Extended Experimental Results
+In this section, we provide additional experimental results to complement the analysis in the main text. In Section C.1 and
+Section C.2, we present additional results on LongBench and RULER, respectively. In Section C.4 we show the results of
+Needle-in-a-Haystack tests on the Mistral model.
+
+C.1. More Results on LongBench
+In Table 6 we supplement the experimental results with a KV size of 256 on the LongBench. The results show that our
+solution achieves a consistent performance improvement compared with H2O, SnapKV, and PyramidKV. In Table 7 we
+present the full results of HeadKV and MixedDimKV-H on LongBench.
+
+C.2. More Results on RULER
+In Table 8 we present the full results on RULER.
+
+C.3. Comparison with Dimension Reduction Methods
+We benchmark our approach against dimension reduction-based methods to provide a comprehensive evaluation. We select
+Palu (Chang et al., 2024) as the representative baseline for this category due to its clear implementation and reproducibility.
+Unlike eviction strategies that discard tokens, Palu performs low-rank decomposition on the linear projection matrices
+(Wk , Wv ), effectively reducing the hidden dimension of the KV cache while retaining all tokens.
+
+Setup. To ensure a fair comparison, we align the total memory footprint of the KV cache for both methods. Specifically,
+we set the token budget of our MixedDimKV and MixedDimKV-H variants to 10% of the prefill sequence length. Corre-
+spondingly, we adjust the projection dimension in Palu to a specific ratio that yields an identical KV cache size (i.e., a 40%
+projection dimension).
+
+Results. As shown in Table 9, Palu experiences a significant performance degradation at this compression level. In
+contrast, our solution demonstrates superior resilience, maintaining performance comparable to the full-cache baseline.
+
+C.4. Needle-in-a-Haystack tests on Mistral
+We evaluate the Needle-in-a-Haystack test on the Mistral-7B-Instruct-v0.2 model. We set the maximum context length to
+32K, the KV size to 128, and the query window size to 16. As shown in Figure 8, MixedDimKV significantly outperforms
+the baselines that does not relies on additional head-level information (SnapKV, PyramidKV). Equipped with the same
+
+                                                                   13
+              Beyond Token Eviction: Mixed-Dimension Budget Allocation for Efficient KV Cache Compression
+
+                            Table 7. Full LongBench results for HeadKV and MixedDimKV-H (MD-H).
+
+                Single-Doc QA        Multi-Doc QA        Summarization       Few-shot Learning     Synthetic       Code
+   Method                                                    Su       ew                   Su          t                      Avg.
+             Q        er    en       A    QA     q   Re        m        s   TR     TQ         m    ou      PR    Lc    RB
+              A    Qas     M     Q             Mus     p             M        EC         SA           n      e     c     -P
+            N          p    F-   H       2W          G     QM         N              A            PC
+                                                                                           M
+                                                Llama-3-8B-Instruct KV size = 128
+   Full   25.56 32.30 39.71 43.56 35.49 21.14 28.58 23.22 26.67 74.00 90.48 42.29                 4.80 69.75 59.13 54.02 41.92
+   HeadKV 22.56 28.04 39.64 44.40 31.83 20.62 22.16 23.04 24.04 71.00 90.10 38.81                 4.89 68.75 61.72 61.77 40.84
+   MD-H 24.59 27.15 41.39 43.59 35.10 20.59 23.43 22.74 25.56 70.00 90.34 40.51                   5.08 69.50 62.30 59.69 41.35
+                                                Llama-3-8B-Instruct KV size = 256
+   Full   25.56 32.30 39.71 43.56 35.49 21.14 28.58 23.22 26.67 74.00 90.48 42.29                 4.80 69.75 59.13 54.02 41.92
+   HeadKV 24.53 30.52 38.46 43.99 35.62 20.60 23.33 22.85 24.97 72.50 90.43 40.13                 6.03 69.75 62.12 61.14 41.69
+   MD-H 24.85 30.13 40.45 44.22 36.24 20.74 26.04 23.01 26.05 73.00 90.56 41.32                   5.64 69.50 62.44 59.84 42.13
+                                                Llama-3-8B-Instruct KV size = 512
+   Full   25.56 32.30 39.71 43.56 35.49 21.14 28.58 23.22 26.67 74.00 90.48 42.29                 4.80 69.75 59.13 54.02 41.92
+   HeadKV 24.83 29.85 38.06 44.30 36.34 22.17 24.70 23.14 26.03 73.50 90.56 40.82                 5.66 69.50 62.36 60.66 42.03
+   MD-H 25.37 31.96 39.82 43.97 36.91 21.39 27.61 23.35 26.24 73.50 90.64 41.83                   5.27 69.50 62.02 58.29 42.35
+                                                Mistral-7B-Instruct KV size = 128
+   Full   29.07 41.54 52.88 49.37 39.01 28.58 35.07 25.71 27.73 76.00 88.59 47.51                 6.00 98.50 61.48 62.68 48.11
+   HeadKV 27.23 37.88 52.46 47.74 38.95 27.69 26.15 24.12 24.32 75.00 90.11 44.35                 4.50 94.5 58.93 57.95 45.74
+   MD-H 28.22 38.08 51.12 48.79 37.75 27.32 27.38 24.73 26.63 66.50 90.11 44.95                   5.23 98.00 61.14 60.38 46.02
+                                                Mistral-7B-Instruct KV size = 256
+   Full   29.07 41.54 52.88 49.37 39.01 28.58 35.07 25.71 27.73 76.00 88.59 47.51                 6.00 98.50 61.48 62.68 48.11
+   HeadKV 28.62 39.27 52.56 50.78 38.80 28.56 28.49 24.38 26.23 75.50 89.52 44.93                 5.50 97.00 60.41 61.43 47.00
+   MD-H 29.34 39.96 53.14 49.60 38.78 28.32 30.84 24.73 27.30 75.00 89.86 46.41                   5.50 97.50 61.66 62.65 47.54
+                                                Mistral-7B-Instruct KV size = 512
+   Full   29.07 41.54 52.88 49.37 39.01 28.58 35.07 25.71 27.73 76.00 88.59 47.51                 6.00 98.50 61.48 62.68 48.11
+   HeadKV 27.23 37.88 52.46 47.74 38.95 27.69 26.15 24.12 24.32 75.00 90.11 44.35                 4.50 94.5 58.93 57.95 45.74
+   MD-H 28.22 38.08 51.12 48.79 37.75 27.32 27.38 24.73 26.63 66.50 90.11 44.95                   5.23 98.00 61.14 60.38 46.02
+
+
+head-level information, MixedDimKV-H also outperforms HeadKV. We further find that in Mistral MixedDimKV achieves
+a better score compared with HeadKV and MixedDimKV-H, which indicates that HeadKV still has limitations in evaluating
+the importance of attention heads.
+
+C.5. More Results on Dimension Allocation
+For most experiments, the candidate set of dimension compression ratios is set to {0%, 12.5%, 25%, 100%}. We report the
+average token length and the proportion of tokens allocated to each compression ratio, averaged over all layers and samples
+in each dataset. Figure 9 presents the results on different LongBench datasets. We find that all four compression ratios take
+effect by allocating a portion of tokens. Specifically, tokens are predominantly allocated to the 0% and 100% compression
+ratios, while the two intermediate ratios account for a non-negligible 10%-15% of the total tokens, which improves the
+space utilization of the KV cache. Notably, in longer datasets, an even larger proportion of tokens are assigned to the 0%
+ratio, which is a direct consequence of the constrained budget setting.
+
+
+
+
+                                                                14
+             Beyond Token Eviction: Mixed-Dimension Budget Allocation for Efficient KV Cache Compression
+
+                                         Table 8. Full results of our solution and baselines on RULER.
+
+          Method                        S1         S2         MK1     MK2          MQ      MV         VT       QA-1       QA-2    Avg.
+                                                                  Context Length = 8K
+          Full                          100        100        99.4    99.4        99.25     83.4   96.64       69.83      58.4    89.59
+          H2O                            1.8        0.2        0.4      3          0.05     0.3    15.76       36.8       32.8    10.12
+          SnapKV                        100        98.2       96.8     92         75.95     71.9   80.52       63.93       50     81.03
+          PyramidKV                     100         98        96.8     93          74.6    72.05   84.16       60.28       50     80.99
+          HeadKV                        100        99.2       99.2     99         98.85    94.75   89.92        65.6      55.2    89.08
+          MixedDimKV                    99.6       99.4       98.8    95.6         88.4    80.25   97.52       67.62      57.4    87.18
+          MixedDimKV-H                  100        99.6       98.4    97.4         96.5     89.7   97.28       68.78      57.6    89.47
+                                                                  Context Length = 32K
+          Full                      99.60          98          98      97         46.6     94.15   22.28       69.78      53.2    75.40
+          H2O                        0.8            0           0       0           0        0     4.04        24.2       23.6    5.85
+          SnapKV                     100          85.8        89.8    13.6         7.25     16.5   20.88       62.77      45.8    49.16
+          PyramidKV                  100          80.6        78.8    14.4         3.69     5.05   20.48       60.27      44.6    45.31
+          HeadKV                     100          90.6         92      44         24.8      56.5   20.92       64.27      50.8    60.43
+          MixedDimKV                98.40         85.60       92.4     8.4         7.75     17.1   21.24       66.47      51.2    49.84
+          MixedDimKV-H               100          95.2         96     38.4        31.05    64.35    21.6       65.80      51.4    62.64
+
+                                            Table 9. Comparative analysis with PALU on LongBench.
+
+             Single-Doc QA              Multi-Doc QA              Summarization           Few-shot Learning       Synthetic        Code
+Method                                                                    Su     M                         Su                                 Avg.
+             A       per       en       A      Q
+                                                  A
+                                                        usq    Re p          m
+                                                                                   New s                     m   PC         e     c   RB
+         Q        as       F-       Q        2W                       M
+                                                                                 TR EC                SA           ou     PR     Lc      -P
+         N       Q         M        H                 M       G                   TQ                                 nt
+                                                                      Q              A                  M
+                                                          Llama-3-8B-Instruct Budget = 10%
+Full     25.56 32.30 39.71 43.56 35.49 21.14 28.58                    23.22       26.67 74.00 90.48    42.29      4.80 69.75 59.13 54.02 41.92
+Palu     15.44 9.32 19.22 17.82 16.87 8.65 9.74                       20.21       14.08 45.00 22.89    23.32      1.59 4.35 7.82 9.07 15.34
+MD       25.22 28.55 38.67 43.39 32.42 21.13 25.72                    23.12       25.96 72.00 90.48    42.74      4.90 69.25 59.16 54.23 41.06
+MD-H     25.32 32.07 39.96 43.91 36.38 21.48 27.39                    23.25       25.95 73.50 90.56    41.84      4.81 69.50 61.86 57.19 42.19
+                                                          Mistral-7B-Instruct Budget = 10%
+Full     29.07 41.54 52.88 49.37 39.01 28.58 35.07                    25.71       27.73 76.00 88.59    47.51      6.00    98.50 61.48 62.68 48.11
+Palu     22.12 31.68 42.54 37.03 28.45 20.08 18.66                    22.90       23.98 70.00 80.96    35.66      4.50    22.00 33.72 33.28 32.97
+MD       29.12 38.12 52.89 49.01 39.48 28.24 30.81                    25.60       25.89 74.00 88.59    47.30      6.00    98.50 61.75 62.54 47.37
+MD-H     29.16 41.00 53.84 49.58 38.96 28.48 34.10                    25.78       27.03 76.00 88.59    47.18      6.00    98.50 61.56 62.54 48.02
+
+
+
+
+                     (a) FullKV Score: 99.70                                                       (b) SnapKV Score: 89.20
+
+
+
+
+                  (c) PyramidKV Score: 89.70                                                       (d) HeadKV Score: 93.20
+
+
+
+
+                 (e) MixedDimKV Score: 96.60                                                    (f) MixedDimKV-H Score: 94.90
+                       Figure 8. Results of Needle-in-a-Haystack test on Mistral-7B-Instruct with KV size 128.
+
+
+                                                                             15
+            Beyond Token Eviction: Mixed-Dimension Budget Allocation for Efficient KV Cache Compression
+
+
+
+
+              0%         12.5%              25%         100%                       0%         12.5%              25%         100%
+    TQA                                                                 TQA
+   TREC                                                                TREC
+SAMSum                                                              SAMSum
+   RB-P                                                                RB-P
+ QMSum                                                               QMSum
+ Qasper                                                              Qasper
+    PRe                                                                 PRe
+ PCount                                                              PCount
+    NQA                                                                 NQA
+   Musq                                                                Musq
+  MF-en                                                               MF-en
+ MNews                                                               MNews
+     Lcc                                                                 Lcc
+    HQA                                                                 HQA
+   GRep                                                                GRep
+  2WQA                                                                2WQA
+       0K    1K    2K    3K    4K      5K     6K   7K     8K                0K    1K    2K    3K    4K      5K     6K   7K     8K
+              Average Number of Tokens (K)                                         Average Number of Tokens (K)
+                   (a) KV size = 256                                                    (b) KV size = 512
+      Figure 9. Average number of tokens and the allocation statistics across candidate compression ratios on LongBench.
+
+
+
+
+                                                               16
+

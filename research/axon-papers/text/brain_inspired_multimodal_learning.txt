@@ -1,0 +1,1176 @@
+S c i e n c e A d v a n c e s | R e s e ar c h A r t i c l e
+
+COMPUTER SCIENCE                                                                                                                                    Copyright © 2026 The
+                                                                                                                                                    Authors, some rights
+Incorporating brain-­inspired mechanisms for                                                                                                        reserved; exclusive
+                                                                                                                                                    licensee American
+multimodal learning in artificial intelligence                                                                                                      Association for the
+                                                                                                                                                    Advancement of
+                                                                                                                                                    Science. No claim to
+Xiang He1†, Dongcheng Zhao1,2†, Yang Li1, Qingqun Kong1*, Xin Yang3*, Yi Zeng1,2,4*                                                                 original U.S.
+                                                                                                                                                    Government Works.
+Multimodal learning enhances the perceptual ability of intelligent systems by integrating information across sen-                                   Distributed under a
+sory modalities. However, most artificial intelligence approaches still rely on static fusion schemes and do not ac-                                Creative Commons
+count for the dynamic nature of multisensory integration observed in the brain. In biological systems, the principle                                Attribution License 4.0
+of inverse effectiveness states that weaker unimodal cues contribute more strongly to multisensory integration,                                     (CC BY).
+whereas strong cues reduce the relative benefit of fusion. Motivated by this mechanism, we investigate the relation-
+ship between multimodal outputs and modality-­specific information and introduce an inverse effectiveness–driven
+multimodal fusion (IEMF) strategy. Integrating IEMF into neural networks yields more adaptive fusion behavior,
+improved accuracy, and substantial gains in computational efficiency. We validate the generality of IEMF across au-
+diovisual perception, vision-­language understanding, and trimodal sentiment analysis, demonstrating consistent
+improvements over state-­of-­the-­art baselines in classification, continual learning, and question answering. The ap-
+proach also transfers across architectures, including both artificial neural networks and spiking neural networks.
+
+
+
+INTRODUCTION                                                                                    enables artificial neural networks (ANNs) to dynamically adjust
+In natural environments, we typically need to process cues from mul-                            learning strategies based on modal reliability, akin to the biological
+tiple senses simultaneously to comprehensively construct an under-                              brain, remains a critical unresolved issue. Beyond architectural ad-
+standing of the same concept. For example, understanding the concept                            vances, a complementary line of work explicitly balances modality
+of “beach” involves not only visual information (yellow sand and blue                           contributions through adaptive attention, confidence-­aware fusion,
+sea) but also relies on auditory (sound of waves) and tactile (texture of                       and uncertainty-­based weighting. Representative methods include
+sand) sensory information. Compared to unimodal information, mul-                               homoscedastic-­uncertainty weighting for multitask learning (21),
+timodal information provides richer and more comprehensive repre-                               confidence-­weighted multimodal fusion (22), and gradient modulation–
+sentational capacity (1, 2). As shown in Fig. 1A, multimodal integration                        based approaches such as on-­the-­fly balancing (4), and curriculum-­
+not only enhances information expressiveness but also effectively re-                           based multimodal training (23). These studies fundamentally validate
+duces uncertainty in single-­modal information. This mechanism of                               the necessity of modulating optimization trajectories on the fly, estab-
+multimodal information integration is not only the foundation of bio-                           lishing a computational imperative that moves beyond static weights
+logical perception but has also become one of the core challenges in                            and paves the way for integrating more sophisticated, biologically
+multimodal learning in artificial intelligence. As information environ-                         grounded adaptive mechanisms. Nevertheless, brain-­inspired algo-
+ments become increasingly complex, traditional unimodal learning                                rithms remain in the early stage, and many biological characteristics
+methods struggle to handle complex and dynamic real-­world scenar-                              and mechanisms have not yet been fully used, offering enormous po-
+ios. Consequently, neural networks have incorporated multimodal                                 tential and emerging challenges for the further development of neural
+information processing strategies to achieve more robust and efficient                          network models.
+information representation. Multimodal neural networks are widely                                   Neurobiological research indicates that vision and audition are
+applied in tasks such as multimodal fusion (3–7), multimodal emo-                               the two primary pathways through which humans acquire external
+tion recognition (8, 9), and audiovisual speech recognition (4, 10–12).                         information, and their integration notably enhances perceptual bene-
+Current mainstream multimodal paradigms, such as contrastive                                    fits (24, 25). Given that audiovisual integration is one of the most
+vision-­language (VL) pretraining (13–15) and large-­scale transformer-­                        thoroughly documented forms of cross-­modal interaction in neuro-
+based fusion architectures (16–18), have achieved remarkable per-                               science, we focus on vision-­audition integration as the primary source
+formance by leveraging massive datasets and attention mechanisms.                               of conceptual intuition from which our inverse effectiveness mecha-
+However, existing engineering paradigms typically use static or                                 nism is derived and subsequently extend it to other multimodal set-
+attention-­based weighting strategies (4, 19, 20), which often struggle                         tings. For visual and auditory information from a common source,
+to compensate as flexibly as biological systems when facing high noise                          the brain has specialized regions responsible for both unimodal in-
+or drastically fluctuating modal quality in complex real-­world sce-                            formation processing and multisensory integration (26). After visual
+narios. Therefore, how to design a plug-­and-­play mechanism that                               and auditory information are received through their respective re-
+                                                                                                ceptors, features are hierarchically extracted through visual and au-
+1
+                                                                                                ditory pathways before being transmitted to multisensory integration
+ Brain-­inspired Cognitive AI Lab, Institute of Automation, Chinese Academy of Sci-
+ences, Beijing, China. 2Center for Long-­term AI, Beijing, China. 3CAS Key Laboratory of
+                                                                                                brain regions. Relevant studies show that audiovisual information
+Molecular Imaging, Institute of Automation, Chinese Academy of Sciences, Beijing,               integration occurring in the cerebral cortex is closely associated
+China. 4Key Laboratory of Brain Cognition and Brain-­inspired Intelligence Technology,          with regions such as the superior temporal sulcus (27–32), posterior
+Chinese Academy of Sciences, Shanghai, China.                                                   parietal cortex (33, 34), and prefrontal cortex (35, 36). Figure 1B il-
+*Corresponding author. Email: qingqun.​kong@​ia.​ac.​cn (Q.K.); xin.​yang@​ia.​ac.​cn (X.Y.);
+yi.​zeng@​ia.​ac.​cn (Y.Z.)                                                                     lustrates the convergence and integration process of cosourced au-
+†These authors contributed equally to this work.                                                diovisual signals in the superior temporal sulcus as an example. In
+
+He et al., Sci. Adv. 12, eady8751 (2026)     5 June 2026                                                                                                           1 of 18
+S c i e n c e A d v a n c e s | R e s e ar c h A r t i c l e
+
+
+
+
+Fig. 1. Illustration of multisensory integration and the role of inverse effectiveness in IEMF. (A) Comparison between unimodal sensory input and multisensory in-
+tegration: Integrating visual and auditory cues reduces ambiguity and uncertainty compared to relying on a single modality. (B) Neural basis of audiovisual integration in
+the human brain, focusing on the superior temporal sulcus (STS) where visual and auditory inputs converge onto multisensory neurons. (C) Biological principle of inverse
+effectiveness: Multisensory integration is strengthened when unimodal signals are weak. Visual and auditory stimuli are processed through distinct sensory pathways and
+converge at multisensory synapses. The inset illustrates the inverse relationship between unimodal strength and integrative gain. (D) The proposed IEMF strategy inspired
+by biological multisensory fusion mechanisms. Visual and auditory inputs are processed by respective encoders, fused via a dynamic fusion module regulated by inverse
+effectiveness principles, and evaluated using modality strength score estimation. The fusion module weights are dynamically adjusted according to the computed scores.
+[Illustrations in (A) created by X.W. and adapted using BioRender. (A) to (C) were created in BioRender. X.H. (2026). (A) https://biorender.com/qhryo4j; (B) https://biorender.
+com/2cuqu7c; (C) https://biorender.com/tqqcykt.]
+
+
+
+this multisensory integration brain region, visual and auditory cues are                 in unimodal input quality, particularly under dynamic and complex
+transmitted through different neural pathways, ultimately converging                     environments. Most existing multimodal fusion methods focus on
+onto common multisensory integration neurons, facilitating cross-­                       maximizing information interaction between modalities yet often
+modal information integration and perceptual decision-­making.                           overlook the dynamic relationship between the fused output and the
+    Brain audiovisual information integration exhibits many inter-                       respective contributions of each modality. This limitation stems from
+esting mechanisms, with inverse effectiveness being particularly                         existing methods typically presetting modal interactions as static
+noteworthy. Calvert et al. (27) found that by separately presenting                      fixed patterns, failing to fully consider that different modalities’ in-
+audiovisual combined speech signals and their unimodal informa-                          formation contributions should flexibly adjust as environmental con-
+tion and conducting cross-­modal comparisons, the left superior                          ditions change. Distinct from existing engineering approaches that
+temporal sulcus demonstrated the most significant cross-­modal in-                       aim to design specific fusion architectures, we propose a general,
+tegration benefits under conditions where unimodal signals were                          architecture-­agnostic gradient modulation strategy. Take audiovisual
+weakest. The inverse effectiveness mechanism indicates that during                       perception as an example: When environmental noise substantially
+multisensory information integration, when unimodal cues are weaker,                     degrades the quality of auditory input, traditional fusion strategies
+the effect of multisensory integration is relatively stronger; conversely,               typically retain fixed fusion weights and cannot adaptively modify
+when individual modal cues are stronger, the effect of modal fusion                      the cooperative interaction between modalities in accordance with
+is relatively diminished, although multisensory integration responses                    signal degradation, thereby constraining the overall perceptual per-
+still exceed the activation response of either single modality (37, 38).                 formance of the system. The phenomenon of inverse effectiveness
+Figure 1C illustrates this phenomenon, where inverse effectiveness                       inspires the insight that an efficient multimodal integration mecha-
+reflects higher sensitivity to weaker modalities in multimodal inte-                     nism should actively enhance the responsiveness of the fusion mod-
+gration brain regions, typically manifested as enhanced information                      ule when the quality of a single modality degrades so that the system
+integration. This mechanism enables biological systems to enhance                        can obtain more compensatory information from other modalities.
+perceptual accuracy and stability by strengthening multimodal inte-                      On the basis of this insight, we propose that fusion strength should
+gration when the quality of a single modality is poor.                                   dynamically respond to modality-­specific quality fluctuations, that
+    Inspired by the biological principle of inverse effectiveness, our                   is, the learning rate of the fusion module should be adaptively modu-
+work reconsiders how multimodal fusion should adapt to variations                        lated according to the reliability of unimodal signals, thereby enabling
+
+He et al., Sci. Adv. 12, eady8751 (2026)   5 June 2026                                                                                                                 2 of 18
+S c i e n c e A d v a n c e s | R e s e ar c h A r t i c l e
+
+more robust and flexible multimodal perception in complex and              Convolutional Neural Networks (CNNs) and transformers. Experi-
+evolving environments.                                                     mental results demonstrate that IEMF has good generality and can
+    Drawing conceptual intuition from the aforementioned neural            be effectively integrated with both types of networks.
+mechanisms of multimodal fusion and biological inspiration, this
+paper adopts deep neural networks as the foundational framework
+for multimodal perceptual learning, focusing on investigating the          RESULTS
+dynamic interaction and cooperative integration mechanisms among           Performance across diverse multimodal fusion scenarios
+modalities. We characterize the neuroscience findings as a source of       Audiovisual classification
+conceptual intuition, serving as a guiding heuristic. Our goal is to       We systematically validated the effectiveness of the IEMF mecha-
+translate the functional essence of inverse effectiveness into a ro-       nism in audiovisual classification tasks. We evaluated performance
+bust, architecture-­agnostic training strategy, thereby bridging bio-      differences between baseline models and IEMF-­enhanced models
+logical efficiency with artificial optimization. To this end, we propose   across three representative datasets: CREMA-­D (39), Kinetics-­Sounds
+an inverse effectiveness–driven multimodal fusion (IEMF) strategy          (40), and UrbanSound8K-­AV (41), using four mainstream fusion
+to enable a more fine-­grained fusion mechanism (Fig. 1D). Although        strategies: concatenation fusion (Concat), modality-­specific learn-
+IEMF originates from audiovisual neural mechanisms, it is designed         ing rates (MSLR) (19), on-­the-­fly gradient modulation with general-
+as a universal training-­time optimization mechanism that can be           ization enhancement (OGM_GE) (4), and learning facilitator for
+applied in a plug-­and-­play manner to various modality combina-           modality (LFM) gap (20). As shown in Fig. 2 (A to C), IEMF dem-
+tions and architectures. IEMF operates solely during training and          onstrates consistent performance improvements across all fusion
+does not modify the inference-­time architecture or computation,           schemes and datasets. Specifically, taking IEMF’s enhancement to
+thereby ensuring that it introduces no additional runtime overhead.        the MSLR method across datasets as an example, on the CREMA-­D
+By quantifying the relationship between the strength of unimodal           dataset, the baseline model achieved 64.11% accuracy using MSLR,
+inputs and the modality strength of multimodal fusion outputs, we          which improved to 65.59% after introducing IEMF, yielding a 1.48%
+adaptively modulate the update rate of the fusion module’s weights.        gain. On the more challenging Kinetics-­Sounds dataset, baseline accu-
+Specifically, we introduce an inverse effectiveness coefficient into the   racy was 51.89%, while the IEMF-­enhanced model reached 55.86%,
+backpropagation process such that the fusion module accelerates its        a 3.97% improvement. Even on the UrbanSound8K-­AV dataset where
+parameter updates in response to weak unimodal signals to enhance          the baseline model already achieved high accuracy of 97.79%, IEMF
+fusion strength, while suppressing updates when unimodal signals           further improved it to 97.98%. Although limited in magnitude, this
+are strong, thereby reducing overreliance on fusion. This design re-       improvement remains practically significant given the already high
+alizes a biologically inspired principle of “weak modality, strong fu-     performance level.
+sion,” ensuring that the integration process neither overdepends on a          Looking at overall trends, IEMF consistently improves performance
+single sensory pathway nor overlooks potentially informative sources.      across datasets and fusion strategies, confirming its effectiveness in
+Consequently, the proposed method not only enhances overall per-           enhancing multimodal fusion efficiency. Unlike traditional fusion
+ceptual accuracy and robustness but also achieves remarkable com-          methods, IEMF dynamically adjusts modal fusion module weights
+putational efficiency. Specifically, it reduces training costs by up to    based on each modality’s relative strength. When information in
+50% while maintaining exceptional performance.                             one modality (e.g., audio) decreases because of noise or distortion,
+    Overall, our contributions can be categorized into the following       IEMF promotes greater information compensation from the fusion
+three points:                                                              module, improving overall perceptual accuracy and model robust-
+    1.We introduce the inverse effectiveness mechanism into multi-         ness. This dynamic adaptive mechanism notably enhances model
+modal fusion in deep neural networks, proposing an IEMF strategy.          robustness when facing input quality fluctuations and environmen-
+This strategy adjusts the parameter update intensity of fusion mod-        tal uncertainties.
+ules in real time, enabling the model to enhance its ability to extract    VL fusion
+information from other modalities when a single modality signal is         To demonstrate that IEMF is not limited to audiovisual tasks, we first
+weak, thereby improving information compensation effects and fu-           extended our evaluation to VL scenarios using the Hateful Memes
+sion efficiency.                                                           dataset (42). We used three representative architectures: Concat BERT
+    2.We conduct systematic empirical studies on multiple standard         (42), MMBT-­Grid (43), and ViLBERT (44). As shown in Fig. 2 (D to
+datasets and tasks, including representative scenarios such as au-         F), IEMF consistently boosted performance across accuracy, area
+diovisual speech recognition, audiovisual continual learning, and          under the receiver operating characteristic curve (AUROC), and
+audiovisual question answering (AVQA), and further extend our              F1-­Macro metrics for all architectures. Specifically, for the Concat
+evaluation beyond audiovisual integration to VL understanding and          BERT model, IEMF improved the AUROC from 66.19 to 67.12%.
+text-­audiovisual dialogue understanding. Experimental results show        On the MMBT-­Grid model, the classification accuracy increased from
+that our proposed method exhibits stronger perceptual capabilities un-     60.20 to 62.20%, achieving a gain of 2.0%. Notably, for the ViLBERT
+der various complex conditions. Particularly worth emphasizing is that,    architecture, IEMF improved the F1-­Macro score from 54.97 to 59.86%,
+as a mechanism, IEMF can seamlessly integrate with various existing        demonstrating its capability to optimize fusion even in complex
+state-­of-­the-­art methods and further enhance their performance.         transformer-­based models.
+    3.We validate the universality of IEMF across distinct information-­   Trimodal fusion
+processing paradigms, ranging from ANNs to spiking neural net-             Furthermore, we validated the efficacy of IEMF in a trimodal setting
+works (SNNs). Furthermore, we demonstrate that IEMF acts as an             (text-­audiovisual), capturing complex interactions among three mo-
+architecture-­agnostic gradient modulation mechanism that is natu-         dalities. We conducted experiments on the MELD (45) (emotion
+rally compatible with diverse backbone topologies, including both          recognition) and CMU-­MOSI (46) (sentiment analysis) datasets, as
+
+He et al., Sci. Adv. 12, eady8751 (2026)   5 June 2026                                                                                    3 of 18
+S c i e n c e A d v a n c e s | R e s e ar c h A r t i c l e
+
+
+
+
+Fig. 2. IEMF performance across different modality combinations. Audiovisual fusion. Performance comparison on three standard benchmarks [CREMA-­D (A), Kinetics-­
+Sounds (B), and UrbanSound8K-­AV (C)], showing consistent improvements of IEMF (orange) over the vanilla baseline (blue) across multiple fusion strategies. VL fusion.
+Evaluation on the Hateful Memes dataset using three representative models (Concat-­BERT, MMBT-­Grid, and VILBERT). IEMF boosts performance across all metrics: Accuracy
+(D), AUROC (E), and F1-­Macro (F). Audiovisual-­text fusion. (G) Radar chart on the MELD dataset illustrating the per-­emotion recognition improvements (e.g., sadness, anger).
+(H) Performance on the CMU-­MOSI dataset, where IEMF achieves higher binary accuracy (Acc-­2) and F1 scores compared to the vanilla method.
+
+
+
+illustrated in Fig. 2 (G and H). On the MELD dataset, IEMF achieved     to 65.18% (+1.87%), and AV-­CIL increased from 70.63 to 72.49%
+a superior weighted-­F1 score of 52.03%, compared to 49.77% for the     (+1.86%). For the largest-­scale dataset VS100-­CI, LwF improved
+vanilla baseline. Significant improvements were observed in recog-      from 59.06 to 60.72% (+1.66%), SSIL from 68.21 to 70.01% (+1.80%),
+nizing challenging emotions, such as “Fear” (improving from 4.26 to     and AV-­CIL from 70.15 to 70.76% (+0.61%). All nine comparisons
+8.82%) and “Joy” (improving from 15.25 to 19.88%). Similarly, on        showed positive gains, with an average improvement of approxi-
+the CMU-­MOSI benchmark, IEMF consistently outperformed the             mately 1.63 percentage points, highlighting the consistent effective-
+baseline on both classification tasks. For instance, the binary accu-   ness of IEMF.
+racy (Acc-­2) for the positive/negative task increased from 82.93 to        In Fig. 3 (B to D), the line graphs in the bottom row of each sub-
+84.15%, and the F1 score for the nonnegative/negative task im-          figure show the average accuracy changes after each continuous task.
+proved from 81.64 to 82.38%. These results verify IEMF’s effective-     Notably, compared to baseline models, the accuracy decline curves
+ness in handling multimodal integration and improving sentiment         of IEMF models are more gradual. This indicates that IEMF enhanc-
+analysis performance.                                                   es the model’s ability to retain existing knowledge during cross-­task
+                                                                        knowledge transfer while effectively integrating information about
+Generalizability across continual learning and QA tasks                 new categories, thereby mitigating catastrophic forgetting.
+IEMF improved the model performance on audiovisual                          IEMF does not explicitly introduce learnable parameters bound to
+continual learning                                                      specific tasks but rather adaptively regulates the update dynamics of
+To evaluate the effectiveness of IEMF in more challenging scenarios, the fusion module based on changes in the effectiveness of unimodal
+we further examined its performance in audiovisual continual learn- and multimodal signals, thereby implicitly adapting to modal varia-
+ing tasks. In such tasks, models need to learn new categories continu- tions across different task stages during continuous learning. Through
+ously while preserving recognition capabilities for previously learned the training process guided by the inverse effectiveness, the model can
+categories as much as possible, thereby avoiding catastrophic forget- naturally adapt to changes in modal reliability during weight updates,
+ting, as shown in Fig. 3A. We selected three representative class-­ thus reducing overreliance on a single modality when perceptual con-
+incremental learning baseline methods for comparison: LwF (47), ditions fluctuate. Benefiting from this adaptive optimization strategy,
+SSIL (48), and AV-­CIL (49), and evaluated them on three audiovisual IEMF not only improves the average accuracy across all tasks but also
+continual learning datasets: AVE-­CI, K-­S-­CI, and VS100-­CI (49). The maintains a smoother performance degradation curve, preserving
+experimental results are shown in Fig. 3 (B to D).                      high overall performance and cross-­task knowledge coherence even
+   After introducing the IEMF method, the models achieved stable as new tasks are continuously introduced.
+accuracy improvements across all datasets. On AVE-­CI, LwF in- IEMF improved the model performance on AVQA
+creased from 54.06 to 56.00% (+1.94%), SSIL improved from 56.19 We further evaluated the effectiveness of IEMF in AVQA tasks. In
+to 58.12% (+1.93%), and AV-­CIL slightly increased from 61.86 to this task, models must answer text questions based on synchro-
+61.94% (+0.08%). In K-­S-­CI, which features more crossmodal noise, nized audio and video inputs, demanding higher capabilities for
+LwF rose from 59.89 to 62.79% (+2.90%), SSIL improved from 63.31 deep integration of multimodal information. As shown in Fig. 4,
+
+He et al., Sci. Adv. 12, eady8751 (2026)   5 June 2026                                                                                                                 4 of 18
+S c i e n c e A d v a n c e s | R e s e ar c h A r t i c l e
+
+
+
+
+Fig. 3. IEMF boosts audio visual continual learning. (A) Task schematic. A single audiovisual model is incrementally updated as new classes arrive; the goal is to absorb
+the new knowledge while preserving performance on previously learned classes, achieving ``learning without forgetting.” (B) Results on AVE-­CI. (C) Results on K-­S-­CI.
+(D) Results on VS100-­CI. For three representative class incremental learning baselines, LwF, SSIL and AV-­CIL, we compare the vanilla method (blue) with the method aug-
+mented by IEMF (khaki). Each subpanel is split into top and bottom: The top bar chart reports the overall performance (mean accuracy across all tasks; error bars denote
+1 SD), while the bottom line plot traces the incremental accuracy after each successive task. Across all datasets and baselines, IEMF consistently increases mean accuracy
+and yields a flatter accuracy-­decay curve, indicating the better knowledge transfer.
+
+
+the radar charts in Fig. 4 (A and B) compare the classification ac-                   IEMF-­enhanced model reached 75.65%, an improvement of 0.91%.
+curacy of baseline models versus models with IEMF, and ST-­AVQA                       For audiovisual questions, the vanilla model’s average accuracy was
+(50) models versus models with IEMF, across different question                        67.61%, while the IEMF model achieved 68.33%, an improvement of
+types (audio-­only questions, visual-­only questions, and audiovisual                 0.72%. To verify IEMF’s performance on fine-­grained questions, we
+combined questions).                                                                  specifically analyzed its effectiveness in tasks requiring precise local-
+   Comparing the radar charts of original models and models with                      ization classification. As shown in Fig. 4B, the original ST-­AVQA
+IEMF, we can observe that IEMF improved answer accuracy across all                    model incorrectly predicted “left” side when answering “the position
+question types. Taking the ST-­AVQA model and its IEMF-­enhanced                      of the last sounding instrument,” while the model with IEMF correct-
+version as an example (Fig. 4B), for audio-­only questions, the original              ly located it as “right” side. This demonstrates that IEMF-­enhanced
+ST-­AVQA model achieved an average accuracy of 71.90%, while the                      models have stronger fine-­grained discrimination capabilities in com-
+IEMF model improved to 74.49%, an increase of 2.59%. Similarly, for                   plex cross-­modal reasoning tasks, improving the integration efficiency
+visual-­only questions, the baseline accuracy was 74.74%, while the                   of multimodal cues.
+
+He et al., Sci. Adv. 12, eady8751 (2026)   5 June 2026                                                                                                            5 of 18
+S c i e n c e A d v a n c e s | R e s e ar c h A r t i c l e
+
+
+
+
+Fig. 4. Quantitative and qualitative impact of IEMF on AVQA task. (A) Baseline model. The three radar charts (top) report accuracy on audio-­only, visual-­only, and au-
+diovisual questions, respectively. Orange, vanilla, blue, w/ IEMF. The bottom row shows a representative sample, waveform, video frames, and question/answer, where the
+vanilla fusion miscounts the instruments (“Two”), whereas IEMF answers correctly (“One”). (B) ST-­AVQA model. The same layout as (A) but using the stronger ST-­AVQA
+model. IEMF again enlarges the radar area for every question type and corrects the localization query in the illustrated example (vanilla: “Left”; w/ IEMF: “Right”). Across
+both models, the blue polygons consistently enclose the orange ones, confirming that the IEMF mechanism improves all question categories while providing intuitive
+per-­sample gains.
+
+
+    This improvement further validates IEMF’s crucial advantages in                    neuromorphic computing, where traditional fusion methods often
+handling noisy interference or incomplete input information scenar-                    struggle with the sparsity of spiking streams. For instance, on the
+ios. By dynamically adjusting the update rate of the fusion module                     Kinetics-­Sounds dataset using the LFM fusion method, the baseline
+during training based on the strength of unimodal and multimodal                       SNN accuracy was 54.63%, lagging behind its ANN counterpart
+fusion signals, IEMF guides the model to learn strategies that can                     (55.28%). However, by introducing IEMF, the SNN accuracy surged
+more robustly integrate different modal information when modality                      to 63.53%, surpassing the ANN baseline. This result confirms that
+strengths are uneven or information is contradictory. In contrast,                     IEMF can effectively compensate for information loss in sparse,
+models without IEMF are more prone to judgment biases when facing                      event-­driven representations without requiring architectural changes.
+modal conflicts or input uncertainties, leading to incorrect answers                   Transformer-­based architectures (cross attention-­based)
+or overall performance degradation. Overall, these results high-                       To rigorously validate applicability across fundamentally different fu-
+light IEMF’s important role in enhancing multimodal understand-                        sion paradigms, we extended our evaluation to spiking transformers
+ing and reasoning.                                                                     equipped with cross-­attention mechanisms. We specifically investigat-
+                                                                                       ed three distinct variants: Spiking Cross Attention (SCA) (41), spatial,
+Generalizability across network architectures and                                      and spatial-­temporal (51) cross-­attention to verify IEMF’s robustness
+computational paradigms                                                                across varying granularities of feature interaction. This represents a sig-
+A key advantage of IEMF is its architectural universality. As demon-                   nificant shift from the direct feature aggregation typical of CNNs to the
+strated in the previous sections, IEMF effectively boosts perfor-                      relational dependency modeling via attention maps in transformers.
+mance across a wide range of architectures: from the sequential                        As detailed in Fig. 5 (D to F), IEMF yields gains in this distinct para-
+modeling of recurrent networks (e.g., LSTMs) and local feature ex-                     digm without requiring hyperparameter recalibration. Specifically, on
+traction of convolutional architectures (e.g., TextCNN) in trimodal                    the CREMA-­D dataset, IEMF improved top-­1 accuracy from 71.10 to
+settings, to the global dependency modeling of large-­scale trans-                     73.11% with spatial cross-­attention, and from 71.77 to 72.98% with
+formers (e.g., ViLBERT) in VL tasks. To further substantiate that the                  spatial-­temporal cross-­attention. These results, achieved using the ex-
+inverse effectiveness mechanism captures a fundamental learning                        act same configuration as in CNNs, provide compelling evidence that
+dynamic independent of the underlying topology, we extend our                          the inverse effectiveness mechanism is invariant to the underlying inte-
+evaluation to the SNN domain and verify IEMF across two distinct                       gration topology and genuinely architecture agnostic.
+backbones: spiking ResNet and spiking transformers.
+Convolutional architectures (ResNet-­based)                                            Comparison with gating-­based fusion methods
+We first verify the robustness of IEMF within standard convolutional                   To explicitly verify that the performance gains of IEMF arise from
+backbones. As shown in Fig. 5 (A to C), IEMF consistently improves                     optimization-­level feature refinement rather than simple inference-­
+performance across four distinct fusion strategies (Concat, MSLR,                      time heuristics, we benchmarked our method against two inference-­
+OGG_GE, and LFM). This robustness is particularly critical for                         time reliability gating baselines: (i) entropy-­based Shannon gating,
+
+He et al., Sci. Adv. 12, eady8751 (2026)   5 June 2026                                                                                                              6 of 18
+S c i e n c e A d v a n c e s | R e s e ar c h A r t i c l e
+
+
+
+
+Fig. 5. Architectural generalizability and performance improvement of the proposed IEMF across diverse SNN backbones. Performance on spiking ResNet. We
+evaluate the proposed method across four distinct fusion strategies (Concat, MSLR, OGM_GE, and LFM) on three benchmarks: CREMA-­D (A), Kinetics-­Sounds (B), and
+UrbanSound8K-­AV (C). The IEMF-­augmented models (khaki bars) outperform the vanilla baselines (blue bars), validating the efficacy of the inverse effectiveness mecha-
+nism in convolutional architectures. Performance on spiking transformer. To verify the universality of the approach, we extend the evaluation to attention-­based back-
+bones with three cross-­attention mechanisms (SCA-­Attn, Spatial-­Attn, and ST-­Attn) on CREMA-­D (D), Kinetics-­Sounds (E), and UrbanSound8K-­AV (F). The accuracy gains
+demonstrate that the IEMF strategy is model-­agnostic and robust to underlying network topologies (CNN versus transformer).
+
+which selects modalities based on the lowest predictive entropy, and                  degraded. For instance, under the OGM_GE fusion strategy on the
+(ii) confidence-­based mixture-­of-­experts (MoE) gating, which dy-                   Kinetics-­Sounds dataset, the MoE gating baseline yields an accuracy of
+namically ensembles branches using softmax confidence scores.                         57.09%, comparable to the Shannon gating (57.63%). In stark contrast,
+Mechanistic distinction: Optimization versus selection                                IEMF boosts the accuracy to 64.61%, representing a relative improve-
+As illustrated in Fig. 6 (A and B), these empirical results underscore a              ment of more than 13%. Similarly, on CREMA-­D with OGM_GE fu-
+fundamental methodological divergence. Reliability gating methods                     sion method, IEMF achieves 71.10%, surpassing both Shannon gating
+operate as inference-­time heuristics, functioning as post hoc filters                68.68% and MoE gating 69.09%. Notably, we observed that Shannon
+that dynamically reweight outputs based on uncertainty. While this                    gating performance effectively collapses to that of the vanilla baseline.
+strategy mitigates noise impact, it leaves the underlying feature repre-              Analysis reveals that in the well-­trained models, the predictive entropy
+sentations unchanged. In contrast, IEMF intervenes strictly at training               of the multimodal branch is consistently lower than that of individual
+time by modulating gradient backpropagation via the inverse effec-                    unimodal branches. Consequently, the Shannon gating mechanism
+tiveness principle, thereby imposing zero additional computational                    trivially defaults to selecting the fused output for nearly all samples.
+overhead during inference. This mechanism fundamentally reshapes
+the optimization landscape, compelling the model to extract comple-                   Ablations and analysis
+mentary features from weak modalities rather than merely suppress-                    To further validate IEMF’s effectiveness and understand its internal
+ing them. The superior performance of IEMF validates that the                         mechanisms, we conducted comprehensive ablation studies and di-
+observed gains stem from learning intrinsically robust joint represen-                agnostic analyses.
+tations, an optimization benefit that extends beyond the capability of                Mechanism ablation
+superficial decision-­level gating.                                                   To further validate IEMF’s effectiveness, we conducted mechanism
+Quantitative superiority                                                              ablation experiments (Fig. 7, A and B). In Fig. 7B, we analyzed classi-
+As presented in Fig. 6 (C to E), IEMF consistently outperforms both                   fication accuracy changes under different inverse gain coefficient γ
+gating strategies across all three datasets (CREMA-­D, Kinetics-­Sounds,              settings. Results show appropriate inverse gain effectively improves
+and UrbanSound8K-­AV). The performance gap is particularly pro-                       model performance, with optimal accuracy at γ = 1, indicating
+nounced in challenging scenarios where visual or audio cues are                       IEMF effectively balances unimodal and multimodal fusion signal
+
+He et al., Sci. Adv. 12, eady8751 (2026)   5 June 2026                                                                                                           7 of 18
+S c i e n c e A d v a n c e s | R e s e ar c h A r t i c l e
+
+
+
+
+Fig. 6. Conceptual distinction and empirical superiority of the proposed IEMF over traditional reliability gating baselines. Conceptual comparison: Inference-­time
+reliability gating versus training-­time IEMF. (A) Traditional strategies (e.g., Shannon/MoE) that operate at inference time by dynamically selecting or weighting outputs
+based on uncertainty metrics. (B) The proposed IEMF, which functions strictly at training time. It uses the inverse effectiveness coefficient ξ derived from ground truth to
+modulate the backward gradients ∇, reshaping the optimization trajectory without introducing any computational overhead during inference. Quantitative comparison:
+IEMF versus reliability-­gating baselines. Classification accuracy across three benchmarks: (C) CREMA-­D, (D) Kinetics-­Sounds, and (E) UrbanSound8K-­AV. The proposed IEMF
+(brown bars) consistently outperforms the inference-­time gating baselines (Shannon and MoE, represented by blue and green bars, respectively). These results demon-
+strate that modulating learning dynamics yields superior representations compared to post hoc reliability gating.
+
+
+
+contributions to maximize dynamic compensation. With larger coef-                      on CREMA-­D at thirteen γ values, including fine-­grained steps
+ficients (e.g., γ = 5), accuracy decreases, likely because of training in-             { 0.8, 0.9, 0.95, 1.0, 1.05, 1.1, 1.2 }, each repeated across three inde-
+stability from excessive modulation intensity. Conversely, without                     pendent random seeds. As shown in Fig. 7A, every γ value within
+IEMF (w/o IEMF baseline in Fig. 7B), classification accuracy is nota-                  [0.8, 1.2] falls within the pooled ±1 SD confidence band, and a one-­
+bly lower than all inverse gain coefficient settings, further validating               way analysis of variance (ANOVA) confirms no statistically signifi-
+the crucial role of IEMF in enhancing multimodal fusion. In Fig. 7C,                   cant effect of γ [ F(6, 14) = 1.31, P = 0.317]. Over the full range [0.1,
+we compared baseline models (vanilla), models with joint learning                      5.0] (Fig. 7B), performance peaks at the default γ = 1.0 and declines
+strategy, and IEMF-­enhanced models. We specifically included joint                    monotonically at extreme values, consistent with the mathematical
+learning comparison to systematically evaluate IEMF’s effectiveness.                   bound ξt ∈ (0, 2γ). These results confirm that performance near
+Joint learning adds independent classification heads for each modality                 γ = 1.0 is continuous (no cliff-­like drops), the practical range [0.8,
+without introducing new modalities, enhancing unimodal feature dis-                    1.2] constitutes a robust plateau well above the baseline, and mild
+criminability. IEMF dynamically modulates fusion module updates                        task-­specific tuning of γ within this range is possible but not neces-
+based on unimodal-­fusion modality strength relationships for more                     sary as the default γ = 1.0 already provides robust gains across all
+refined compensation, mechanistically different approaches. Results                    evaluated benchmarks.
+show that while joint learning provides performance improvements,                      Unimodal gain analysis
+IEMF further enhances model performance, validating IEMF’s supe-                       We further evaluated how multimodal learning affects performance of
+rior generalizability through dynamic fusion module adjustment in                      weaker modality branches (audio) on Kinetics-­Sounds using OGM_GE
+existing multimodal learning frameworks.                                               fusion (Fig. 7D). After multimodal training, we fine-­tuned the audio
+Fine-­grained γ sensitivity analysis                                                   branch to analyze fusion effects on unimodal perception. Results
+To more thoroughly characterize the sensitivity of IEMF to the                         show that traditional fusion methods (orange curve) lead to over-
+inverse gain coefficient γ , we conducted additional experiments                       fitting, limiting performance gains and even underperforming
+
+He et al., Sci. Adv. 12, eady8751 (2026)   5 June 2026                                                                                                              8 of 18
+S c i e n c e A d v a n c e s | R e s e ar c h A r t i c l e
+
+
+
+
+Fig. 7. Comprehensive mechanism analysis, ablation studies, and efficiency benefits of IEMF. Mechanism ablation. (A) Fine-­grained sensitivity of γ within [0.8, 1.2]:
+All seven configurations fall within the pooled ±1 SD band, and a one-­way ANOVA confirms no statistically significant effect. (B) Effect of γ over the full range: Performance
+peaks at γ = 1, remains above the baseline without IEMF (dashed red line), and declines monotonically at extreme values. (C) Removing the IEMF term (“Joint Learning
+only”) leads to a clear performance drop across all fusion strategies, highlighting the essential role of IEMF. (D) Unimodal gain analysis. Test accuracy for a unimodal
+model trained alone, the audio branch from a multimodal model without IEMF, and with IEMF. IEMF yields a persistent relative gain for the unimodal branch. (E) Dynamics
+of the IEMF coefficient. Evolution of ξ (dashed orange) alongside test accuracy (solid blue) during training. ξ starts high to accelerate multimodal integration and de-
+creases as the network converges, maintaining fusion stability. (F) Data efficiency analysis. Performance comparison of the ANN model on CREMA-­D under normal and
+OGM_GE settings across varying training data ratios (20 to 100%). Loss landscape visualization. (G) 3D loss surface comparison: vanilla method (left) versus IEMF-­enhanced
+method (right). (H) 2D contour plots: without IEMF versus with IEMF (e3). The IEMF method leads to broader and flatter minima. (I) Convergence efficiency analysis. Com-
+parison of total FLOPs required to reach target performance between standard models (blue) and IEMF-­enhanced models (brown). IEMF substantially reduces computa-
+tional costs across all fusion methods, with reductions ranging from 15.2 to 50.0% (highlighted in yellow percentages). n.s., not significant.
+
+
+
+independently trained unimodal branches (blue curve). This suggests                      (Sta0v ≫ Stav ), ξt decreases and the fusion module receives attenuated
+that modal interference in conventional fusion degrades unimodal                         gradients, temporarily slowing its learning while the unimodal encod-
+feature quality and perception. In contrast, with IEMF (green curve),                    ers continue to update normally. As unimodal representations improve,
+the unimodal branch maintains higher, more stable accuracy through-                      the fusion module receives higher-­quality inputs, which in turn in-
+out training with significant early performance advantages. This con-                    creases Stav and pulls ξt back upward, forming a self-­stabilizing loop.
+firms that IEMF not only optimizes multimodal fusion but effectively                     Moreover, because the fusion branch takes both unimodal features
+mitigates modal interference, promoting better unimodal feature                          as input, in practice, Stav ≥ Sta0v once training [has progressed
+                                                                                                                                                       ] suffi-
+learning and generalization.                                                             ciently, yielding a practical lower bound ξt ≥ γ ⋅ 1 + tanh(0) = γ > 0.
+Training dynamics                                                                        This analysis is consistent with the empirical trajectory of ξt shown
+Figure 7E shows the test-­set evolution of IEMF dynamic coefficients                     in Fig. 7E, where the coefficient stabilizes at a moderate positive
+ξ and classification accuracy across training epochs. IEMF adapts fu-                    value and never approaches zero, while both unimodal and fusion
+sion module behavior based on fusion effectiveness: During early                         branches benefit simultaneously (Fig. 7B), confirming the absence
+training, fusion benefits are greater, keeping dynamic coefficient ξ                     of any learning freeze effect. This self-­regulating property ensures
+high to maximize multimodal advantages; as unimodal features ma-                         that IEMF maintains a balanced optimization dynamic throughout
+ture and fusion advantages diminish, ξ naturally decreases, reflecting                   training without requiring manual scheduling.
+reduced fusion dependency and helping maintain module stability                          Data efficiency
+for consistent test performance.                                                         To investigate the robustness of IEMF under data-­constrained sce-
+Self-­correcting dynamics of the IEMF coefficient                                        narios, we evaluated model performance on the CREMA-­D dataset
+An important property of IEMF is that the coefficient ξt exhibits a                      across varying training data ratios (20 to 100%), as shown in Fig. 7F.
+self-­correcting negative feedback behavior that prevents the fusion                     The results demonstrate that IEMF consistently outperforms the va-
+module from stalling. When unimodal branches mature rapidly                              nilla baseline across all data scales. Notably, the performance gap is
+
+He et al., Sci. Adv. 12, eady8751 (2026)   5 June 2026                                                                                                                 9 of 18
+S c i e n c e A d v a n c e s | R e s e ar c h A r t i c l e
+
+most pronounced in low-­resource regimes (e.g., at the 20% ratio),              In summary, IEMF demonstrates consistent performance improve-
+where the vanilla model suffers significant degradation while the           ments across datasets and fusion strategies. Systematic experiments
+IEMF-­enhanced model maintains robust accuracy. This indicates              validate its effectiveness in dynamically regulating fusion, mitigating
+that our method effectively mitigates the dependency on large-­scale        modal interference, enhancing unimodal learning, and improving ro-
+annotated data, leveraging the inverse effectiveness mechanism to           bustness, providing an efficient and well-­generalizing fusion strategy
+maximize feature utilization even when training samples are scarce.         for multimodal perception tasks.
+Loss landscape analysis
+To validate the generalization properties of our proposed method,
+we visualized the loss landscapes of models with and without IEMF           DISCUSSION
+as shown in Fig. 7 (G and H). The three-­dimensional (3D) loss sur-         Biological insights into multimodal integration
+face visualization illustrated in Fig. 7G reveals significant topological   Despite significant advances in multimodal fusion, many key biologi-
+differences: The baseline method exhibits a sharper, cone-­like mini-       cal principles have not been fully explored and applied in artificial
+mum, while the IEMF-­enhanced model displays a broader, more                intelligence systems, which could further enhance the robustness and
+gradual basin structure. This distinction is further emphasized in the      adaptability of multimodal systems. In this study, we propose a brain-­
+2D contour plots depicted in Fig. 7H: Without IEMF, the contours            inspired deep neural network multimodal integration method based
+form elongated elliptical patterns, indicating inconsistent curvature       on the inverse effectiveness mechanism observed in biological sys-
+across different parameter directions; with IEMF, contours appear           tems, providing verifiable theoretical foundations and methodologi-
+more circular and uniformly spaced, confirming a markedly flatter           cal support for multimodal information integration. Specifically, we
+minimum region. These observations closely align with our subse-            propose an IEMF method that dynamically adjusts the weights of
+quent theoretical analysis presented later here, which demonstrates         modal fusion modules based on the relationship between the strength
+that IEMF directs the optimization process toward flatter regions of        of single-­modal cues and the modality strength after modal fusion.
+the loss landscape, a characteristic associated with the improved gen-      Our approach systematically considers the complementary interac-
+eralization performance observed in our experimental results.               tions between modalities, considerably improving not only the per-
+Complexity and efficiency analysis                                          formance and generalization capabilities of multimodal systems but
+To provide a holistic assessment of algorithmic efficiency, we ana-         also their computational efficiency. This dual advantage, enhanced
+lyzed IEMF from two distinct perspectives: hardware-­agnostic re-           robustness coupled with reduced computational costs, offers insights
+source consumption and learning efficiency. First, regarding resource       into why inverse effectiveness might have evolved as a critical mecha-
+consumption, we decoupled computational cost from performance as            nism in biological systems, where both perceptual reliability and
+detailed in table S10 (see the Supplementary Materials for full data).
+                                                                            metabolic efficiency are under evolutionary pressure.
+Compared to the vanilla baseline, IEMF introduces negligible over-
+                                                                                In the IEMF framework, we prioritize inverse effectiveness in the
+head. Specifically, the increases in model parameters (+0.03 M) and
+                                                                            network training process by introducing an inverse effectiveness gain
+GPU memory usage (+12 MB) are less than 0.2%, and the floating-­
+                                                                            coefficient that applies gradient regulation to fusion weights, naturally
+point operations (FLOPs) remain virtually unchanged because of the
+                                                                            forming an internal bias of “weak modality-­high gain, strong modality-­
+lightweight nature of the inverse effectiveness module. While the total
+                                                                            low gain” during the learning phase. This strategy aligns with the phys-
+training time sees a slight increase (from 2.85 to 2.96 hours), the in-
+                                                                            iological mechanism of cross-­modal experience shaping plasticity in
+ference time remains identical to the baseline (9.74 s), ensuring no
+latency penalty during deployment. Concretely, the additional com-          early neural development in biological organisms, where newborn in-
+putation introduced by IEMF comes exclusively from computing the            dividuals initially lack multisensory integration abilities. These abilities
+batch-­level modality-­strength scores Sta−v and Stav, which involves ex-   are not innate but develop through continuous shaping of neural cir-
+tracting ground truth–indexed confidence scores and performing a            cuits via early cross-­modal experiences, adapting to the environment
+batch-­level averaging operation with complexity (B ⋅ C) (where B is       and optimizing multimodal integration performance (52). Further-
+the batch size and C is the number of classes), comparable in mag-          more, we apply inverse effectiveness–driven fusion strategies uniform-
+nitude to a single batch normalization layer. This corresponds to           ly across all input channels of the model, consistent with the view in
+a +3.9% per-­epoch wall-­clock overhead on a single NVIDIA A100             Regenbogen et al. (34) that inverse effectiveness manifests not only
+GPU, and critically, IEMF operates exclusively during training; the         under degraded stimulus conditions but also with clear stimuli.
+coefficient computation is disabled at test time, ensuring identical in-        This research confirms the long-­standing intuition that how mo-
+ference latency to the vanilla baseline (9.74 s; table S10).                dalities are combined is as important as how many are combined. By
+    Second, beyond these statistics, we evaluated the total training bud-   introducing inverse effectiveness rules from cortical circuits into
+get required to reach optimal performance, termed as convergence            gradient-­based optimization learning systems, we achieved (i) effec-
+efficiency in Fig. 7I. Since IEMF maintains a reasonable per-­epoch         tive generalization in both ANN and SNN models; (ii) significant
+complexity (as verified above), its ability to accelerate convergence di-   performance improvements in audiovisual classification, audiovisual
+rectly translates to computational savings. Across all fusion methods,      continual learning, and AVQA tasks; and (iii) substantial computa-
+IEMF consistently reduces the total training budget (calculated as ep-      tional efficiency gains with up to 50% reduction in computational
+ochs to target × FLOPs) by significant margins, ranging from 15.2% for      costs across diverse fusion methods. Systematic experiments demon-
+MSLR to 50.0% for OGM_GE. Normal and LFM configurations also                strate that after integrating the IEMF mechanism into existing mul-
+show reductions of 44.2 and 36.6%, respectively. By dynamically mod-        timodal methods, models achieved performance superior to original
+ulating fusion behavior, IEMF achieves a superior trade-­off: It com-       state-­of-­the-­art techniques across various multimodal tasks, further
+bines the low per-­step overhead of lightweight modules with the high       indicating that introducing bioinspired mechanisms can effectively
+learning efficiency of faster convergence, optimizing resource utiliza-     improve the efficiency of multimodal integration, expanding its po-
+tion for real-­world applications.                                          tential in artificial intelligence applications. These findings not only
+
+He et al., Sci. Adv. 12, eady8751 (2026)   5 June 2026                                                                                         10 of 18
+S c i e n c e A d v a n c e s | R e s e ar c h A r t i c l e
+
+highlight the advantages of incorporating biological principles into       with high uncertainty to protect the decision boundary. While effec-
+machine learning models but also provide new directions for future         tive for filtering noise, this strategy can lead to information loss when
+research in neuromorphic computing and multisensory integration.           all modalities are imperfect. In contrast, inspired by the biological
+                                                                           principle of inverse effectiveness, IEMF adopts a “compensatory”
+Other biological mechanisms of multimodal integration                      logic. Instead of suppressing the learning of weak modalities, IEMF
+It is worth discussing that while this research emphasizes the impor-      actively accelerates the gradient updates of the fusion module when
+tance of inverse effectiveness in multimodal integration, there are two    unimodal signals are weak. This forces the network to find deeper,
+other equally important principles in multimodal biological percep-        nontrivial interactions between modalities to compensate for the
+tion processes: temporal congruence and spatial congruence. These          lack of strong unimodal features rather than merely selecting the
+mechanisms are particularly important in dynamic multimodal inte-          “safest” input.
+gration. Temporal congruence refers to visual and auditory inputs              Crucially, IEMF is designed not merely as a competitor to existing
+maintaining coordination in time, thereby optimizing perceptual and        architectures but as a generalized optimization mechanism that can
+decision-­making performance. Experimental studies (53, 54) demon-         be seamlessly integrated into them. First, as demonstrated in our ex-
+strate that when visual and auditory stimuli are presented in close        perimental results (e.g., Fig. 2, A to C), IEMF was successfully ap-
+synchronization within a 0-­to 200-­ms time window, they enhance           plied on top of MSLR, OGM-­GE, and LFM, consistently boosting
+the accuracy and reaction speed of perceptual judgments. In contrast,      their performance. This confirms that optimizing the fusion gradient
+temporal asynchrony leads to decreased activation intensity in rele-       flow (IEMF) provides benefits orthogonal and complementary to
+vant brain regions, weakening the integration effect. Spatial congru-      balancing unimodal encoders (OGM-­GE). Second, to explicitly vali-
+ence refers to different sensory modalities maintaining consistency or     date the superiority of our strategy over static reliability judgments,
+proximity in spatial location, thereby enhancing the joint representa-     we compared IEMF against standard gating baselines (Shannon in-
+tion of cross-­modal signals. Research has found that multisensory         formation gating and confidence-­based MoE) in the Fig. 6 and ta-
+neurons (such as neurons in the superior colliculus) exhibit integra-      ble S8. The empirical data show that IEMF’s dynamic, training-­time
+tion enhancement effects only when audiovisual stimuli originate           gradient modulation yields more robust joint representations than
+from the same or adjacent spatial locations; otherwise, integration        simply gating modalities based on confidence scores. Last, unlike dy-
+may be inhibited or show no integration response (55). For example,        namic gating mechanisms that rely on explicit reliability estimation
+in real-­world scene understanding, object recognition, and tracking       and reweighting during inference, IEMF allows the model to inter-
+tasks, accurately matching sound sources with corresponding visual         nalize robust fusion strategies directly into the weights during train-
+objects is key to successful multimodal perception. Temporal and           ing, requiring no additional computation steps at test time.
+spatial congruence are crucial for accurate multimodal integration.
+    Although temporal and spatial congruence are indispensable in          Limitations and boundary analysis
+biological perception, given that the tasks selected in this study in-     Optimization trade-­offs in high-­congruence regimes
+herently have strong input synchronization characteristics (i.e., dual-­   While IEMF demonstrates superior robustness in complex environ-
+modal inputs from the same source at the same moment), we did not          ments, we acknowledge that in scenarios characterized by extremely
+explicitly model these mechanisms in the current work. Specifically,       high modality congruence and low noise, the method may exhibit
+the sensory inputs in this study’s tasks naturally have synchroniza-       marginal performance degradation compared to vanilla baselines. We
+tion and correspondence relationships; therefore, these congruence         attribute this to an optimization-­regularization trade-­off: Simple base-
+factors have already been implicitly considered in the multimodal          lines benefit from direct gradient paths in these idealized settings,
+fusion process. Looking forward, further research could explore how        whereas the adaptive mechanisms in IEMF introduce minor opti-
+to explicitly incorporate temporal and spatial congruence into the         mization complexity. Consequently, the model maintains statistical
+IEMF framework by introducing asynchronous, spatially disparate            parity with the baseline in such ideal conditions, implying that any
+multimodal input samples, thereby training models to effectively in-       observed marginal differences fall within the range of normal experi-
+tegrate under more complex temporal and spatial variation condi-           mental variance. Notably, our extended analysis (see table S11) dem-
+tions, further advancing biologically inspired multimodal learning         onstrates that despite these minor individual variances, the method
+systems toward broader application domains.                                yields statistically significant improvements on average, and any re-
+                                                                           sidual drops can be mitigated by adjusting the regularization sensitiv-
+Distinctions from adaptive balancing and                                   ity (γ), ensuring that stability in noisy deployments does not come at
+uncertainty-­based approaches                                              the expense of performance in clean regimes.
+Our work aligns with the emerging consensus in multimodal learning         Challenges in extreme real-­world settings
+that static fusion strategies are insufficient for complex, dynamic en-    Furthermore, although IEMF is designed to mitigate noise, its effi-
+vironments. Recent adaptive approaches, such as OGM-­GE (4) and            cacy is bound by the quality of the available signals in practical ap-
+DynCIM (23), have successfully demonstrated that dynamically mod-          plications. First, regarding missing data: Our current implementation
+ulating optimization trajectories can mitigate modality imbalance. We      assumes the presence of all modality inputs to calculate reliability
+share the critical insight driving these works: The relative importance    scores. In real-­world sensors where entire streams may drop out
+of modalities and the intensity of their interaction should not be main-   (e.g., camera occlusion or microphone failure), the inverse effective-
+tained as constants throughout the training process.                       ness calculation would require modification (e.g., imputation or dy-
+    However, IEMF diverges fundamentally from these methods in its         namic masking) to prevent mathematical errors, a scope not covered
+underlying mechanism and objective. Traditional uncertainty-­based         in this work. Second, regarding catastrophic noise: The core premise
+or confidence-­aware gating methods (4, 21, 22) typically follow a         of inverse effectiveness is that weak cues in one modality can be
+“reliability-­gating” logic: They down-­weight or suppress modalities      compensated by others. However, in “blackout” scenarios where all
+
+He et al., Sci. Adv. 12, eady8751 (2026)   5 June 2026                                                                                       11 of 18
+S c i e n c e A d v a n c e s | R e s e ar c h A r t i c l e
+
+modalities are simultaneously corrupted by severe noise (approaching        function prediction (67). IEMF would amplify fusion learning for
+zero signal-­to-­noise ratio), the mechanism cannot recover meaningful      samples where structural information provides unique comple-
+information as there is no “effective” anchor to drive the fusion. Fu-      mentary evidence (e.g., binding pockets or allosteric sites), while its
+ture work will focus on extending IEMF to handle asynchronous               convergence acceleration would reduce the computational cost of
+missing modalities and incorporating self-­supervised priors to sur-        training on large-­scale structure–sequence pairs.
+vive total-­modality degradation.                                               In each scenario, the central challenge aligns with IEMF’s design
+                                                                            principle: Modalities carry asymmetric and dynamically varying in-
+Broader applications in scientific multimodal settings                      formation quality, and effective fusion requires proportionally greater
+Beyond the benchmark tasks evaluated in this work, IEMF is well             integrative effort when individual channels are weak.
+suited to scientific multimodal settings where participating modali-
+ties differ substantially in signal-­to-­noise ratio, data abundance, or
+annotation quality. We highlight four representative biological sce-        MATERIALS AND METHODS
+narios where IEMF’s compensatory logic can be effectively applied.          Neuron models in ANNs and SNNs
+Single-­cell multi-­omics integration                                       In neural networks, the information flow is governed by the dynam-
+Joint profiling of transcriptomics [single-­cell RNA sequencing (scRNA-­    ics of neuronal activation. In this work, we adopt two distinct neu-
+seq)] and chromatin accessibility (scATAC-­seq) is a rapidly growing        ron models: the continuous artificial neurons used in ANNs and the
+frontier in single-­cell genomics (56). The two modalities exhibit a pro-   spike-­based neurons in SNNs.
+nounced asymmetry in per-­feature informativeness: scATAC-­seq data             In ANNs, information is processed continuously. Each neuron
+are extremely sparse because of cell type–specific chromatin states and     computes a weighted sum of its inputs and applies a nonlinear acti-
+the inherent diploid limit, while scRNA-­seq shows substantially higher     vation function to produce its output y = f (Wx + b), where x is the
+per-­feature detection rates (57). Recent benchmarks (58) confirm that      input vector, W is the weight matrix, b is the bias term, and f ( ⋅ )
+integration methods often perform notably worse on the sparser ATAC         denotes a nonlinear function such as ReLU (68) or sigmoid.
+component, and recent deep-­learning approaches (59, 60) have begun             In contrast, SNNs more closely mimic biological neurons by com-
+to adopt end-­to-­end joint optimization across both modalities. IEMF       municating via discrete spike events. We use the widely used leaky
+would naturally amplify fusion learning when the ATAC modality pro-         integrate-­and-­fire (LIF) model (69) to capture the membrane poten-
+vides weak discriminative evidence while tempering it when transcrip-       tial dynamics. Upon receiving a synaptic input current I(t), the mem-
+tomic signals alone are already informative.                                brane potential U(t) accumulates over time. When U(t) crosses a
+Cancer survival prediction                                                  threshold Uth, a spike is emitted and the potential is reset to the rest-
+In computational oncology, whole-­slide images provide rich morpho-         ing value Urest. The continuous-­time dynamics of the LIF neuron are
+logical detail but, under the multiple instance learning paradigm, the      given by
+slide-­level supervision signal is diluted across thousands of patches,                            [         ] gE∣I [           ] I
+                                                                                          dU(t)
+weakening the effective per-­sample discriminative contribution of his-              τm         = − U(t) − UL −      U(t) − UE∣I + s             (1)
+tological features during training relative to genomic profiles. Recent                    dt                   gL                gL
+work has explicitly modeled this as an asymmetric fusion problem            where τm = Cm∕gL is the membrane time constant, Cm is membrane
+(61), and complementary studies have demonstrated the value of inte-        capacitance, gL is the leak conductance, and gE∣I and UE∣I denote the
+grating histology with genomics even under partial modality availabil-      conductance and reversal potentials for excitatory or inhibitory
+ity (62, 63). IEMF’s compensatory logic would actively strengthen           synapses. Is is the synaptic input current. To simplify the formula-
+fusion when histological evidence is ambiguous, promoting the dis-          tion, we aggregate the synaptic terms into an effective input current
+                                                                            RI(t) ≜ − gE∣I U(t) − UE∣I + gs , reducing the membrane potential
+                                                                                       g [             ] I
+covery of nontrivial pathology—genomics correspondences.
+Neuroimaging fusion                                                                     L                   L
+                                                                            equation to
+Electroencephalography and functional magnetic resonance imag-
+ing offer complementary spatiotemporal views of brain dynamics                                     dU(t)          [               ]
+(64, 65), but the signal quality of each varies substantially across ses-                     τm            = − U(t) − Urest + RI(t)            (2)
+                                                                                                     dt
+sions and subjects because of distinct artifact profiles. IEMF’s batch-­
+                                                                                For numerical simulation, we set Urest = 0 and discretize the above
+adaptive modulation coefficient ξt would respond to this sample-­level
+                                                                            dynamics. To clearly distinguish continuous and discrete states, we
+variation, automatically increasing the fusion learning rate for mini-­
+                                                                            denote membrane potential as ut at discrete time step t . The complete
+batches where one modality is degraded while maintaining moder-
+                                                                            discrete-­time update of the membrane potential and spike generation
+ate updates when both channels are reliable. Its zero inference-­time
+                                                                            at layer l is
+overhead is particularly attractive for latency-­sensitive applications
+such as real-­time neurofeedback.                                                          ut,l
+                                                                                            pre = τu
+                                                                                                       t−1,l
+                                                                                                             + Wl st,l−1 (accumulation)
+                                                                                                         (               ) (               )
+Protein function prediction                                                                   st,l = H ut,l      −  u th      spike firing      (3)
+Protein sequence data are abundant and well-­served by pretrained                                        (
+                                                                                                             pre
+                                                                                                                     )
+protein language models such as ESM-­2 (66), while experimentally                            t,l     t,l
+                                                                                           u = upre 1 − s        t,l
+                                                                                                                          (reset mechanism)
+determined structures remain far scarcer. Computationally predicted
+                                                                            where Wl is the weight matrix from layer l − 1 to l , st,l−1 denotes the
+structures (e.g., via AlphaFold) vary widely in confidence, particu-
+larly in flexible loop regions and intrinsically disordered regions. This   spike train from the previous layer at time t , τ = 1 − τ1 is the leak
+                                                                                                                                        m
+heterogeneous reliability can create a modality imbalance where se-         factor controlling the temporal decay of the membrane potential,
+quence features dominate joint training. Leveraging structure-­aware        and H( ⋅ ) is the Heaviside step function used to generate binary
+representations alongside sequences has been shown to improve               spike outputs.
+
+He et al., Sci. Adv. 12, eady8751 (2026)   5 June 2026                                                                                       12 of 18
+S c i e n c e A d v a n c e s | R e s e ar c h A r t i c l e
+
+Multimodal integration formulation
+We denote a multimodal input as x = (xa , xv ), where xa ∈  a and
+                                                                                                       1 ∑( a v )                     1 ∑ av
+                                                                                                   2 ∣ t ∣ i∈ i                   ∣ t ∣ i∈ i
+                                                                                         Sta−v =                c + ci ,   Stav =             c
+xv ∈  v represent inputs from two modalities (e.g., audio and(visu-)
+                                                                                                                                                        (9)
+                                                                                                             t                              t
+                                                                  a
+al). These
+        ( are) independently processed by two encoders φ ⋅; θ
+                                                             a
+      v    v
+and φ ⋅; θ to obtain modality-­specific latent representations                   Following the biological observation that fusion should domi-
+                         (      )          (       )                         nate and provides the greatest benefit when unimodal evidence is
+                 za = φa xa ; θa , zv = φv xv ; θv               (4)         weak, we define an IEMF coefficient ξt . The IEMF coefficient quanti-
+where θa and θv represent the trainable parameters of the audio and          fies how effective the unimodal branches are relative to the fused
+visual encoders, respectively. The extracted features are fused using        output. We map ξt to a bounded value
+            ( h ) operator  (⋅, ⋅ ), i.e., z =  (z , z ), followed by a
+a general fusion                             av     a v                                             [     (           )]
+                                                                                                               Sa−v
+classifier h ⋅; θ that maps the fused audio visual features to a pre-                       ξt = γ ⋅ 1 + κ 1 − t av      ,   γ>0              (10)
+                (      )                                                                                       St
+diction ̂y = h zav ; θh , where θh denotes the classifier parameters.
+   In the widely adopted vanilla fusion strategy, such as feature con-
+catenation, the fusion operator takes the form                                where γ is the inverse gain coefficient controlling the overall magni-
+                                                                              tude of fusion modulation, and κ( ⋅ ) denotes a generic bounded gating
+                           (za , zv ) = Wf za ; zv + bf
+                                           [       ]                          function; in this work, we instantiate κ with the hyperbolic tangent,
+                                                                       (5)    i.e., κ( ⋅ ) = tanh( ⋅ ), owing to its smooth and symmetric saturation
+where [⋅; ⋅ ] denotes the concatenation operation, Wf ∈ ℝM×(da +dv )          properties. Because κ( ⋅ ) ∈ ( − 1, 1), Eq. 10 confines the fusion coeffi-
+                                                                              cient to the interval ξt ∈ (0, 2γ).
+and bf ∈ ℝM are the parameters of the fusion layer, and M is the
+                                                                                   IEMF coefficient ξt magnitude varies intuitively with the strength
+number of output classes.
+                                                                              ratio between unimodal and multimodal            evidence:
+     The multimodal learning goal is to train a multimodal model                                                    ( a−v        )        (                )
+fθ :  a ×  v →  , where the learnable parameters θ = { θa , θv , θh },                                                    t . The term
+                                                                                   1. Weak unimodal    ( ) evidence  S t
+                                                                                                                          ≪ S av           1 − Sta-v ∕Stav
+
+that minimizes the empirical risk over a dataset  = xai , xvi , yi i=1.
+                                                       (            )N        is positive and thus ξt approaches its upper bound. A larger ξt am-
+                                                                              plifies the fusion gradient, encouraging the model to rely more heav-
+The training objective is                                                     ily on cross modal integration. (                    )
+                                                                                   2. Strong unimodal evidence Sta−v ≳ Stav . As the ratio nears or
+                 argminθ (θ) =                ce fθ xai , xvi , yi
+                                             N
+                                         1 ∑      [ (          ) ]            exceeds 1, the inner term becomes nonpositive; 1 + κ( ⋅ ) decreases,
+                                                                       (6)
+                                         N i=1                                pulling ξt toward its lower limit 0. When the unimodal score pre-
+
+where ce ( ⋅ ) denotes the cross-­entropy loss function.
+                                                                              dominates, a smaller ξt attenuates the fusion update, preserving the
+                                                                              integrity of an already robust( ) unimodal pathway.
+                                                                                   In summary, a large ξt corresponds to weak unimodal cues and
+Inverse effectiveness–driven multimodal fusion
+                                                                             (triggers
+                                                                                  )       a stronger adjustment of the fusion weights, whereas a small
+Most previous studies have focused on designing sophisticated fusion           ξt indicates confident unimodal predictions and results in a milder
+blocks, refining the joint representation zav to enhance cross-­modal         fusion update.                  ( )
+interactions, yet they rarely consider how the relative informativeness            The IEMF coefficient ξt is applied only to the fusion parame-
+of each unimodal stream relative to the fused output should guide the         ters, and the unimodal branches are not affected. Concretely
+fusion module. In this work, we draw inspiration from the principle of
+                                                                                                      Wt+1 = Wt − η ξt ∇Wf  Wt
+                                                                                                                                 ( )
+inverse effectiveness. Instead of using static cross-­modal integration,                                 f        f                  f
+                                                                                                                                                      (11)
+we adaptively adjust the update rate of the fusion module’s weights by
+
+                                                                             where η is the learning rate and ∇Wf  Wt is the raw fusion gradi-
+contrasting the estimated information content of each unimodal                                                      ( )
+                                                                                                                        f
+branch with that of the integrated multimodal representation.
+    First, for each sample i in a mini-­batch t , we evaluate the per-­     ent. Because 0 < ξt < 2γ, this scaling never reverses the descent di-
+sample modal information content ci according to the following               rection, thereby maintaining optimization stability. Together, Eqs. 7
+equation                                                                     to 11, inspired by the inverse effectiveness principle, are character-
+                         [ ]             (               )                   ized as: The fusion pathway receives a larger update when unimodal
+                    cia = pai y , pai = π Wat ⋅ za + bat                     evidence is weak and a smaller one when unimodal confidence is
+                                                                     (7)
+                               i
+                         [ ]             (               )                   high. This self-­balancing rule enhances robustness under noise and
+                    civ = pvi y , pvi = π Wvt ⋅ zv + bvt
+                                     i                                       improves the model’s generalization across diverse input conditions.
+           a∕v    a∕v
+where Wt , bt are the parameters     [ ] of the audio/visual modal clas-     The algorithmic steps of IEMF are summarized in algorithm S1.
+sification heads, respectively, and p y picks the probability assigned
+                                                                             Numerical stability
+                                         i
+to the ground-­truth label yi . π is a normalization function, and here
+we choose the softmax function. The informativeness of the multi-            The IEMF coefficient is inherently robust against numerical failure.
+modal output is estimated in the same way                                    First, each ciav is a softmax probability, which is strictly positive for
+                                                                             all finite inputs, guaranteeing Stav > 0 unconditionally. Second, even
+                        [ ]                    ( av av     av )              if Stav → 0+ hypothetically, the tanh gating saturates to −1, driving
+                  ciav = pav
+                          i y,           pav
+                                          i = π Wt ⋅ z + b t           (8)   ξt → 0 (attenuation) rather than + ∞ (explosion); conversely, the up-
+                                 i
+
+                                                                             per bound ξt < 2γ is always finite. Third, to guard against floating-­
+   Next, we average the evaluated values in (7) and (8) to obtain the        point underflow in FP16 mixed-­precision training, we introduce an
+batch-­level modality-­strength scores                                       explicit tolerance ϵ = 10−8 in the denominator of the IEMF coefficient
+
+He et al., Sci. Adv. 12, eady8751 (2026)    5 June 2026                                                                                            13 of 18
+S c i e n c e A d v a n c e s | R e s e ar c h A r t i c l e
+
+(Eq. 10 and algorithm S1), consistent with standard practice in                Then,
+adaptive optimizers such as Adam (70). Together, these three prop-
+erties, softmax positivity, tanh boundedness, and the ϵ safeguard,                         ⎧ < ηλi , Sav∕Sav > x1 (unimodal dominated),
+                                                                                   �      �⎪          t    t
+ensure that algorithm S1 is robust against gradient explosion under               𝔼 ηξt λi ⎨ = ηλi , Sav ∕Sav = 1,                      (13)
+                                                                                                      t     t
+realistic training conditions.                                                             ⎪          av av
+                                                                                           ⎩ > ηλi , St ∕St < 1 (fusion dominated)
+Practical guidelines for IEMF deployment
+Drawing on our experimental results, we propose three practical                As a result, with IEMF, unimodal-­dominated batches reduce sharp
+heuristics for practitioners considering IEMF.                              directions more than the vanilla method, whereas fusion-­dominated
+Heuristic~1 (modality imbalance diagnostic)                                 batches allow at most a twofold increase in step size, thus preserving
+Before multimodal training, unimodal baselines are evaluated inde-          optimization convergence.
+pendently. If a substantial accuracy gap exists between the strongest                                ( ) ‖ W − W ‖ ≤ r , we use ∇ (W),
+                                                                               Proof: For any Wf satisfying        f    f∗
+
+and weakest modality, IEMF is strongly recommended as its adap-             which denotes ∇Wf  Wf , and construct g(s) = ∇Wf (Wf ∗ +,
+tive gradient modulation amplifies fusion learning precisely when           +sΔ), s ∈ [0, 1]. The fundamental theorem of calculus gives ∇ (W) =
+                                                                            g(1) − g(0) = ∫0 dsd g(s)ds . Then, we have
+the weaker modality contributes limited discriminative evidence.                             1
+Heuristic~2 (noisy or degraded conditions)
+When any input modality is subject to systematic noise, limited data,
+                                                                                                   ∇ (W) =
+                                                                                                                    1    (       )
+                                                                                                                �0
+or quality degradation, IEMF’s compensatory mechanism provides                                                          H Wf + sΔ Δds                     (14)
+significant robustness advantages. Our data-­efficiency analysis (Fig. 7F
+and table S9) confirms that the performance gap between IEMF and
+the vanilla baseline widens as the training data ratio decreases.              Adding and subtracting H∗ Δ inside the integral yields
+Heuristic~3 (default-­on recommendation)                                                                        1[       (         )    ]
+                                                                                                               �0
+In high-­congruence, low-­noise settings, IEMF maintains comparable                    ∇(W) = H∗ Δ +                   H Wf ∗ + sΔ − H∗ Δ ds             (15)
+or superior performance across all configurations (table S11). Given
+its negligible computational overhead (+3.9% training time, zero in-
+ference cost) and the mathematical guarantee that ξt → γ when mo-              We define the remainder term as
+dalities are balanced (Sta0v ≈ Stav), IEMF can be applied as a default                                    1[  (         )    ]
+                                                                                                        ∫0
+training strategy with minimal risk.                                                        R(W) =           H Wf ∗ + sΔ − H∗ Δds                         (16)
+    In summary, if significant modality imbalance or noisy/degraded
+inputs exist, IEMF is strongly recommended; if modalities are bal-
+anced and clean, IEMF is safe to apply with negligible risk.                where the remainder R(W) can be estimated for an upper bound
+                                                                            with the help of the ρ-­Lipschitz condition
+
+                                                                                                    ‖ R(W) ‖ ≤ ‖W − Wf ∗ ‖2
+Theoretical rationale for the IEMF optimization dynamics                                                      ρ
+In this section, we provide a theoretical rationale for the proposed                                                                                      (17)
+                                                                                                              2
+IEMF. Our goal is to formally demonstrate how the IEMF coef-
+ficient, ξt , modulates the learning dynamics. This analysis serves         which allows us to express the gradient as
+                                                                                             ∇ (W) = H∗ W − Wf ∗ + R(W)
+                                                                                                           (         )
+to justify how the biologically inspired “inverse effectiveness” prin-                                                                                    (18)
+ciple translates into a stable and adaptive update rule for deep
+neural networks. We prove that the inverse-­effectiveness coeffi-              If the above equation is inserted into the update (11) and the in-
+                                                                                                                 (     )⊤ ( )⊤
+cient ξt used by IEMF reduces the expected step size more in high-­         ner product is taken with ei and use H∗ ei = λi ei , we have
+curvature directions, ensuring reliable convergence to local minima
+                                                                                                   (          )               ( )
+while maintaining optimization stability throughout the train-                                                                  f
+                                                                                             αt+1 = 1 − ηξt λi αti − ηξt e⊤i R Wt                         (19)
+ing process.                                                                                  i
+
+    Assumption 1. The loss  Wf is twice continuously differ-
+                                 ( )
+
+entiable, and there exist constants β, ρ > 0 such that for all u, v ,       where αti = e⊤i(Δt . )For the contraction argument, we need the last
+‖ ∇ (u) − ∇ (v) ‖ ≤ β ‖ u − v ‖, ‖ H(u) − H(v) ‖ ≤ ρ ‖ u − v ‖ . This
+                                                                                                                                              �         �
+                                                                            term ηξt ∣ e⊤i R Wft ∣ to be strictly smaller than the linear part λi ‖Δt ‖
+                                                                                                              (       )
+means that the gradient and the Hessian are β-­Smoothness and               even in the flattest direction λi = λ1 . With Cauchy-­S chwarz for-
+ρ-­Lipschitz, respectively.                                                 mula and (17), we have
+    Theorem 1 (convergence properties of IEMF)    ( Assume      1. Let
+                                                                                                                         ≤ ‖R Wt ‖,
+                                                        )                                                 � �                � �
+Wf ∗ be a local minimizer and write H∗ = H Wf ∗ with eigen-­                                                  f
+                                                                                                   ∣ e⊤i R Wt ∣
+                                                                                                                               f
+
+pairs λi , ei i=1, 0 < λ1 ≤ … ≤ λd . The IEMF updates the fusion
+      [(       )]d
+                                                                                                                          ≤ ‖Δt ‖2
+                                                                                                         � �
+                                                                                                            f               ρ                             (20)
+                                                                                                     ‖R Wt ‖
+module
+     ( parameters according  to)the Eq. 11. The deviation is de-                                                            2
+
+fined Δt ≔ Wt − Wf ∗ =
+                        d
+             f
+                       ∑
+                          αti ei . A radius (r > 0) is chosen                  Applying the triangle inequality to Eq. 19 and substituting our
+                                  i=1                                       derived bounds, we have
+such that
+                         r < λ1 and ‖ Δt ‖ ≤ r                                                      ≤ ∣ 1 − ηξt λi ∣ ∣ αti ∣ + ηξt
+                       ρ                                                                                                             �ρ            �
+                                                         ∀t         (12)                ∣ αt+1
+                                                                                           i
+                                                                                               ∣                                          ‖Δt ‖2          (21)
+                       2                                                                                                              2
+
+He et al., Sci. Adv. 12, eady8751 (2026)   5 June 2026                                                                                                 14 of 18
+S c i e n c e A d v a n c e s | R e s e ar c h A r t i c l e
+
+                     ρ
+    By imposing 2 r < λ1, we establish a crucial inequality                    most common emotion categories for speech emotion recognition with
+                                                                               total 7442 video clips. We randomly divided the dataset into a training
+         ηξt Δt ‖Δt ‖2 ≤ ηξt r ‖ Δt ‖ < ξt λ1 ‖ Δt ‖
+               �ρ        �          ρ
+                                                                         (22) and validation set, as well as a test set, with a ratio of 9:1; Kinetics-­
+                2                   2                                          Sounds (40), contains 31 human action categories selected from the
+    This inequality demonstrates that the quadratic remainder term Kinetics dataset (73). The dataset contains 17,366 10-­s video clips, of
+is always strictly dominated by the linear term for all eigendirections which 1472 are training and validation samples and 2594 are test sam-
+i since λi ≥ λ1 for all i . Consequently, the convergence behavior of each ples; UrbanSound8K-­AV dataset (41), with 8732 audiovisual samples
+component                                                                      totaling 10 categories. Each sample consists of a color image and a 4-­s
+            ) αi is primarily determined by the multiplicative factor audio signal. We randomly divided the dataset into training and test
+                 t
+(
+ 1 − ηξt λi , with the remainder term providing a bounded perturba-
+tion that does not disrupt the overall convergence pattern established by sets in the ratio of 7:3. Audiovisual continual learning: We used the
+the linear term. ξt is computed by Eq. 10, with γ = 1, 0 < ξt < 2. Taking class-­incremental audiovisual dataset introduced by Pian et al. (49),
+expectation of ηξt λi over the mini-­batch three cases arise, yielding ex- comprising three benchmark datasets: AVE-­CI (four tasks × seven
+actly the inequalities stated in the theorem.                              □ classes) consisting of 3294 training samples, 391 validation samples,
+    Our analysis reveals two key aspects of IEMF’s convergence proper- and 394 test samples; K-­S-­CI (five tasks × six classes) containing 19,220
+ties, primarily manifested through the factor 1 − ηξt λi, which precisely training samples, 1947 validation samples, and 1958 test samples; and
+                                                                               VS100-­CI (10 tasks × 10 classes) with 51,195 training samples, 5000
+controls how quickly the error components αti (representing the projec-
+                                                                               validation samples, and 5000 test samples. For AVQA, we used the of-
+tion of parameter error onto each eigenvector) contract toward zero. In
+                                                                               ficial MUSIC-­AVQA (50) split, which contains 32,087 training, 4595
+unimodal-­dominated batches (Stanv ∕Stav > 1 resulting in ξt < 1), the
+                                                                               validation, and 9185 test question-­answer pairs. For VL tasks, we used
+contraction factor satisfies ∣ 1 − ηξt λi ∣ < ∣ 1 − ηλi ∣, meaning that high-­
+                                                                               the Hateful Memes dataset (42), a multimodal dataset for hate speech
+curvature directions (larger λi values) contract faster than in the vanilla
+                                                                               detection containing 10,000 image-­text pairs. We followed the official
+method. Meanwhile, in fusion-­dominated batches [Stanv ∕Stav < 1 result-
+                                                                               “seen” splits for training, validation, and testing. For trimodal tasks, we
+ing in ξt ∈ (1, 2)], although step sizes may increase, they remain strictly
+                                                                               used the MELD dataset (45) for emotion recognition, which contains
+bounded since ξt < 2, ensuring the algorithm’s global stability. This dual
+                                                                               13,708 utterances from the TV series Friends split into 9989 training,
+mechanism, which balances a preference for minima with strict step-­
+                                                                               1109 validation, and 2610 testing utterances. For sentiment analysis, we
+size constraints, ensures that IEMF maintains reliable convergence
+                                                                               used the CMU-­MOSI dataset (46), consisting of 2199 opinion video
+properties while adaptively adjusting step sizes.
+                                                                               segments divided into 1284 training, 229 validation, and 686 test-
+    Empirical studies have demonstrated a strong correlation between
+                                                                               ing samples.
+flatter minima and improved generalization performance (71, 72).
+                                                                               Data processing and network backbones
+While Theorem 1 establishes the convergence of IEMF under standard
+                                                                               All raw videos were first resampled to a uniform frame rate. According
+smoothness assumptions, a stronger theoretical link between the geo-
+                                                                               to different task settings, we randomly sampled 1, 3, or 16 frames from
+metric properties of the solution and its generalization remains chal-
+                                                                               each video clip as the visual input. The corresponding audio input was
+lenging to formally prove. Nevertheless, we provide the following
+                                                                               transformed into log-­Mel spectrograms, which were used as input to the
+heuristic justification based on landscape sharpness analysis, supported
+                                                                               audio branch. For audiovisual classification, we used the ResNet-­18 (74)
+by experimental observations.
+                                                                               architecture for both the visual and audio streams. To investigate archi-
+    Consider the sharpness of the loss landscape at a parameter con-
+                                                                               tectural generality, we adapted this topology to an SNN counterpart by
+figuration W , defined as
+               f
+                                                                               replacing conventional activation functions with LIF neurons; neuron-­
+               s W , ρ ≔ max∣ϵ∣2 ≤ρ  W + ϵ −  W
+                  ( f )                   ( f      )       ( f)                level hyperparameters are detailed in table S1. For audiovisual continual
+                                                                         (23) learning, we used VideoMAE (75) and AudioMAE (76) to extract video
+                                                                               frames and audio features. For audiovisual question and answer, for vi-
+which quantifies the sensitivity of the loss to local perturbations. While sion, we used pretrained ResNet-­18 model, and for audio, we used pre-
+we do not provide a formal guarantee, our empirical evidence and di- trained VGGish (77) to extract visual and audio features respectively.
+rectional analysis suggest the following heuristic conclusion                  For VL experiments, we evaluated three architectures: Concat BERT
+    Heuristic 1 (IEMF reduces landscape sharpness). Under dynam- (42), where we replaced the original ResNet-­152 visual backbone with a
+ic training, IEMF adaptively reduces the step size in high-­curvature vision transformer, ViT-­B/16 (78) to concatenate with BERT (79) text
+directions. As a result, the sharpness                                         features; MMBT-­Grid (43), which projects visual features into the text
+                         [(       )]            (       )
+                       𝔼 s Wf , ρ ≲ α ⋅ svm Wf , ρ                       (24) token space; and ViLBERT (44), which uses a dual-­stream co-­attention
+                                                                               transformer mechanism. To extend beyond pairwise fusion, we con-
+where svm is the sharpness observed under the vanilla method and α < 1 ducted a three-­modality experiment on the MELD dataset. We used
+is a factor that quantifies how much IEMF reduces the loss landscape’s preextracted ResNet101 (74) visual features, Wav2Vec2.0 (80) audio fea-
+sharpness through its adaptive modulation of optimization steps. This tures, and GloVe-­initialized text embeddings (81). The three modalities
+suggests that IEMF biases the optimization trajectory toward flatter re- were projected to a unified space, concatenated, and processed by a bidi-
+gions of the loss landscape, a property that empirically correlates with rectional LSTM for dialogue-­level emotion recognition. For sentiment
+improved generalization.                                                       analysis on the CMU-­MOSI dataset, we adopted the Multimodal-­
+                                                                               InfoMax framework (82), which synthesizes fusion results through hier-
+Experimental settings and training details                                     archical mutual information maximization.
+Datasets                                                                       Optimization details
+We divided the dataset as specified in the original dataset. Audiovisual Optimization strategies were tailored to different task domains to
+classification: CREMA-­D (39), an audiovisual dataset containing six accommodate specific architectural requirements.
+
+He et al., Sci. Adv. 12, eady8751 (2026)   5 June 2026                                                                                           15 of 18
+S c i e n c e A d v a n c e s | R e s e ar c h A r t i c l e
+
+    1. Audiovisual tasks: For audiovisual classification, we used sto-       error rates and the computational complexity per epoch. For-
+chastic gradient descent (SGD) (83) with a weight decay of 1 × 10−4,         mally, the computational cost for an algorithm is defined as Cost =
+
+                                                                                  Argmin f (x) ≤ Errl × Ωe . In this formula, L represents the num-
+training for 100 epochs with an initial learning rate of 5 × 10−3 and          ∑L
+                                                                                          [          ]
+                                                                             1
+a batch size of 32. In the audiovisual continual learning task, models       L
+were trained for 100 epochs with a learning rate of 1 × 10−2 and a             l=1
+                                                                             ber of predefined error rate thresholds (set to 5 in[ our experiments,
+                                                                             denotes the predefined error rate levels, Argmin f (x) ≤ Errl is the first
+batch size of 256; notably, for the VS100-­CI benchmark, we used the                                                                         ]       Errl
+Adam optimizer (70) (β1 = 0.9, β2 = 0.999) to handle gradient noise.
+AVQA models were trained for 50 epochs using SGD with a learn-               epoch at which the algorithm reaches or goes below the specified
+ing rate of 1 × 10−2 and a batch size of 64.                                 error rate Errl, and Ωe represents the algorithmic complexity per ep-
+    2. VL tasks: For the Hateful Memes dataset, we used the SGD              och, measured in FLOPs. We define the error rate Errl using upper and
+optimizer configured with a learning rate of 7 × 10−5, a momentum            lower bounds determined from the training curves of all methods
+of 0.9, and a weight decay of 1 × 10−4. The models were trained for          under comparison. Specifically, the upper bound is set as the mini-
+50 epochs to ensure convergence on the multimodal objective.                 mum value among the highest error rates of all compared methods.
+    3. Trimodal tasks: For tasks involving text, audio, and visual mo-       The lower bound is set to the maximum of the lowest values of the final
+dalities, we adopted the Adam optimizer. On the MELD emotion                 error rates of the various methods. Within this range, we choose error
+recognition dataset, we set the learning rate to 1 × 10−4 and weight         rate thresholds at uniform intervals to ensure that the entire perfor-
+decay to 1 × 10−5, training for 50 epochs. For sentiment analysis on         mance interval has been systematically and fairly evaluated.
+CMU-­MOSI, the model was trained for 40 epochs using Adam with                   2.Audiovisual continual learning. We track model accuracy through-
+a weight decay of 1 × 10−4.                                                  out the training process using two metrics: average accuracy (AA) and
+Training configuration and hyperparameters                                   average incremental accuracy (AIA).
+Table S1 details the hyperparameter settings used across the diverse             At each step k (i.e., after learning the kth task), we compute the aver-
+                                                                                                                                                      k
+multimodal tasks reported in the Results. To ensure fair comparison          age accuracy AAk across all tasks encountered so far as AAk = 1
+                                                                                                                                                     ∑
+                                                                                                                                                           ak,j,
+with baselines and demonstrate the robustness of the proposed IEMF                                                                               k
+                                                                                                                                                     j=1
+method, we adopted the following selection protocol:                         where ak,j is the accuracy on the j-­th task after learning task k , and
+    1. Optimization and backbone settings: For general training pa-          j ≤ k . To summarize performance across the entire learning sequence,
+rameters, including optimizer, learning rate, weight decay, and              we report the average incremental accuracy, which is the mean of AA
+batch size, we followed standard protocols established in the re-                                             K
+                                                                                                              ∑
+spective benchmark literature. This ensures that any performance             values over all K tasks AIA = K1    AAi. Here, AA reflects the model’s
+improvement is attributed to the IEMF mechanism rather than su-                                                  i=1
+perior backbone tuning.                                                      performance after each task, while AIA captures the overall trend and
+    2. IEMF parameter configuration: We deliberately avoided ex-             stability of learning across all tasks.
+tensive hyperparameter search to validate the method’s generaliza-               To further quantify how much the model forgets previous tasks, we
+tion capability.                                                             introduce the average forgetting rate (AFR) in the appendix table S5.
+    (a) Initial selection: The inverse effectiveness coefficient γ was       Let ak,j be the test accuracy on task j after learning task k . The forget-
+                                                                                                                       k−1
+determined via a lightweight preliminary evaluation on the valida-                                                     ∑               (           )
+                                                                             ting on task k is defined as Fk = 1           max1≤ 𝓁≤k−1 a 𝓁,j − ak,j , i.e.,
+tion split of the audiovisual classification task, where γ = 1.0 yielded                                           k−1
+                                                                                                                         j=1
+stable performance.                                                          the average drop from the highest accuracy ever achieved on task
+    (b) Robustness verification: Crucially, this value ( γ = 1.0) and        j to its accuracy after the final task. For a total of K tasks, then
+the gating function κ( ⋅ ) = tanh( ⋅ ) were kept fixed for all subsequent                 ∑K
+experiments (including continual learning, QA, VL, and trimodal              AFR = K 1− 1    Fk , where Fk excludes the first task (as forgetting can
+tasks). The consistent gains confirm that IEMF is architecture-­                           k=2
+agnostic and does not rely on task-­specific fine-­tuning.                   only be measured after learning at least two tasks). This metric sum-
+Experimental platform                                                        marizes how much the model’s performance on previously learned
+All experiments were conducted on a linux server equipped with               tasks degrades over the entire learning sequence.
+NVIDIA A100-­40 GB GPUs and an AMD EPYC 7763 processor.                         3. AVQA. We evaluate
+                                                                                               (         modal-­
+                                                                                                             ) specific question and answer ac-
+                                                                             curacy, denoted by Aa , Av , Aav , which respectively evaluate perfor-
+Details of evaluation metrics                                                mance across audio-­only, visual-­only, and audiovisual questions.
+                                                                                                                N
+We evaluate the proposed method across three multimodal tasks us-                                               ∑   (            )
+ing task-­specific metrics.                                                  Each accuracy is computed as N1       1 ̂ansi = ansi , which measures
+                                                                                                                   i=1
+    1.Audiovisual classification: For audiovisual classification tasks,      exact match between predicted and ground-­truth answers over all
+                                                     N
+                                                   ∑     (        )          question types within each modality.
+we report the standard Top-­1 accuracy, Acc = N1        1 ŷi = yi , where      4. VL and trimodal evaluation. For VL tasks (e.g., Hateful Memes),
+ (        )                                         i=1
+1 ŷi = yi represents the indicator function, which equals 1 if ŷi = yi     we report the AUROC and F1-­Macro score. The AUROC quantifies the
+                                                                             discriminative capability of the] model across various threshold settings
+                                                                             AUROC = ∫0 TPR FPR−1 (t) dt, where TPR is the true-­positive rate
+and 0 otherwise. This metric measures the proportion of exam-                              1     [
+ples where the predicted label matches the ground truth. To fur-
+ther assess the computational cost during training, inspired by              and FPR is the false-­positive rate. The F1-­Macro score is calculated as
+Zhang et al. (84), we fairly compare the efficiency of different methods     the unweighted mean of the F1 scores for each class, ensuring equal
+by considering both the number of epochs required to reach specified         contribution from all classes regardless of their frequency.
+
+He et al., Sci. Adv. 12, eady8751 (2026)   5 June 2026                                                                                               16 of 18
+S c i e n c e A d v a n c e s | R e s e ar c h A r t i c l e
+
+    For trimodal tasks (e.g., MELD and CMU-­MOSI), to account for                                                 18. X. Li, X. Yin, C. Li, P. Zhang, X. Hu, L. Zhang, L. Wang, H. Hu, L. Dong, F. Wei, Y. Choi, J. Gao,
+                                                                                                                      “Oscar: Object-­semantics aligned pre-­training for vision-­language tasks” in European
+class imbalance, we use the weighted-­F1 and F1 score. The F1 score is
+                                                                                                                      Conference on Computer Vision (Springer, 2020), pp. 121–137.
+the harmonic mean of precision (P) and recall (R): F1 = 2 ⋅ PP+⋅ RR . For                                         19. Y. Yao, R. Mihalcea, “Modality-­specific learning rates for effective multimodal additive
+sentiment analysis on the CMU-­MOSI dataset, we report the binary                                                     late-­fusion” in Findings of the Association for Computational Linguistics: ACL 2022 (2022),
+                                                                                                                      pp. 1824–1834.
+classification accuracy (Acc-­2). Following standard protocol (46), this                                          20. Y. Yang, F. Wan, Q.-­Y. Jiang, Y. Xu, Facilitating multimodal classification via dynamically
+metric evaluates the model’s ability to classify samples into negative and                                            learning modality gap. Adv. Neural Inf. Proces. Syst. 37, 62108–62122 (2024).
+nonnegative (including neutral and positive) categories. It is defined as                                         21. A. Kendall, Y. Gal, What uncertainties do we need in Bayesian deep learning for computer
+
+                        𝕀 ŷi ≥ 0 = yi ≥ 0
+                     N
+                    ∑ [(          ) (         )]                                                                      vision? Adv. Neural Inf. Proces. Syst. 30, 5574–5584 (2017).
+                                                                                                                  22. Z. Han, F. Yang, J. Huang, C. Zhang, J. Yao, “Multimodal dynamics: Dynamical fusion for
+                                                                                                                      trustworthy multimodal classification” in Proceedings of the IEEE/CVF Conference on
+            N
+Acc - 2 = correct = i=1                           where ŷi and yi are the                                            Computer Vision and Pattern Recognition (2022), pp. 20707–20717.
+                Ntotal                          N
+predicted and ground-­truth sentiment scores, respectively, and 𝕀( ⋅ ) is                                         23.	C. Qian, K. Han, J. Wang, Z. Yuan, C. Lyu, J. Chen, Z. Liu, Dyncim: Dynamic curriculum for
+                                                                                                                      imbalanced multimodal learning. arXiv:2503.06456 [cs.CV] (2025).
+the indicator function.                                                                                           24.	D. A. Bulkin, J. M. Groh, Seeing sounds: Visual and auditory interactions in the brain. Curr.
+                                                                                                                      Opin. Neurobiol. 16, 415–419 (2006).
+                                                                                                                  25. J. Enoch, L. McDonald, L. Jones, P. R. Jones, D. P. Crabb, Evaluating whether sight is the
+                                                                                                                      most valued sense. JAMA Ophthalmol. 137, 1317–1320 (2019).
+Supplementary Materials                                                                                           26.	E. Macaluso, J. Driver, Multisensory spatial interactions: A window onto functional
+This PDF file includes:                                                                                               integration in the human brain. Trends Neurosci. 28, 264–271 (2005).
+Algorithm S1                                                                                                      27. G. A. Calvert, R. Campbell, M. J. Brammer, Evidence from functional magnetic resonance
+Tables S1 to S11                                                                                                      imaging of crossmodal binding in the human heteromodal cortex. Curr. Biol. 10, 649–657
+                                                                                                                      (2000).
+REFERENCES                                                                                                        28.	E. Macaluso, N. George, R. Dolan, C. Spence, J. Driver, Spatial and temporal factors during
+ 1. M. O. Ernst, H. H. Bülthoff, Merging the senses into a robust percept. Trends Cogn. Sci. 8,                       processing of audiovisual speech: A PET study. Neuroimage 21, 725–732 (2004).
+    162–169 (2004).                                                                                               29.	T. Noesselt, J. W. Rieger, M. A. Schoenfeld, M. Kanowski, H. Hinrichs, H.-­J. Heinze, J. Driver,
+ 2. U. Noppeney, Perceptual inference, learning, and attention in a multisensory world.                               Audiovisual temporal correspondence modulates human multisensory superior
+    Annu. Rev. Neurosci. 44, 449–473 (2021).                                                                          temporal sulcus plus primary sensory cortices. J. Neurosci. 27, 11431–11441 (2007).
+ 3. A. Nagrani, S. Yang, A. Arnab, A. Jansen, C. Schmid, C. Sun, Attention bottlenecks for                        30.	N. Van Atteveldt, E. Formisano, R. Goebel, L. Blomert, Integration of letters and speech
+    multimodal fusion. Adv. Neural Inf. Proces. Syst. 34, 14200–14213 (2021).                                         sounds in the human brain. Neuron 43, 271–282 (2004).
+ 4. X. Peng, Y. Wei, A. Deng, D. Wang, D. Hu, “Balanced multimodal learning via on-­the-­fly                      31.	D. Senkowski, D. Saint-­Amour, T. Gruber, J. J. Foxe, Look who’s talking: The deployment of
+    gradient modulation” in Proceedings of the IEEE/CVF Conference on Computer Vision and                             visuo-­spatial attention during multisensory speech processing under noisy
+    Pattern Recognition (2022), pp. 8238–8247.                                                                        environmental conditions. Neuroimage 43, 379–387 (2008).
+ 5. F. Yu, Y. Wu, S. Ma, M. Xu, H. Li, H. Qu, C. Song, T. Wang, R. Zhao, L. Shi, Brain-­inspired                  32. G. R. Szycik, P. Tausche, T. F. Münte, A novel approach to study audiovisual integration in
+    multimodal hybrid neural network for robot place recognition. Sci. Robot. 8, eabm6996                             speech perception: Localizer fMRI and sparse sampling. Brain Res. 1220, 142–149 (2008).
+    (2023).                                                                                                       33. M. Avillac, S. Deneve, E. Olivier, A. Pouget, J.-­R. Duhamel, Reference frames for
+ 6. R. Jiang, J. Han, Y. Xue, P. Wang, H. Tang, “CMCI: A robust multimodal fusion method for                          representing visual and tactile locations in parietal cortex. Nat. Neurosci. 8, 941–949
+    spiking neural networks” in International Conference on Neural Information Processing                             (2005).
+    (Springer, 2024), pp. 159–171.                                                                                34.	C. Regenbogen, J. Seubert, E. Johansson, A. Finkelmeyer, P. Andersson, J. N. Lundström,
+ 7. M. U. K. Sadaf, N. U. Sakib, A. Pannone, H. Ravichandran, S. Das, A bio-­inspired visuotactile                    The intraparietal sulcus governs multisensory integration of audiovisual information
+    neuron for multisensory integration. Nat. Commun. 14, 5729 (2023).                                                based on task difficulty. Hum. Brain Mapp. 39, 1313–1326 (2018).
+ 8. F. Lv, X. Chen, Y. Huang, L. Duan, G. Lin, “Progressive modality reinforcement for human                      35. K. O. Bushara, J. Grafman, M. Hallett, Neural correlates of auditory–visual stimulus onset
+    multimodal emotion recognition from unaligned multimodal sequences” in Proceedings                                asynchrony detection. J. Neurosci. 21, 300–304 (2001).
+    of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (2021),                                 36.	N. E. Barraclough, D. Xiao, C. I. Baker, M. W. Oram, D. I. Perrett, Integration of visual and
+    pp. 2554–2562.                                                                                                    auditory information by superior temporal sulcus neurons responsive to the sight of
+ 9. Z. Cheng, Z.-­Q. Cheng, J.-­Y. He, K. Wang, Y. Lin, Z. Lian, X. Peng, A. Hauptmann,                               actions. J. Cogn. Neurosci. 17, 377–391 (2005).
+    Emotion-­llama: Multimodal emotion recognition and reasoning with instruction tuning.                         37. B. E. Stein, T. R. Stanford, Multisensory integration: Current issues from the perspective of
+    Adv. Neural Inf. Proces. Syst. 37, 110805–110853 (2024).                                                          the single neuron. Nat. Rev. Neurosci. 9, 255–266 (2008).
+10. Y. Mroueh, E. Marcheret, V. Goel, “Deep multimodal learning for audio-­visual speech                          38.	C. R. Fetsch, G. C. DeAngelis, D. E. Angelaki, Bridging the gap between theories of sensory
+    recognition” in 2015 IEEE International Conference on Acoustics, Speech and Signal                                cue integration and the physiology of multisensory neurons. Nat. Rev. Neurosci. 14,
+    Processing (ICASSP) (IEEE, 2015), pp. 2130–2134.                                                                  429–442 (2013).
+11. M. Kim, J. Hong, S. J. Park, Y. M. Ro, Cromm-­vsr: Cross-­modal memory augmented visual                       39. H. Cao, D. G. Cooper, M. K. Keutmann, R. C. Gur, A. Nenkova, R. Verma, Crema-­d:
+    speech recognition. IEEE Trans. Multimed. 24, 4342–4355 (2021).                                                   Crowd-­sourced emotional multimodal actors dataset. IEEE Trans. Affect. Comput. 5,
+12. J. H. Yeo, M. Kim, J. Choi, D. H. Kim, Y. M. Ro, Akvsr: Audio knowledge empowered visual                          377–390 (2014).
+    speech recognition by compressing audio knowledge of a pretrained model. IEEE Trans.                          40. R. Arandjelovic, A. Zisserman, “Look, listen, and learn” in Proceedings of the IEEE
+    Multimed. 26, 6462–6474 (2024).                                                                                   International Conference on Computer Vision (2017), pp. 609–617.
+13. A. Radford, J. W. Kim, C. Hallacy, A. Ramesh, G. Goh, S. Agarwal, G. Sastry, A. Askell, P. Mishkin,           41.	L. Guo, Z. Gao, J. Qu, S. Zheng, R. Jiang, Y. Lu, H. Qiao, Transformer-­based spiking neural
+    J. Clark, G. Krueger, I. Sutskever, “Learning transferable visual models from natural language                    networks for multimodal audio-­visual classification. IEEE Trans. Cogn. Dev. Syst. 16,
+    supervision” in Proceedings of the 38th International Conference on Machine Learning (PMLR,                       1077–1086 (2024).
+    2021), vol. 139 of Proceedings of Machine Learning Research, pp. 8748–8763.                                   42.	D. Kiela, H. Firooz, A. Mohan, V. Goswami, A. Singh, P. Ringshia, D. Testuggine, The hateful
+14.	C. Jia, Y. Yang, Y. Xia, Y.-­T. Chen, Z. Parekh, H. Pham, Q. Le, Y.-­H. Sung, Z. Li, T. Duerig, “Scaling up       memes challenge: Detecting hate speech in multimodal memes. Adv. Neural Inf. Proces.
+    visual and vision-­language representation learning with noisy text supervision” in                               Syst. 33, 2611–2624 (2020).
+    International Conference on Machine Learning (PMLR, 2021), pp. 4904–4916.                                     43.	D. Kiela, S. Bhooshan, H. Firooz, E. Perez, D. Testuggine, Supervised multimodal
+15. X. Zhai, X. Wang, B. Mustafa, A. Steiner, D. Keysers, A. Kolesnikov, L. Beyer, “Lit: Zero-­shot                   bitransformers for classifying images and text. arXiv:1909.02950 [cs.CL] (2019).
+    transfer with locked-­image text tuning” in Proceedings of the IEEE/CVF Conference on                         44. J. Lu, D. Batra, D. Parikh, S. Lee, Vilbert: Pretraining task-­agnostic visiolinguistic
+    Computer Vision and Pattern Recognition (2022), pp. 18123–18133.                                                  representations for vision-­and-­language tasks. Adv. Neural Inf. Proces. Syst. 32, (2019).
+16. H. Tan, M. Bansal, LXMERT: Learning cross-­modality encoder representations from                              45. S. Poria, D. Hazarika, N. Majumder, G. Naik, E. Cambria, R. Mihalcea, “Meld: A multimodal
+    transformers. arXiv:1908.07490 [cs.CL] (2019).                                                                    multi-­party dataset for emotion recognition in conversations” in Proceedings of the 57th
+17. Y.-­H. H. Tsai, S. Bai, P. P. Liang, J. Z. Kolter, L.-­P. Morency, R. Salakhutdinov, “Multimodal                  Annual Meeting of the Association for Computational Linguistics (2019), pp. 527–536.
+    transformer for unaligned multimodal language sequences” in Proceedings of the                                46. A. Zadeh, R. Zellers, E. Pincus, L.-­P. Morency, Multimodal sentiment intensity analysis in
+    Conference. Association for Computational Linguistics. Meeting (2019), vol. 2019, p. 6558.                        videos: Facial gestures and verbal messages. IEEE Intell. Syst. 31, 82–88 (2016).
+
+
+He et al., Sci. Adv. 12, eady8751 (2026)             5 June 2026                                                                                                                                             17 of 18
+S c i e n c e A d v a n c e s | R e s e ar c h A r t i c l e
+
+47. Z. Li, D. Hoiem, Learning without forgetting. IEEE Trans. Pattern Anal. Mach. Intell. 40,                73. W. Kay, J. Carreira, K. Simonyan, B. Zhang, C. Hillier, S. Vijayanarasimhan, F. Viola, T. Green,
+    2935–2947 (2018).                                                                                            T. Back, P. Natsev, M. Suleyman, A. Zisserman, The kinetics human action video dataset.
+48. H. Ahn, J. Kwak, S. Lim, H. Bang, H. Kim, T. Moon, “Ss-­il: Separated softmax for incremental                arXiv:1705.06950 [cs.CV] (2017).
+    learning” in Proceedings of the IEEE/CVF International Conference on Computer Vision                     74. K. He, X. Zhang, S. Ren, J. Sun, “Deep residual learning for image recognition” in
+    (2021), pp. 844–853.                                                                                         Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (2016),
+49. W. Pian, S. Mo, Y. Guo, Y. Tian, “Audio-­visual class-­incremental learning” in Proceedings of               pp. 770–778.
+    the IEEE/CVF International Conference on Computer Vision (2023), pp. 7799–7811.                          75. Z. Tong, Y. Song, J. Wang, L. Wang, Videomae: Masked autoencoders are data-­efficient
+50. G. Li, Y. Wei, Y. Tian, C. Xu, J.-­R. Wen, D. Hu, “Learning to answer questions in dynamic                   learners for self-­supervised video pre-­training. Adv. Neural Inf. Proces. Syst. 35,
+    audio-­visual scenarios” in Proceedings of the IEEE/CVF Conference on Computer Vision and                    10078–10093 (2022).
+    Pattern Recognition (2022), pp. 19108–19118.                                                             76. P.-­Y. Huang, H. Xu, J. Li, A. Baevski, M. Auli, W. Galuba, F. Metze, C. Feichtenhofer, Masked
+51. X. He, D. Zhao, Y. Dong, G. Shen, X. Yang, Y. Zeng, Enhancing audio-­visual spiking neural                   autoencoders that listen. Adv. Neural Inf. Proces. Syst. 35, 28708–28720 (2022).
+    networks through semantic-­alignment and cross-­modal residual learning.                                 77. S. Hershey, S. Chaudhuri, D. P. W. Ellis, J. F. Gemmeke, A. Jansen, R. C. Moore, M. Plakal,
+    arXiv:2502.12488 [cs.CV] (2025).                                                                             D. Platt, R. A. Saurous, B. Seybold, M. Slaney, R. J. Weiss, K. Wilson, “CNN architectures for
+52. B. E. Stein, T. R. Stanford, B. A. Rowland, Development of multisensory integration from                     large-­scale audio classification” in 2017 IEEE International Conference on Acoustics, Speech
+    the perspective of the individual neuron. Nat. Rev. Neurosci. 15, 520–535 (2014).                            and Signal Processing (ICASSP) (IEEE, 2017), pp. 131–135.
+53.	D. A. Slutsky, G. H. Recanzone, Temporal and spatial dependency of the ventriloquism                     78. A. Dosovitskiy, An image is worth 16x16 words: Transformers for image recognition at
+    effect. Neuroreport 12, 7–10 (2001).                                                                         scale. arXiv:2010.11929 [cs.CV] (2020).
+54. W. D. Hairston, D. A. Hodges, J. H. Burdette, M. T. Wallace, Auditory enhancement of visual              79. J. Devlin, Bert: Pre-­training of deep bidirectional transformers for language
+    temporal order judgment. Neuroreport 17, 791–795 (2006).                                                     understanding. arXiv:1810.04805 [cs.CL] (2018).
+55. B. E. Stein, M. A. Meredith, The Merging of the Senses (MIT Press, 1993).                                80. A. Baevski, Y. Zhou, A. Mohamed, M. Auli, wav2vec 2.0: A framework for self-­
+56.	C. Liu, S. Ding, H. J. Kim, S. Long, D. Xiao, S. Ghazanfar, P. Yang, Multitask benchmarking of               supervised learning of speech representations. Adv. Neural Inf. Process. Syst. 33,
+    single-­cell multimodal omics integration methods. Nat. Methods 22, 2449–2460 (2025).                        12449–12460 (2020).
+57.	V. Svensson, Droplet scRNA-­seq is not zero-­inflated. Nat. Biotechnol. 38, 147–150 (2020).              81. J. Pennington, R. Socher, C. D. Manning, “Glove: Global vectors for word representation” in
+58.	C. Xiao, Y. Chen, Q. Meng, L. Wei, X. Zhang, Benchmarking multi-­omics integration                           Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing
+    algorithms across single-­cell RNA and ATAC data. Brief. Bioinform. 25, bbae095 (2024).                      (EMNLP) (2014), pp. 1532–1543.
+59. Z.-­J. Cao, G. Gao, Multi-­omics single-­cell data integration and regulatory inference with             82. W. Han, H. Chen, S. Poria, Improving multimodal fusion with hierarchical mutual
+    graph-­linked embedding. Nat. Biotechnol. 40, 1458–1466 (2022).                                              information maximization for multimodal sentiment analysis. arXiv:2109.00412 [cs.CL]
+60.	T. Ashuach, M. I. Gabitto, R. V. Koodli, G.-­A. Saldi, M. I. Jordan, N. Yosef, MultiVI: Deep                 (2021).
+    generative model for the integration of multimodal data. Nat. Methods 20, 1222–1231                      83. H. Robbins, S. Monro, A stochastic approximation method. Ann. Math. Stat. 22, 400–407
+    (2023).                                                                                                      (1951).
+61. M. Xu, L. Cai, Z. Yang, R. Wang, H. Zhang, Gene-­guided multimodal data fusion for cancer                84.	T. Zhang, X. Cheng, S. Jia, M. Poo, Y. Zeng, B. Xu, Self-­backpropagation of synaptic
+    patient survival analysis. Neurocomputing 668, 132365 (2026).                                                modifications elevates the efficiency of spiking and artificial neural networks. Sci. Adv. 7,
+62. F. Gao, J. Ding, B. Gai, D. Cai, C. Hu, F.-­A. Wang, R. He, J. Liu, Y. Li, X.-­J. Wu, Interpretable          eabh0146 (2021).
+    multimodal fusion model for bridged histology and genomics survival prediction in                        85. A. Paszke, S. Gross, F. Massa, A. Lerer, J. Bradbury, G. Chanan, T. Killeen, Z. Lin,
+    pan-­cancer. Adv. Sci. 12, e2407060 (2025).                                                                  N. Gimelshein, L. Antiga, A. Desmaison, A. Kopf, E. Yang, Z. DeVito, M. Raison, A. Tejani,
+63. Z. Liu, Y. Wu, H. Xu, M. Wang, S. Weng, D. Pei, S. Chen, W. Wang, J. Yan, L. Cui, J. Duan,                   S. Chilamkurthy, B. Steiner, L. Fang, J. Bai, S. Chintala, “PyTorch: An imperative style,
+    Y. Zhao, Z. Wang, Z. Ma, R. Li, W. Duan, Y. Qiu, D. Su, S. Li, H. Liu, W. Li, C. Ma, M. Yu, Y. Yu,           high-­performance deep learning library” in Advances in Neural Information Processing
+    T. Chen, J. Fu, Y. Zhen, B. Yu, Y. Ji, H. Zheng, D. Liang, X. Liu, D. Yan, X. Han, F. Wang, Z.-­C. Li,       Systems, H. Wallach, H. Larochelle, A. Beygelzimer, F. d’Alché-­Buc, E. Fox, R. Garnett, Eds.
+    Z. Zhang, Multimodal fusion of radio-­pathology and proteogenomics identify integrated                       (NeurIPS, 2019).
+    glioma subtypes with prognostic and therapeutic opportunities. Nat. Commun. 16, 3510
+    (2025).                                                                                                  Acknowledgments: We thank X. Wen for providing the illustrations in Fig. 1A, L. Feng for
+64.	N. K. Logothetis, J. Pauls, M. Augath, T. Trinath, A. Oeltermann, Neurophysiological                     valuable assistance with the analysis of experimental results, and F. Zhao for insightful
+    investigation of the basis of the fMRI signal. Nature 412, 150–157 (2001).                               discussions that helped improve the study. Funding: This work is supported by National
+65. J. Sui, T. Adali, Q. Yu, J. Chen, V. D. Calhoun, A review of multivariate methods for                    Natural Science Foundation of China (grant no. 62406325 to D.Z.). Author contributions:
+    multimodal fusion of brain imaging data. J. Neurosci. Methods 204, 68–81 (2012).                         Conceptualization: X.H., D.Z., Q.K., X.Y., and Y.Z. Investigation: X.H., Y.L., X.Y., and Y.Z.
+66. Z. Lin, H. Akin, R. Rao, B. Hie, Z. Zhu, W. Lu, N. Smetanin, R. Verkuil, O. Kabeli, Y. Shmueli,          Methodology: X.H., D.Z., Q.K., X.Y., and Y.Z. Software: X.H. and Y.L. Formal analysis: X.H., Y.L.,
+    A. D. S. Costa, M. Fazel-­Zarandi, T. Sercu, S. Candido, A. Rives, Evolutionary-­scale                   Q.K., and Y.Z. Data curation: X.H., Y.L., Q.K., X.Y., and Y.Z. Validation: X.H., Y.L., Q.K., X.Y., and
+    prediction of atomic-­level protein structure with a language model. Science 379,                        Y.Z. Resources: X.H., Y.L., X.Y., and Y.Z. Visualization: X.H., Y.L., Q.K., and Y.Z. Supervision:
+    1123–1130 (2023).                                                                                        D.Z., Q.K., X.Y., and Y.Z. Project administration: X.H., X.Y., and Y.Z. Funding acquisition: D.Z.
+67. J. Su, C. Han, Y. Zhou, J. Shan, X. Zhou, F. Yuan, “SaProt: Protein language modeling with               and Y.Z. Writing—original draft: X.H., Y.L., Q.K., X.Y., and Y.Z. Writing—review and editing:
+    structure-­aware vocabulary” in The Twelfth International Conference on Learning                         all authors. Competing interests: The authors declare that they have no competing
+    Representations (2024).                                                                                  interests. Data, code, and materials availability: All data and code needed to evaluate
+68.	V. Nair, G. E. Hinton, “Rectified linear units improve restricted boltzmann machines” in                 and reproduce the results in the paper are present in the paper and the Supplementary
+    Proceedings of the 27th International Conference on Machine Learning (ICML-­10) (2010),                  Materials. This study did not generate new materials. The source code and well-­trained
+    pp. 807–814.                                                                                             checkpoints are permanently archived at Zenodo (DOI: https://doi.org/10.5281/
+69. P. Dayan, L. F. Abbott, Theoretical Neuroscience: Computational and Mathematical                         zenodo.18254260) and available at https://github.com/Brain-­Cog-­Lab/IEMF under an MIT
+    Modeling of Neural Systems (MIT Press, 2005).                                                            license. The implementation is based on PyTorch (85). All datasets are publicly available
+70.	D. P. Kingma, J. Ba, “Adam: A method for stochastic optimization” in 3rd International                   from their original sources: CREMA-­D (39), Kinetics-­Sounds (40), UrbanSound8K-­AV (41),
+    Conference on Learning Representations, ICLR 2015 (2015).                                                Hateful Memes (42), MELD (45), CMU-­MOSI (46), AVE-­CI (49), K-­S-­CI (49), VS100-­CI (49), and
+71.	N. S. Keskar, J. Nocedal, P. T. P. Tang, D. Mudigere, M. Smelyanskiy, “On large-­batch training          MUSIC-­AVQA (50).
+    for deep learning: Generalization gap and sharp minima” in 5th International Conference
+    on Learning Representations, ICLR 2017 (2017).                                                           Submitted 16 May 2025
+72. P. Foret, A. Kleiner, H. Mobahi, B. Neyshabur, “Sharpness-­aware minimization for efficiently            Accepted 27 April 2026
+    improving generalization,” in 9th International Conference on Learning Representations                   Published 5 June 2026
+    (2021).                                                                                                  10.1126/sciadv.ady8751
+
+
+
+
+He et al., Sci. Adv. 12, eady8751 (2026)           5 June 2026                                                                                                                                          18 of 18
+

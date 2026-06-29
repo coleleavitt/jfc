@@ -1,0 +1,240 @@
+@startuml JFC Message Flow - All Paths
+!theme plain
+skinparam backgroundColor #0d1117
+skinparam defaultFontColor #c9d1d9
+skinparam sequenceArrowColor #30363d
+skinparam sequenceLifeLineBorderColor #30363d
+skinparam sequenceParticipantBackgroundColor #161b22
+skinparam sequenceParticipantBorderColor #30363d
+skinparam sequenceGroupBackgroundColor #1c2128
+skinparam noteFontColor #8b949e
+skinparam noteBackgroundColor #161b22
+skinparam noteBorderColor #30363d
+
+title JFC Message Flow - Current Architecture\n
+
+' Participants
+participant "User" as user #238636
+participant "App\n(TUI)" as app #1f6feb
+participant "EngineState" as state #1f6feb
+participant "stream.rs\nProvider::stream()" as stream #8957e5
+participant "dispatch.rs\nexecute_tool()" as dispatch #8957e5
+participant "Provider\n(Anthropic)" as provider #bf4b8a
+
+' Background systems
+participant "BackgroundTask\nRegistry" as bg_registry #f0883e
+participant "DaemonState" as daemon #f0883e
+participant "Worker\nProcess" as worker #f0883e
+
+' Team systems
+participant "TeamContext" as team_ctx #3fb950
+participant "Mailbox\n(files)" as mailbox #3fb950
+participant "Teammate\nLoop" as teammate #3fb950
+
+' Economy
+participant "MarketOrchestrator" as orch #d29922
+participant "Solver/Validator" as solver #d29922
+
+' Storage
+database "session.jsonl" as session_db
+database "tasks.json" as tasks_db
+database "daemon_state.json" as daemon_db
+database "inboxes/*.json" as inbox_db
+
+== Flow 1: Basic User Message ==
+
+user -> app : type message
+app -> state : update messages
+app -> stream : start_stream()
+stream -> provider : stream(messages)
+
+loop for each chunk
+  provider --> stream : StreamChunk
+  stream -> state : accumulate text
+  state -> app : render update
+end
+
+provider --> stream : stop_reason: end_turn
+stream -> session_db : append turn
+stream --> app : done
+
+== Flow 2: Tool Use (Solo) ==
+
+user -> app : "read file.rs"
+app -> stream : start_stream()
+stream -> provider : stream(messages)
+provider --> stream : tool_use: Read
+
+stream -> dispatch : execute_tool(Read, {path})
+dispatch -> dispatch : execute_read()
+dispatch --> stream : ExecutionResult
+
+stream -> provider : stream(tool_result)
+provider --> stream : text response
+stream --> app : done
+
+== Flow 3: Background Agent (Task tool) ==
+
+user -> app : "run verifier in background"
+app -> stream : start_stream()
+provider --> stream : tool_use: Task {run_in_background: true}
+
+stream -> dispatch : execute_tool(Task, input)
+
+alt In-Process (run_in_background: false)
+  dispatch -> bg_registry : spawn_background_task()
+  bg_registry -> bg_registry : tokio::spawn
+  dispatch --> stream : task_id
+  
+  note over bg_registry
+    Runs in same process
+    Updates BackgroundTask in EngineState
+  end note
+  
+  bg_registry --> state : completion event
+  
+else Daemon (run_in_background: true)
+  dispatch -> daemon : write BackgroundAgentLaunch
+  dispatch -> worker : spawn detached process
+  dispatch --> stream : task_id
+  
+  note over worker
+    Runs in separate process
+    Writes to log file
+    Updates daemon_state.json
+  end note
+  
+  loop heartbeat
+    worker -> daemon_db : update status
+  end
+  
+  worker -> daemon_db : status: Completed
+  
+  note over state
+    sync_detached_background_tasks()
+    polls daemon_state.json
+  end note
+  
+  daemon_db --> state : sync completed task
+  state -> app : show completion
+end
+
+stream -> provider : tool_result
+provider --> stream : acknowledgment
+stream --> app : done
+
+== Flow 4: Team / Swarm ==
+
+user -> app : "spawn researcher teammate"
+app -> stream : start_stream()
+provider --> stream : tool_use: Task {name: "researcher", team_name: "my-team"}
+
+stream -> dispatch : execute_tool(Task, input)
+dispatch -> team_ctx : register teammate
+dispatch -> teammate : start_teammate()
+
+note over teammate
+  Runs run_teammate_loop()
+  in tokio::spawn
+end note
+
+teammate -> provider : stream(prompt)
+
+loop teammate work
+  provider --> teammate : chunks/tool_use
+  teammate -> dispatch : execute_tool()
+  dispatch --> teammate : result
+  teammate -> provider : tool_result
+end
+
+teammate -> mailbox : write to leader inbox
+teammate -> team_ctx : status: Idle
+
+dispatch --> stream : task_id
+stream --> app : done
+
+== Flow 5: SendMessage (Team) ==
+
+user -> app : "tell researcher to check tests"
+app -> stream : start_stream()
+provider --> stream : tool_use: SendMessage {to: "researcher"}
+
+stream -> dispatch : execute_tool(SendMessage)
+dispatch -> inbox_db : write message to researcher.json
+dispatch --> stream : "Message sent"
+
+note over teammate
+  poll_for_next_message()
+  reads inbox file
+end note
+
+inbox_db --> teammate : message
+teammate -> teammate : wake from idle
+teammate -> provider : stream(new message)
+
+stream --> app : done
+
+== Flow 6: Economy / Bounty ==
+
+user -> app : "post a bounty for refactoring"
+app -> stream : start_stream()
+provider --> stream : tool_use: PostBounty
+
+stream -> dispatch : execute_tool(PostBounty)
+dispatch -> orch : post_bounty()
+orch -> orch : create bounty, state: Open
+dispatch --> stream : bounty_id
+
+stream -> provider : tool_result
+provider --> stream : tool_use: RunBounty
+
+stream -> dispatch : execute_tool(RunBounty)
+dispatch -> orch : run_bounty_cycle()
+
+group Solver Phase
+  orch -> solver : spawn solver 1 (worktree)
+  orch -> solver : spawn solver 2 (worktree)
+  solver -> provider : stream(solver_prompt)
+  provider --> solver : solution
+  solver --> orch : Solution {patch, tokens}
+end
+
+group Validation Phase
+  orch -> solver : spawn validator 1
+  solver -> provider : stream(validator_prompt)
+  provider --> solver : ValidationOutcome
+  solver --> orch : challenge result
+end
+
+group Settlement
+  orch -> orch : settle()
+  orch -> orch : update trust, pay winner
+end
+
+orch --> dispatch : CycleOutcome
+dispatch --> stream : result summary
+stream --> app : done
+
+== Flow 7: Council (Multi-Model) ==
+
+user -> app : "council: should we use async?"
+app -> stream : start_stream()
+provider --> stream : tool_use: Council
+
+stream -> dispatch : execute_tool(Council)
+
+par parallel model calls
+  dispatch -> provider : stream(prompt) [model A]
+  dispatch -> provider : stream(prompt) [model B]  
+  dispatch -> provider : stream(prompt) [model C]
+end
+
+provider --> dispatch : response A
+provider --> dispatch : response B
+provider --> dispatch : response C
+
+dispatch -> dispatch : arbiter synthesis
+dispatch --> stream : synthesized answer
+stream --> app : done
+
+@enduml

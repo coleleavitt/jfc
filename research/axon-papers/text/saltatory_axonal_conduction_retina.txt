@@ -1,0 +1,865 @@
+                            J Physiol 603.21 (2025) pp 6533–6547                                                                                                            6533
+
+
+
+                            Saltatory axonal conduction in the avian retina
+                            Christoph T. Block, Malte T. Ahlers                      , Christian Puller             , Max Manackin, Dipti R. Pradhan
+                            and Martin Greschner
+                            Visual Neuroscience, Department of Neuroscience, Carl von Ossietzky University Oldenburg, Oldenburg, Germany
+
+
+                            Handling Editors: Nathan Schoppa & Jonathan B. Demb
+                            The peer review history is available in the Supporting Information section of this article
+                            (https://doi.org/10.1113/JP288664#support-information-section).
+
+
+
+
+The Journal of Physiology
+
+
+                             Christoph T. Block studied neuroscience and focuses on the functional aspects
+                             of retinal ganglion cells with a methodological focus on data science, from raw
+                             data handling to high-level analysis, often including the use of machine learning to
+                             identify patterns. Malte T. Ahlers studied biology and philosophy at the University
+                             of Oldenburg. In his PhD research he investigated thermal and non-thermal
+                             effects of high frequency electromagnetic fields on retinal electrophysiology. After
+                             working as a freelance hardware and software developer and co-founding a robotics
+                             start-up he joined the Greschner lab as senior scientist. Christian Puller studied
+                             biology and works as a senior scientist focusing on the structure and function of
+                             retinal circuitry in vertebrates. He investigated the anatomy of the outer mammalian retina during his PhD, studied the physiology of retinal output
+                             neurons as a postdoc, and today analyses connectomics of retinal circuitries in large EM datasets.
+
+
+
+
+                            C. T. Block, M. T. Ahlers and C. Puller contributed equally to this work.
+                            This article was first published as a preprint. Block CT, Ahlers MT, Puller C, Manackin M, Pradhan DR, Greschner M. 2022. Saltatory axonal
+                            conduction in the avian retina. bioRxiv. https://doi.org/10.1101/2022.07.04.498722
+
+                            © 2025 The Author(s). The Journal of Physiology published by John Wiley & Sons Ltd on behalf of The Physiological Society.       DOI: 10.1113/JP288664
+
+                            This is an open access article under the terms of the Creative Commons Attribution License, which permits use, distribution
+                            and reproduction in any medium, provided the original work is properly cited.
+6534                                                          Block and others                                                              J Physiol 603.21
+
+
+         Abstract figure legend Intraretinal axonal spike conduction was studied across multiple avian and mammalian
+         species using high-resolution multielectrode arrays. On the electrode array, saltatory axonal spike conduction was
+         readily apparent and distinguishable from non-saltatory conduction. The highest conduction velocities were observed
+         exclusively in saltatory axons. However, slow saltatory axons exhibited a surprisingly large overlap in conduction
+         velocities with unmyelinated axons. Intraretinal axonal conduction velocities observed in birds were up to four times
+         faster than in rodents.
+
+
+         Abstract In contrast to most parts of the vertebrate nervous system, ganglion cell axons in the retina
+         typically lack myelination. In the majority of species, ganglion cell axons only become myelinated
+         after leaving the retina to form the optic nerve. The avian retina, however, presents a remarkable
+         exception in that ganglion cell axons are partly myelinated in the retinal nerve fibre layer. It was
+         hypothesized that the optically detrimental properties of retinal myelination are evolutionarily offset
+         by advantages in spike conduction velocity. Using high-resolution multielectrode array recordings,
+         we analysed the spike conduction in the retina of various avian species in comparison to mammalian
+         species. Indeed, mammals showed lower conduction velocities than avian species. Myelinated axons
+         typically achieved higher conduction velocities than unmyelinated axons. Notably, some myelinated
+         axons exhibited conduction velocities lower than those of unmyelinated axons. Anatomical analyses
+         revealed that myelination in the nerve fibre layer was accompanied by the formation of nodes of
+         Ranvier. The internode length was positively correlated with the axon diameter. In physiological
+         recordings, the spatial extent of simultaneously active nodes was positively correlated with the
+         conduction velocity. Conversely, the internode length and the activation kinetics of a node were weak
+         predictors of conduction velocity. Overall, this study illuminates the unique features of the avian
+         retina and offers insights into the functional requirements and evolutionary pressures of myelination
+         affecting conduction velocity in the nervous system.
+
+           (Received 30 January 2025; accepted after revision 25 July 2025; first published online 22 August 2025)
+           Corresponding author M. T. Ahlers: Visual Neuroscience, Department of Neuroscience, Carl von Ossietzky University
+           Oldenburg, Oldenburg, Germany. Email: malte.ahlers@uol.de
+
+
+
+         Key points
+          r Intraretinal saltatory axonal spike conduction was studied across multiple avian species using
+            high-resolution multielectrode arrays.
+          r The highest conduction velocities were observed exclusively in saltatory axons, while the
+            lowest were found in non-saltatory axons. However, slow myelinated axons exist, exhibiting a
+            surprisingly large overlap in conduction velocities with unmyelinated axons.
+          r The spatial extent of a spike showed a strong positive correlation with conduction velocity.
+          r The internodal length exhibited a positive correlation with axon diameter, and the variability in
+            internodal length was smaller within individual axons than across axons.
+          r Intraretinal axonal conduction velocities across species appear to align with their ecological niche.
+            The maximal intraretinal spike conduction velocity observed in birds was up to four times faster
+            than in rodents.
+
+
+
+Introduction                                                                the membrane’s length constant and decreases its time
+                                                                            constant. This allows an activated node to depolarize
+Myelination is a prevalent feature of vertebrate axons,
+                                                                            subsequent nodes over a longer distance, avoiding time-
+enabling fast saltatory spike conduction. Myelin-shielded
+                                                                            and energy-consuming active spike generation over
+sections of the axon are periodically interrupted by
+                                                                            the entirety of the axon, greatly increasing conduction
+non-myelinated nodes enriched with voltage-gated
+                                                                            velocity.
+ion channels exposed to the extracellular space.
+                                                                              Myelin is a protein- and lipid-rich optically dense
+Myelination decreases membrane capacitance and
+                                                                            material exhibiting strong light scattering in aqueous
+increases membrane resistance; as a result it increases
+
+                                  © 2025 The Author(s). The Journal of Physiology published by John Wiley & Sons Ltd on behalf of The Physiological Society.
+J Physiol 603.21                                     Saltatory axonal conduction in the avian retina                                       6535
+
+media (Blanke et al., 2023; DePaoli et al., 2020). It                                Methods
+potentially compromises the optical properties of the
+retinal nerve fibre layer, through which light must travel to                        Ethical approval
+reach the photoreceptors. In humans, a rare pathological                             All experiments were performed in compliance with
+myelination of retinal axons (myelinated retinal nerve                               the German Animal Protection Law (Tierschutzgesetz),
+fibres, MRNF) results in locally impaired visual acuity                              as issued by the German Federal Government, and
+(Grzybowski & Winiarczyk, 2015; Lee et al., 2015). In the                            the guidelines of the European Union for the use of
+healthy mammal, retinal ganglion cells (RGCs) remain                                 animals in research. The procedures were approved by
+unmyelinated until they pass the lamina cribrosa, after                              the animal welfare officer of the Carl von Ossietzky
+which they form the optic nerve and become myelinated                                University of Oldenburg (§4 animal protocol) and carried
+(Fujita et al., 2000). Accordingly, the mammalian retina                             out in compliance with the AVMA Guidelines for
+typically lacks any oligodendrocytes, the glial cells                                Euthanasia (Leary et al., 2020). Animal breeding and
+responsible for forming the myelin sheaths around axons                              housing followed the standards given in Directive EU
+in other parts of the central nervous system (Gao et al.,                            2010/63 and was approved by the local authorities (LAVES
+2006). A notable exception among mammals is the rabbit,                              Niedersächsisches Landesamt für Verbraucherschutz und
+where intraretinal myelination by oligodendrocytes is pre-                           Lebensmittelsicherheit). The procedures complied with
+sent, though limited to a region above the visual streak                             The Journal of Physiology’s checklist provided to authors
+(Hughes, 1971; Schnitzer, 1985; Vaney, 1980). Intraretinal                           (Grundy, 2015; O’Halloran, 2024).
+myelination has also been observed in fish, specifically in
+presumed centrifugal axons (Witkovsky, 1971; Wolburg,
+1980).                                                                               Animals
+   In contrast, myelinated ganglion cell axons are
+commonly found in the avian retina (Imagawa et al., 1999;                            Young pigeons (Columba livia f. domestica) and
+Inoue et al., 1980; Nakazawa et al., 1993; Seo et al., 2001;                         adult guinea pigs (Cavia porcellus) were terminally
+Won et al., 2000). The percentage of myelinated axons                                anaesthetized by pentobarbital (Narcoren, Boehringer
+varies across retinal regions (Imagawa et al., 1999). All                            GmbH, Ingelheim, Germany). Young European quails
+centrifugal axons were described to be myelinated intra-                             (common quail, Coturnix coturnix), young Bankiva
+retinally (Wilson & Lindstrom, 2011). A distinguishing                               chicken (red junglefowl, Gallus gallus) and adult zebra
+feature of myelin in avian retinas is its loose ultrastructure,                      finches (Taeniopygia guttata castanotis) were decapitated.
+characterized by largely missing intraperiod lines and                               Adult C57BL/6J mice were killed by cervical dislocation.
+proteolipid proteins, major attributes of compact myelin                             Animals of both sexes were included in the study, and
+in the central nervous system (Inoue et al., 1980; Kohsaka                           no sex-specific differences were readily apparent. All
+et al., 1980). In the avian retina, Müller cells, rather                             animals were housed under a natural light–dark cycle,
+than oligodendrocytes, are the primary myelinating                                   and experiments were performed during daylight hours.
+cells (Seo et al., 2001; Won et al., 2000), Only compact                             Access to water and food was provided ad libitum.
+myelin is found in the optic nerve (Fujita et al., 2001).
+The myelination of RGC axons in the nerve fibre
+                                                                                     MEA recordings and analysis
+layer is biased toward thicker axons (Nakazawa et al.,
+1993).                                                                               Avian retinas were dissected in Ringer solution (100 mM
+   From an evolutionary perspective, the detrimental                                 NaCl, 6 mM KCl, 1 mM CaCl2 , 2 mM MgSO4 , 1 mM
+optical consequences of intraretinal myelination should                              NaH2 PO4 , 30 mM NaHCO3 , 50 mM glucose), bubbled
+be counterbalanced by a significant improvement in                                   with carbogen (95% O2 and 5% CO2 ) (Stett et al., 2000).
+spike conduction velocity or advantages such as energy                               Mammalian retinas were dissected in carbogenated Ames’
+efficiency or temporal precision. To examine this                                    medium (Sigma-Aldrich GmbH, Taufkirchen, Germany).
+hypothesis, we studied intraretinal spike conduction                                 Dissections were carried out under infrared illumination.
+velocities in species with and without myelinated axons                              Recordings from mammalian retinas were conducted in
+and with behaviours indicating potentially different needs                           Ames’ medium at 36.5°C in the chamber. Recordings
+for visual processing speeds. Specifically, we recorded                              from avian retinas were conducted in Ringer solution at
+the electrical activity of RGC axons with high-resolution                            37.5°C in the bath chamber if not indicated otherwise
+multielectrode arrays (MEAs) of rodents and birds and                                (Fig. 6E–H). In most cases, the recording temperature was
+estimated the respective spike conduction velocities.                                below the physiological body temperature throughout the
+Additionally, we functionally and anatomically analysed                              daily cycle of the respective animal (mouse: 34.5–38°C
+the saltatory spike conduction in the nerve fibre layer of                           (van der Vinne et al., 2020), 35.8–38.7°C (Yasumoto et al.,
+the avian retina.                                                                    2015); guinea pig: 37.4–38°C (Kainulainen et al., 2018),
+
+
+© 2025 The Author(s). The Journal of Physiology published by John Wiley & Sons Ltd on behalf of The Physiological Society.
+6536                                                        Block and others                                                              J Physiol 603.21
+
+
+37.6°C–38.4°C (Thorne et al., 1987); chicken: 39–41.3°C                      The conduction velocity of a spike was estimated
+(Shimmura et al., 2015), 41.1–41.7°C (Savory et al., 2006);               by linear regression of the Euclidean distances between
+quail: 41–42°C (Laurila et al., 2005), 39.9–42.6°C (Under-                the identified spatial positions on the axon and the
+wood et al., 1999); zebra finch: 39.7–41.8°C (Zagkle                      corresponding minima in the time course of the signal
+et al., 2020), 39.2–41.4°C (Sköld-Chiriac et al., 2015);                  waveforms. Axons were traced manually in the electrical
+pigeon: 39–41.6°C (Rashotte et al., 1995), 39.3–42°C                      images based on local minima. All further analyses
+(Rashotte et al., 1999)). In general, birds maintain a                    were based on these axon positions. The sampling
+higher body temperature than mammals, and also show                       rate of the multielectrode recording, combined with
+greater body temperature fluctuations depending on the                    the electrode-to-electrode distance, limits the detectable
+animals’ activity (reviewed in Prinzinger et al., 1991).                  range of conduction velocities. However, by tracking spike
+For recording, a small piece of peripheral retina was                     propagation across the MEA and defining the conduction
+mounted with ganglion cell side down onto the MEA.                        velocity as the linear regression of all sample points,
+Most recordings were performed with a 2.6 × 2.6 mm2                       we ensured that the detectable range of conduction
+complementary metal-oxide-semiconductor (CMOS)                            velocities far exceeded the biological range observed. The
+MEA with an electrode pitch of 42 μm (3Brain AG,                          distance measurement was done in the projected spatial
+Pfäffikon, Switzerland) that allowed the recording                        electrical image and ignored potential depth variations
+of axons over long distances in sufficient numbers.                       of the axons in the nerve fibre layer. This projection
+We conducted a limited number of recordings at a                          biased the measured axonal distances to slightly smaller
+higher spatial resolution with a 1 × 1 mm2 , 16 μm                        values. We estimated its influence anatomically by tracing
+pitch CMOS MEA (Multichannel Systems GmbH,                                NF200-positive axons (see ‘Immunostaining and light
+Reutlingen, Germany) (Fig. 6E–H). Sampling rates                          microscopy’ below) and found that the conduction
+of the two systems were 18 and 20 kHz, respectively.                      velocity was possibly underestimated by 0.05 ± 0.02%
+Retinas were light stimulated at a low photopic light                     (n = 20), ignoring possible artefacts of the anatomical
+level.                                                                    procedure.
+   Recordings were analysed offline to isolate the spikes                    To distinguish saltatory and non-saltatory axons
+of different cells. After bandpass filtering (60 Hz–4 kHz),               (Fig. 2), a continuous spatio-temporal signal profile
+candidate spike events were detected using a threshold on                 along the axon was extracted. First, the spatial path was
+each electrode. The voltage waveforms on the electrode                    defined as each electrode along a linear connection of the
+and neighbouring electrodes around the time of the                        manually traced axon. The spike time for each electrode
+spike were extracted. Clusters of similar spike waveforms                 on this path was estimated from the fitted velocity. The
+were identified as candidate neurons if they exhibited                    distinction between saltatory and non-saltatory axons was
+a refractory period. Duplicate recordings of the same                     determined using a continuity index, which quantified
+cell were identified by temporal cross-correlation and                    the smoothness of these signal profiles. For each axon,
+matching electrical images and removed.                                   the continuity index was calculated as the ratio of the
+   After spike sorting, the spatio-temporal spike-triggered               robust means of local maxima and local minima along
+average electrical signal was calculated for each cell (Bucci             the signal profile. To ensure the continuity index was
+et al., 2024; Greschner et al., 2014; Litke et al., 2004;                 in the range between 0 and 1, the global maximum of
+Radivojevic et al., 2017; Seifert et al., 2023; Zeck et al.,              the entire dataset was subtracted prior to forming the
+2011). Specifically, for each electrode, the voltage wave-                ratio. A low value of the continuity index represents a
+form during the time period from −1.62 ms to 4.42 ms                      more discontinuous saltatory axonal signal profile, while
+around each spike was extracted. All spike waveforms                      a high value represents a more continuous non-saltatory
+were upsampled to 200 kHz using cubic spline inter-                       signal profile. A Gaussian mixture model was applied to
+polation, aligned to the somatic voltage minimum of the                   the continuity indices and the conduction velocities of all
+spike, and averaged. All further analyses worked with this                traced axons. Based on this model, axons were categorized
+average electrical signal. To construct the time-collapsed                into two groups of saltatory and non-saltatory spike
+two-dimensional electrical image, the minimum value of                    conduction, respectively. RGCs with a likelihood below
+the averaged waveform at each electrode was displayed                     0.90 of belonging to either cluster were excluded from
+according to the spatial layout of the MEA. If indicated                  further analysis. After categorization, several parameters
+in the figure legend, the signals on the soma electrodes                  were estimated for the saltatory axons interpreting the
+were saturated to improve the visual representation of                    manually defined local minima as the positions of nodes of
+the axon. RGCs with axons of insufficient length were                     Ranvier. When appropriate, corresponding measurements
+excluded. The analysis was restricted to centripetal axons                on non-saltatory axons were based on their local minima.
+originating from RGCs, as confirmed by the direction of                      The spatial extent of a spike was defined as the average
+signal propagation relative to the cell body observed in the              extent of its negative signal along the axon (Fig. 3).
+electrical image.                                                         Specifically, we sequentially examined all nodes along an
+
+                                © 2025 The Author(s). The Journal of Physiology published by John Wiley & Sons Ltd on behalf of The Physiological Society.
+J Physiol 603.21                                     Saltatory axonal conduction in the avian retina                                       6537
+
+axon. At the time of the strongest negative deflection at                            to Alexa 488, 568, 647, Thermo Fisher Scientific,
+a given node, that is, when the spike was at that node,                              Waltham, MA, USA, or Cy3, Jackson ImmunoResearch
+we extracted the signal at all nodes, aligned the signals by                         Laboratories, West Grove, PA, USA) were incubated at
+their distance along the axon relative to the current spike                          room temperature for 4 h in the same incubation solution.
+position, and averaged the signals. We then estimated the                            The tissue was mounted on glass slides and coverslipped
+distance between the nearest antidromic and orthodromic                              with Vectashield (Vector Laboratories, Burlingame, CA,
+voltage zero crossings. Cells without a sufficient number                            USA). Spacers between glass slides and coverslips were
+of measurable nodes were excluded. The node amplitude                                used to avoid squeezing of the tissue.
+was reported as the robust mean of the minimum                                          Overview image stacks were taken with a confocal laser
+signals across all nodes of each axon (Fig. 4A–D). Basing                            scanning microscope (Leica TCS SL, Leica Microsystems
+this amplitude measurement only on nodes with large                                  GmbH, Wetzlar, Germany), equipped with a ×40/NA 1.25
+amplitudes did not change the overall correlation results.                           oil immersion objective. For high resolution images of
+The onset duration of the spike was defined as the robust                            panNav clusters and corresponding size measurements,
+mean of the time from half-minimum to minimum of                                     image stacks were acquired with a ×63/NA 1.32 oil
+the signal waveform at each node (Fig. 4E–H). The offset                             immersion objective. All confocal stacks were acquired
+duration was defined accordingly. As all measurements                                with z-axis increments of 0.2 μm. For measurements
+were performed on the spike-triggered average electrical                             of internode lengths and axon diameters, tile scans
+signal, they are potentially influenced by the precision of                          of image stacks along axons were performed with a
+spike time alignment. In particular, variability in spike                            Leica DM6B fluorescence microscope, equipped with a
+velocity introduces jitter, as spikes are aligned to the time                        motorized stage in combination with a ×40/NA 1.3 oil
+of the somatic spike. Lower alignment precision could                                immersion objective. Automated acquisition and stitching
+potentially lead to a broader spike waveform with reduced                            of individual tiles was performed in the Leica LASX
+amplitude.                                                                           software package. The segmented line tool in Fiji was
+   The maximal axonal lengths from the dorsal retinal                                used to measure the distance between panNav clusters,
+rim to the optic nerve head for the studied species were                             that is nodes of Ranvier, along individual NF200-positive
+assumed to be: pigeon: ∼15 mm (Marshall et al., 1973);                               axons. Internodal lengths were measured as the distance
+zebra finch: ∼6.5 mm (Liu et al., 2023); guinea pig: ∼8 mm                           between the centres of panNav -positive clusters. Note that
+(Howlett & McFadden, 2007); and mouse: ∼3 mm (Duda                                   the used definition of internode length for the anatomical
+et al., 2025). For pigeon and zebra finch, the optic nerve                           measurements includes the para- and juxtaparanodes
+head was assumed to be offset by ∼45 degrees (Marshall                               and refers to the full distance between panNav clusters.
+et al., 1973). Estimates for the pigeon assumed a flight                             Each internode length measurement was accompanied
+velocity of 100 km/h.                                                                by a measurement of axon diameter as an orthogonal
+                                                                                     line spanning the neurofilament-positive area at the
+                                                                                     approximate halfway point between a given pair of
+                                                                                     clusters. For the measurements of panNav cluster lengths
+Immunostaining and light microscopy
+                                                                                     and diameters, a single image plane was manually selected
+For immunostaining, the tissue was fixed in 4%                                       per cluster to include the largest diameter of the whole
+paraformaldehyde in 0.01 M phosphate-buffered saline                                 tubular structure. A region of interest was thresholded
+(PBS, pH 7.4) for 20–30 min at room temperature. After                               using Otsu’s method. Individual lengths values represent
+fixation, the tissue was cryoprotected overnight with 30%                            the mean lengths averaged across measurements of both
+sucrose in PBS and stored at −20°C until use.                                        sidewalls of each cluster. Maximum intensity sideview- or
+   Immunostaining was performed by an indirect                                       z-projections are shown in all figure panels of microscopic
+fluorescence method. Retinal wholemounts were                                        images and were done in Fiji. The brightness and contrast
+incubated at room temperature for 2–3 days in the                                    of the final images were adjusted in Adobe Photoshop.
+primary antibody solution containing 5% normal donkey
+serum, 1% bovine serum albumin, 1% Triton X-100
+and 0.02% sodium azide dissolved in PBS. Primary
+                                                                                     Statistical analyses
+antibodies used in this study were anti-myelin basic
+protein (MBP, rat, monoclonal, clone 12, Bio-Rad                                     All tests and analyses were performed in MATLAB
+Laboratories, Hercules, CA, USA, cat. no. MCA409S,                                   (MathWorks, Inc., Natick, MA, USA). In the Results
+1:1000), anti-Neurofilament 200 (NF200, rabbit, poly-                                section, measurements are reported as the mean ±
+clonal, Sigma-Aldrich, cat. no. N4142, 1:1000), and                                  SD. The robust mean was defined as the mean of the
+anti-voltage gated sodium channel, pan (panNav , mouse,                              central 80% of the data. No further outlier selection
+monoclonal, clone K58/35, Sigma-Aldrich, cat. no. S8809,                             was performed. The lower and upper bounds of the
+1:1000). Secondary donkey antibodies (1:500, conjugated                              95% confidence interval are reported for the correlation
+
+© 2025 The Author(s). The Journal of Physiology published by John Wiley & Sons Ltd on behalf of The Physiological Society.
+6538                                                           Block and others                                                              J Physiol 603.21
+
+
+coefficient. Tests for zero correlation of the investigated                  conduction. The high electrode density of these arrays
+parameters (number of active nodes, node amplitude,                          allowed for the detailed analysis of the spatiotemporal
+node onset duration) with the conduction velocity were                       electrical activity of the recorded neurons (Bucci et al.,
+rejected in all cases. All tests for differences between                     2024; Greschner et al., 2014; Litke et al., 2004; Radivojevic
+distributions were performed using Wilcoxon’s rank sum                       et al., 2017; Seifert et al., 2023; Zeck et al., 2011). The
+tests and rejected equal medians in all cases. For the                       electrode-wise, spike-triggered average electrical activity
+analysis of internode length variation within and across                     provides insight into how a spike travelled along the
+axons (Fig. 6B), the quartile coefficient of dispersion was                  axon of a RGC. The spatial structure was highlighted
+used (Bonett, 2006). The coefficient of dispersion across                    by collapsing the time dimension using a minimum
+axons was bootstrapped with replacements.                                    projection of the electrical activity of the recorded cell
+                                                                             (electrical image, Fig. 1). As expected, a high-amplitude
+                                                                             somatic area, a surrounding dendritic area and an axon
+Results                                                                      extending toward the optic disk were distinguishable.
+Electrical images reveal saltatory spike conduction                             Many recorded RGCs in the European quail showed
+                                                                             a continuous axonal spike conduction (Fig. 1A–C),
+We employed large-scale MEA recordings to study the                          as is common for RGC axons of most mammalian
+influence of intraretinal axonal myelination on spike                        species. However, a large fraction of the recorded
+
+
+
+
+             Figure 1. The electrical images of European quail retinal ganglion cells revealed axons with and without
+             saltatory conduction
+             A, electrical image of non-saltatory RGC with conduction velocity v = 0.79 m/s. Minimum voltage projection along
+             the time dimension of the spike-triggered average electrical activity. Cold colours indicate negative potentials. Soma
+             amplitude saturated for visual clarity. 64 × 64 electrodes, scale bar: 500 μm. B, signal waveform along the axon.
+             Cold colours indicate negative potentials. C, signal waveform for seven selected electrodes indicated in A. Scale
+             bar: 1 ms. y-Axis in arbitrary units, identical y-scale in C and F. D--F, as A–C for saltatory RGC with v = 2.02 m/s.
+
+
+                                   © 2025 The Author(s). The Journal of Physiology published by John Wiley & Sons Ltd on behalf of The Physiological Society.
+J Physiol 603.21                                     Saltatory axonal conduction in the avian retina                                       6539
+
+quail RGCs displayed discontinuous, that is saltatory,                               sum test P < 0.001). While high conduction velocities
+axonal conduction (Fig. 1D–F). In these cases, we                                    were only found in saltatory axons, surprisingly, lower
+observed distinct axonal regions of high-amplitude signals                           conduction velocities were present in both non-saltatory
+alternating with low-amplitude regions of opposite signal                            and saltatory axons.
+polarity, as expected for myelinated axons with passively
+conducting segments, periodically interrupted by active
+node-of-Ranvier-like structures (Fig. 1D and F). Analysis
+                                                                                     Large variability of biophysical parameters
+of the spike conduction along the axon over time revealed
+a roughly linear distance–time relation in both cases                                Various biophysical parameters determine the velocity
+(Fig. 1B and E). The slope of a linear fit of the times                              of saltatory spike conduction. The analyses of electrical
+of maximum negative deflection and the corresponding                                 images allowed the estimation of different relevant
+distances along the axon was used as an estimate of the                              parameters of intraretinal saltatory conduction in the
+axonal conduction velocity.                                                          avian retina over hundreds of cells. Foremost, the signal
+   We quantified the degree of signal continuity of each                             spread beyond an active node can be expected to play
+axon by calculating the ratio between the local maxima                               a dominant role in the axonal conduction velocity. We
+and minima along its trace in the electrical image. The                              measured the extent of active nodes, that is nodes
+distribution of this continuity index was bimodal (Fig. 2),                          simultaneously active (Fig. 3A–C). These indicate how far
+reflecting saltatory and non-saltatory conducting axons.                             the signal on the node with currently the largest signal
+For further analysis, we excluded neurons with a low                                 amplitude is spreading. The total extent of simultaneously
+likelihood of belonging to either group (Fig. 2, grey                                active saltatoric nodes was on average 311 ± 114 μm
+cluster). As expected, saltatory axons displayed overall                             (n = 335; observed maximum: 722 μm) in the quail
+higher conduction velocities (saltatory: 1.25 ± 0.35 m/s;                            retina and indeed correlated with the conduction velocity
+n = 337; non-saltatory: 0.71 ± 0.12 m/s; n = 163; rank                               (Fig. 3D; correlation coefficient: 0.73, CI: 0.67, 0.77;
+                                                                                     P < 0.001). The average signal extent on a non-saltatory
+                                                                                     axon was lower (161 ± 44 μm; n = 161; rank sum test:
+                                                                                     P < 0.001) and hardly correlated with the conduction
+                                                                                     velocity (correlation coefficient: 0.37, CI: 0.23, 0.50;
+                                                                                     P < 0.001). The extent of active antidromic nodes,
+                                                                                     that is the nodes still negative after activation, was
+                                                                                     correlated with the extent of active orthodromic nodes
+                                                                                     (correlation coefficient: 0.58, CI: 0.51, 0.65; P < 0.001),
+                                                                                     though the antidromic extent exceeded the orthodromic
+                                                                                     extent by a factor of 1.97 ± 1.07 (rank sum test:
+                                                                                     P < 0.001).
+                                                                                        The extent of orthodromically active nodes is
+                                                                                     determined by several parameters, such as the length
+                                                                                     constant of the axon, which indicates the extent of the
+                                                                                     signal spread, the overall sensitivity of the nodes, and
+                                                                                     their activation kinetics. While none of these factors
+                                                                                     were accessible directly in our recordings, the amplitude
+                                                                                     and the onset time of the electrical signals can serve
+                                                                                     as proxies. The average nodal amplitude (Fig. 4A–D)
+                                                                                     exceeded that of average non-saltatory axons by a
+                                                                                     factor of 2.33 ± 1.18. In non-saltatory axons, the axonal
+                                                                                     amplitude roughly scaled with the conduction velocity
+                                                                                     (Fig. 4D; correlation coefficient: −0.47, CI: −0.58, −0.34;
+ Figure 2. Saltatory and non-saltatory axons exhibited                               P < 0.001). However, for saltatory axons, this was not
+ different conduction velocities                                                     apparent (correlation coefficient: −0.24, CI: −0.34,
+ RGCs with sufficient axon length from one European quail retina                     −0.14; P < 0.001). Additionally, the signal onset of a
+ were classified into 337 saltatory (black) and 163 non-saltatory                    given node (Fig. 4E–H) showed no apparent correlation
+ (yellow) axons. The overlap region of 36 axons (grey) was excluded
+ from further analyses (likelihood <0.90, mixture of Gaussians). The
+                                                                                     with conduction velocity (Fig. 4H; correlation coefficient:
+ continuity index is the robust mean peak amplitudes divided by the                  −0.16, CI: −0.26, −0.06; P = 0.003). The onset and offset
+ robust mean trough amplitudes along the axon. See Methods for                       times of the signal were strongly correlated (correlation
+ details. Figures 3 and 4 present data from the same cells.                          coefficient: 0.81, CI: 0.76, 0.84; P < 0.001).
+
+
+© 2025 The Author(s). The Journal of Physiology published by John Wiley & Sons Ltd on behalf of The Physiological Society.
+6540                                                          Block and others                                                              J Physiol 603.21
+
+
+Voltage-gated sodium channels are clustered at nodes                        clustered in short, tubular structures. These clusters were
+                                                                            free of myelin. Unmyelinated axons showed no sodium
+Next, we anatomically analysed the myelination pattern
+                                                                            channel clusters and only diffuse panNav immuno-
+and the sodium channel distribution in the temporal
+                                                                            reactivity which rarely exceeded background levels.
+region of a quail retina (Fig. 5A–C). Sodium channels
+
+
+
+
+            Figure 3. Spatial extent of active nodes was correlated with conduction velocity in the European quail
+            retina
+            A, enlarged view of the spatial electrical activity of three example nodes from one RGC axon. Electrical images
+            were aligned in space and time to the local minimum of the respective node. Blue colours indicate negative values.
+            Maximum amplitude saturated for visual clarity. Scale bar: 100 μm. B, as A for a second RGC with a high number
+            of simultaneously active nodes. C, histogram of average simultaneously active nodes. RGCs of A and B marked.
+            D, spatial extent of active nodes against conduction velocity for saltatory (black) and non-saltatory (yellow) axons.
+            RGCs of A and B marked.
+
+
+
+
+            Figure 4. The node amplitude and onset duration showed a large variation across axons in the European
+            quail retina
+            A and B, node amplitudes of saltatory axons of two RGCs. Slower (blue) and faster (red) axons marked for visual
+            guidance as indicated in C and D. Grey lines represent individual nodes and the bold line represents their mean.
+            C, histogram of robust mean node amplitudes across axons. RGCs of A and B marked. D, node amplitude against
+            conduction velocity for saltatory axons (black). For comparison, the robust mean amplitudes of non-saltatory axons
+            are shown (yellow). E and F, onset durations of saltatory axons of two RGCs. Grey lines represent individual nodes
+            along one axon (normalized to absolute area) and the bold line represents their mean. G, histogram of robust
+            mean onset durations across axons. RGCs of E and F marked. H, onset duration against conduction velocity for
+            saltatory (black) and non-saltatory (yellow) axons.
+
+
+                                  © 2025 The Author(s). The Journal of Physiology published by John Wiley & Sons Ltd on behalf of The Physiological Society.
+J Physiol 603.21                                     Saltatory axonal conduction in the avian retina                                        6541
+
+Thus, those axons are not represented in Fig. 5C, as                                 Notably, spike conduction velocities in the retinas of
+they were often negative for the neurofilament subunit.                              pigeon (2.07 ± 0.70 m/s; n = 1135) and zebra finch (1.55
+The expression levels of neurofilament differed between                              ± 0.57 m/s, n = 511) were substantially higher than
+individual axons. Myelination and the corresponding                                  in those of the ground-dwelling European quail (1.29
+clustering of sodium channels occurred at both strongly                              ± 0.71 m/s; n = 1032) and Bankiva chicken (1.08 ±
+and weakly neurofilament-positive axons. The sodium                                  0.41 m/s; n = 1219). In comparison, conduction velocities
+channel cluster length was 1.4 ± 0.3 μm and the cluster                              in unmyelinated mouse (0.65 ± 0.15 m/s; n = 398) and
+width was 1.1 ± 0.3 μm (n = 52, 1 retina). Results of                                guinea pig (0.86 ± 0.18 m/s; n = 2700) retinas were
+experiments with pigeon retina were consistent with those                            on average slower than those of the avian species, in
+obtained from the quail, where panNav -immunoreactive                                line with the absence of myelination (Kruskal–Wallis
+nodes were located along neurofilament-positive axons                                with Tukey–Kramer pairwise comparison tests: all
+(Fig. 5D).                                                                           combinations P < 0.001).
+   The distances between sodium channel clusters were
+measured along strongly neurofilament-positive axons
+(Fig. 6A). This internode length (mean: 76.8 ± 25.2 μm,                              Discussion
+n = 200) was surprisingly variable along individual axons.
+                                                                                     We examined the saltatory spike conduction of RGC axons
+However, the variability across axons was significantly
+                                                                                     and confirmed intraretinal myelination and the formation
+larger (Fig. 6B; Wilcoxon rank-sum test: P < 0.001)
+                                                                                     of nodes of Ranvier. On average, saltatory axons had
+suggesting that the internode lengths are cell type
+                                                                                     higher conduction velocities than non-saltatory axons,
+dependent. This is further supported by the finding that
+                                                                                     although there was a notable overlap in the velocities
+the internode length was positively correlated with the
+                                                                                     between both groups. The observed differences in axonal
+axon diameter (mean: 0.9 ± 0.2 μm, n = 200; correlation
+                                                                                     conduction velocities between species seem to correspond
+coefficient: 0.55, CI: 0.44, 0.64; P < 0.001; Fig. 6C),
+                                                                                     to their respective ecological niches and behaviours.
+which was approximated as the width of the neurofilament
+                                                                                        The morphological features of the panNav -positive
+labelling in the middle between each pair of nodes.
+                                                                                     sodium channel clusters in axons of quail and pigeon
+   The internode length could be expected to be a major
+                                                                                     retinas, including their tubular shape, size, distribution
+determinant of the axonal conduction velocity (Brill et al.,
+                                                                                     pattern along axons and gaps in the myelin sheath at
+1977). However, qualitatively, this dependence appeared
+                                                                                     those sites, closely resembled the structures observed in
+weak in our observations (Fig. 6E–H).
+                                                                                     conventional nodes of Ranvier in the vertebrate optic
+                                                                                     nerve and other parts of the central nervous system
+                                                                                     (Fig. 5) (Arancibia-Cárcamo et al., 2017; Boiko et al., 2001;
+Large interspecific variation in conduction velocities
+                                                                                     Caldwell et al., 2000; O’Brien et al., 2008; Rasband et al.,
+We measured the conduction velocity in retinal axons                                 1999). We used a pan-antibody directed against a highly
+of species with and without myelination, from different                              conserved sequence present in all vertebrate Nav1 iso-
+ecological niches, to explore potential adaptations (Fig. 7).                        forms (Rasband et al., 1999). Therefore, the exact sodium
+
+
+
+
+                   Figure 5. Voltage-gated sodium channels were clustered at nodes of myelinated RGC axons in European
+                   quail and pigeon retinas
+                   A–C, confocal images of the nerve fibre layer in a quail retina immunolabeled against voltage-gated sodium
+                   channels (panNav ), myelin basic protein (MBP), and neurofilament (NF200). Dense clusters of Nav channels were
+                   found along axons at sites where myelination was interrupted (example positions marked by arrowheads). Inset in
+                   A shows panNav clusters at higher magnification. Scale bars: A inset: 2 μm, C: 10 μm. D, Nav channel clustering in
+                   the pigeon retina. As in the quail retina, clusters of Nav channels are found on axons (example positions marked by
+                   arrowheads). Inset shows panNav clusters at higher magnification: Top: maximum intensity projection of an image
+                   stack. Bottom: side view of the rotated image stack. Scale bars: 50 μm, inset: 1 μm.
+
+
+© 2025 The Author(s). The Journal of Physiology published by John Wiley & Sons Ltd on behalf of The Physiological Society.
+6542                                                             Block and others                                                              J Physiol 603.21
+
+
+channel subunit expressed at nodes of Ranvier in quail and                     axon. Thus, it is likely that a balance exists between the
+pigeon RGC axons remains unknown. In the mammalian                             conduction velocity and the preservation of the optical
+retina, RGCs express Nav1.6 at the axon initial segment                        quality of the nerve fibre layer. In fact, only a subset of
+and Nav1.2 in their unmyelinated axons within the nerve                        the intraretinal RGC axons are myelinated (Imagawa et al.,
+fibre layer. There, nodes of Ranvier are formed only in the                    1999; Inoue et al., 1980). It is plausible that myelination
+optic nerve, and Nav1.6 typically replaces Nav1.2 during                       and fast conduction velocities preferentially benefit RGC
+development. Nav1.8 may also be present in alpha-like                          types transmitting information related to alertness or
+cell types with large-calibre axons (reviewed by Van Hook                      motion processing. Additionally, all centrifugal axons
+et al., 2019). Thus, it is tempting to speculate that, in birds,               were described to be myelinated intraretinally (Wilson &
+the diffuse panNav labelling observed in unmyelinated                          Lindstrom, 2011).
+axons represents Nav1.2, while the clustered channels                            While the highest conduction velocities were found
+at nodes of Ranvier are formed mostly by Nav1.6, with                          only in saltatory axons and the lowest velocities in
+Nav1.8 expressed only by a subset of particularly thick                        non-saltatory axons, we observed a surprisingly large
+axons. However, further studies are required to identify                       overlap in velocities between saltatory and non-saltatory
+the specific voltage-gated sodium channel subunits and                         axons (Fig. 2). The conduction velocity of myelinated
+their kinetics in RGC axons of the avian retina.                               axons seems to benefit more from an increase in axon
+   Overall, our functional results for the retina are                          diameter (Brill et al., 1977; Waxman, 1980; see also
+consistent with data from other parts of the nervous                           Hodes, 1953; Hoffmeister et al., 1991; Pumphrey &
+system. However, specific constraints uniquely influence                       Young, 1938) and myelinated axons are expected to
+axonal conduction in the retina. The need for good                             reach higher velocities than unmyelinated axons for
+optical transparency of the nerve fibre layer restricts the                    diameters larger than 0.2 μm (Waxman & Bennett,
+structure and amount of myelin present. Myelin acts as                         1972). Additionally, higher velocities in unmyelinated
+an electrical insulator that, by reducing the internodal                       axons might be achieved by an increased channel density
+membrane capacitance and membrane conductance,                                 (Schmidt & Knösche, 2019). Thus, the observed low
+increases the length constant, decreases the time constant,                    velocities of saltatory, that is myelinated, axons could
+and ultimately raises the conduction velocity of the                           have been achieved by unmyelinated axons of comparable
+
+
+
+
+               Figure 6. The internode length showed a large variation across axons in the European quail retina
+               A, successive internode lengths along five example axons. Vertical line represents the mean internode length for a
+               given axon. B, the variation of internode lengths is significantly smaller within an axon than across axons (quartile
+               coefficient of dispersion). Subselection of axons with at least five measured nodes (n = 22). Variance across axons
+               is bootstrapped. C, the distances between nodes increase as a function of axon diameters. Mean for individual
+               axons (n = 57). D, histogram of number of internode lengths. E–H, electrical images recorded with a MEA with
+               electrode-to-electrode distance of 16 μm (65 × 65 electrodes). INL indicates the average internode length and v
+               the conduction velocity. Examples from two retinas. Recorded at 36°C. Scale bar: 100 μm.
+
+
+                                     © 2025 The Author(s). The Journal of Physiology published by John Wiley & Sons Ltd on behalf of The Physiological Society.
+J Physiol 603.21                                     Saltatory axonal conduction in the avian retina                                                 6543
+
+
+                                                                                      temperature of the animals (see methods). B and C, example
+                                                                                      electrical images of slow (B) and fast (C) axonal spike conduction in
+                                                                                      pigeon RGCs. Scale bar: 500 μm. Soma amplitude saturated in B and
+                                                                                      C for visual clarity.
+
+
+
+                                                                                     diameter, potentially providing better transparency. For a
+                                                                                     simple optimization, one might expect a clear boundary
+                                                                                     between the velocities of saltatory and non-saltatory
+                                                                                     axons. However, the significant overlap observed suggests
+                                                                                     a more intricate optimization process. For example,
+                                                                                     increasing the number of myelinated cell types might
+                                                                                     be constrained by the need for optical transparency,
+                                                                                     even as the information carried by additional cell types
+                                                                                     might require higher conduction velocities. Conversely,
+                                                                                     myelinated axons might offer additional benefits, but
+                                                                                     may derive limited benefit from further increases in
+                                                                                     velocity. A potential advantage of myelination could be
+                                                                                     an increased spatial packing density. However, at low
+                                                                                     conduction velocities, the total diameter of a myelinated
+                                                                                     axon including its sheath is generally larger than that of an
+                                                                                     unmyelinated axon (Waxman, 1980). Furthermore, while
+                                                                                     the metabolic advantage of myelination is particularly
+                                                                                     beneficial for axons with higher firing rates (Perge et al.,
+                                                                                     2009) we found no obvious difference in the firing rates
+                                                                                     of myelinated and unmyelinated axons of similar velocity,
+                                                                                     providing no evidence of a metabolic optimization.
+                                                                                     Nevertheless, myelination might entail other benefits
+                                                                                     for information transmission like, for example, reduced
+                                                                                     spike-timing jitter (Kim et al., 2013).
+                                                                                        The measured intraretinal conduction velocities were
+                                                                                     largely consistent with recent findings in the chicken
+                                                                                     (Fig. 7) (Seifert et al., 2023). The intraretinal conduction
+                                                                                     velocities were relatively low compared to other parts of
+                                                                                     the central nervous system. For example, cortico-spinal
+                                                                                     neurons can reach conduction velocities of 100 m/s (cat,
+                                                                                     Takahashi, 1965), thalamic-cortical conduction velocities
+                                                                                     are in the range of 6–38 m/s (rabbit, Swadlow & Weyand,
+                                                                                     1985), but also slow cortical neurons with velocities as low
+                                                                                     as 0.3 m/s have been described (rabbit, Swadlow, 1990).
+                                                                                     Extraretinal conduction velocities of RGC axons are
+                                                                                     indeed higher than intraretinal velocities (Stanford, 1987;
+                                                                                     Stone & Freeman, 1971), suggesting that a fast conduction
+                                                                                     is generally beneficial and further substantiating the
+                                                                                     notion of constrained intraretinal myelination.
+                                                                                        While the variation of measured internode lengths
+                                                                                     along individual axons (Fig. 6A) might seem unexpected,
+ Figure 7. Large interspecific diversity of conduction velocities
+                                                                                     similar variations have been described in regions of
+ A, axonal conduction velocity histograms for mouse (2 retinas, 398                  the peripheral and central nervous systems of different
+ axons), guinea pig (2 retinas, 2700 axons), European quail (2 retinas,              vertebrates (chicken auditory brainstem: Seidl et al., 2010;
+ 1032 axons), Bankiva chicken (2 retinas, 1219 axons), zebra finch (2                zebrafish spinal cord: Auer et al., 2018; Vagionitis et al.,
+ retinas, 511 axons) and pigeon (2 retinas, 1135 axons). Axons of                    2022; rabbit spinal cord: Hess & Young, 1949; rabbit peri-
+ insufficient length were excluded. Histograms were normalized to
+ the total number of axons analysed for the respective species.
+                                                                                     pheral nerves: Vizoso & Young, 1948). In our qualitative
+ Arrowheads in the last panel indicate velocities of cells shown in B                analysis, the conduction velocity appeared to have only
+ and C. Note that the recordings were performed below body                           a weak dependence on internode length (Fig. 6E–H).
+
+© 2025 The Author(s). The Journal of Physiology published by John Wiley & Sons Ltd on behalf of The Physiological Society.
+6544                                                         Block and others                                                           J Physiol 603.21
+
+
+Accordingly, theoretical studies predicted only a small                   obstacles such as perches. Moreover, they are far more
+effect of internode length on conduction velocity (Moore                  likely to be attacked mid-flight by predators, where agile
+et al., 1978; Schmidt & Knösche, 2019).                                   flight manoeuvres may provide a critical chance of escape.
+   A methodological bias concerns the temperature of the                  Furthermore, variations in eye size across species might
+retinas during recordings. Although the temperature was                   contribute to differences in intraretinal delays. While there
+relatively high by common experimental practice, it was                   is evidence that spike conduction velocity within the
+below the body temperatures of the respective animals.                    retina can compensate for latency (Bucci et al., 2024),
+Conduction velocity is expected to increase by roughly                    it remains unclear whether a similar optimization exists
+50% over 10°C (reviewed in Waxman, 1980). Therefore,                      across species in relation to eye size. There appears to
+the conduction velocities should not be considered in                     be a weak general trend suggesting that larger eyes are
+absolute terms. The mismatch between body temperature                     associated with higher conduction velocities. For example,
+and ex vivo recording temperature was largest for the                     in our data, the highest maximal conduction velocities
+avian species. In these cases our results might under-                    were observed in the pigeon, and the lowest maximal
+estimate the conduction velocities the most. Furthermore,                 velocities in the mouse. However, due to the large eyes
+the detection of nodes in the physiological data was                      of the pigeon and the offset position of its optic nerve,
+limited by the electrode-to-electrode distance of the MEA.                the resulting differences in spike arrival time were roughly
+According to the sampling theorem, internode lengths                      equalized for the longest axons. At the same time, the
+below ∼90 μm could not be reliably detected and might                     guinea pig has larger eyes than the zebra finch, yet exhibits
+have led to an under-representation of RGCs with smaller                  significantly slower maximum conduction velocities. If
+internode lengths in our analyses. However, control                       the pigeon had the maximal axonal conduction velocities
+measurements with a higher resolution MEA (Fig. 6E–H)                     of the mouse, the observed difference would correspond to
+showed no obvious differences in the observed saltatory                   a delay of ∼10 ms. For a fast flying pigeon this delay would
+patterns. Conversely, the anatomical analysis was likely                  correspond to a flight distance of 27 cm. The conduction
+biased toward smaller internode lengths because RGC                       delay difference between the slowest, non-saltatory axon
+axons could only be reliably traced over relatively short                 and the fastest, saltatory axon in the pigeon retina was
+distances based on the neurofilament staining. Another                    24 ms, corresponding to a flight distance of 67 cm.
+potential source of methodological bias could stem from                      The avian retina is a striking example of adaptations
+the fact that all tested species were to varying degrees                  in retinal physiology to the ecology of the species. Intra-
+domesticated, which might have influenced their intra-                    retinal axonal conduction in birds seems to represent a
+retinal spike conduction velocities. For instance, pigeons                multifaceted adaptation finely tuned to their ecological
+have been primarily bred for orientation and flight                       demands, balancing the requirements for speed, timing
+speed, whereas zebra finches have been selected for their                 precision, metabolic efficiency and optical transparency.
+aesthetic plumage. In contrast, we recorded from the
+retinas of the Bankiva chicken, the wild ancestor of
+domesticated chickens, and the European quail, which is
+less commonly bred for poultry production compared to                     References
+the Japanese quail.
+                                                                          Arancibia-Cárcamo, I. L., Ford, M. C., Cossell, L., Ishida, K.,
+   We observed significantly larger conduction velocities
+                                                                             Tohyama, K., & Attwell, D. (2017). Node of Ranvier length
+in pigeon and zebra finch retinas than in those of                           as a potential regulator of myelinated axon conduction
+European quail and Bankiva chicken. These interspecific                      speed. eLife, 6, e23329.
+differences in conduction velocities align with their                     Auer, F., Vagionitis, S., & Czopka, T. (2018). Evidence for
+respective ecological niches and behaviours, particularly                    myelin sheath remodeling in the CNS revealed by In vivo
+the distinctions between ground-dwelling, arboreal and                       imaging. Current Biology, 28(4), 549–559.e3.
+aerial lifestyles. The European quail for example is a pre-               Blanke, N., Chang, S., Novoseltseva, A., Wang, H., Boas, D.
+dominantly ground-dwelling bird species. While it travels                    A., & Bigio, I. J. (2023). Multiscale label-free imaging of
+long distances at night during the migratory season, it                      myelin in human brain tissue with polarization-sensitive
+gathers the majority of food and builds nests near the                       optical coherence tomography and birefringence micro-
+ground. When threatened, it typically freezes and relies                     scopy. Biomedical Optics Express, 14(11), 5946.
+                                                                          Boiko, T., Rasband, M. N., Levinson, S. R., Caldwell, J.
+on camouflage, only taking flight as a last resort for short
+                                                                             H., Mandel, G., Trimmer, J. S., & Matthews, G. (2001).
+distances before returning to the ground and freezing                        Compact myelin dictates the differential targeting of two
+again. On the other hand, pigeons and zebra finches                          sodium channel isoforms in the same axon. Neuron, 30(1),
+are fast-flying birds requiring rapid visual processing                      91–104.
+(Boström et al., 2016; Potier et al., 2020). Their flocking               Bonett, D. G. (2006). Confidence interval for a coefficient of
+behaviour necessitates quick reactions to directional                        quartile variation. Computational Statistics & Data Analysis,
+changes by leading animals, as do flight manoeuvres near                     50(11), 2953–2957.
+
+                              © 2025 The Author(s). The Journal of Physiology published by John Wiley & Sons Ltd on behalf of The Physiological Society.
+J Physiol 603.21                                   Saltatory axonal conduction in the avian retina                                             6545
+
+Boström, J. E., Dimitrova, M., Canton, C., Håstad, O.,                             Hoffmeister, B., Jänig, W., & Lisney, S. J. W. (1991). A
+  Qvarnström, A., & Ödeen, A. (2016). Ultra-rapid vision                              proposed relationship between circumference and
+  in birds. PLoS ONE, 11(3), e0151099.                                                conduction velocity of unmyelinated axons from normal
+Brill, M. H., Waxman, S. G., Moore, J. W., & Joyner, R. W.                            and regenerated cat hindlimb cutaneous nerves. Neuro-
+  (1977). Conduction velocity and spike configuration in                              science, 42(2), 603–611.
+  myelinated fibres: Computed dependence on internode                              Howlett, M. H. C., & McFadden, S. A. (2007).
+  distance. Journal of Neurology, Neurosurgery, and Psychiatry,                       Emmetropization and schematic eye models in developing
+  40(8), 769–774.                                                                     pigmented guinea pigs. Vision Research, 47(9), 1178–
+Bucci, A., Büttner, M., Domdei, N., Rosselli, F. B., Znidaric,                        1190.
+  M., Diggelmann, R., Gennaro, M. D., Cowan, C.                                    Hughes, A. (1971). Topographical relationships between
+  S., Harmening, W., Hierlemann, A., Roska, B., &                                     the anatomy and physiology of the rabbit visual system.
+  Franke, F. (2024). Action potential propagation speed                               Documenta Ophthalmologica Advances in Ophthalmology,
+  compensates for traveling distance in the human retina (p.                          30(1), 33–159.
+  2024.04.30.591867). bioRxiv. https://doi.org/10.1101/2024.                       Imagawa, T., Fujita, Y., Kitagawa, H., & Uehara, M. (1999).
+  04.30.591867                                                                        Quantitative studies of the optic nerve fiber layer in the
+Caldwell, J. H., Schaller, K. L., Lasher, R. S., Peles, E., &                         chicken retina. The Journal of Veterinary Medical Science,
+  Levinson, S. R. (2000). Sodium channel Na(v)1.6 is                                  61(8), 883–889.
+  localized at nodes of Ranvier, dendrites, and synapses.                          Inoue, Y., Sugihara, Y., Nishimura, Y., & Shimai, K. (1980).
+  Proceedings of the National Academy of Sciences of the                              Atypical neural sheaths formed by Müller cells in chicken
+  United States of America, 97(10), 5616–5620.                                        retina. Okajimas Folia Anatomica Japonica, 57(2–3),
+DePaoli, D., Gasecka, A., Bahdine, M., Deschenes, J. M.,                              79–87.
+  Goetz, L., Perez-Sanchez, J., Bonin, R. P., De Koninck,                          Kainulainen, M., Spengler, J., Welch, S., Coleman, J., Harmon,
+  Y., Parent, M., & Côté, D. C. (2020). Anisotropic light                             J., Klena, J., Nichol, S., Albariño, C., & Spiropoulou, C.
+  scattering from myelinated axons in the spinal cord. Neuro-                         (2018). Protection against lethal Lassa virus infection
+  photonics, 7(01), 015011.                                                           induced with a scalable replicon particle vaccine in the
+Duda, S., Block, C. T., Pradhan, D. R., Arzhangnia, Y., Klaiber,                      guinea pig model. The Journal of Infectious Diseases,
+  A., Greschner, M., & Puller, C. (2025). Spatial distribution                        217(12), 1957–1966.
+  and functional integration of displaced retinal ganglion                         Kim, J. H., Renden, R., & von Gersdorff, H. (2013).
+  cells. Scientific Reports, 15(1), 7123.                                             Dysmyelination of auditory afferent axons increases the
+Fujita, Y., Imagawa, T., & Uehara, M. (2000). Comparative                             jitter of action potential timing during high-frequency
+  study of the lamina cribrosa and the pial septa in the                              firing. The Journal of Neuroscience, 33(22), 9402–9407.
+  vertebrate optic nerve and their relationship to the                             Kohsaka, S., Takamatsu, K., Nishimura, Y., Mikoshiba, K.,
+  myelinated axons. Tissue & Cell, 32(4), 293–301.                                    & Tsukada, Y. (1980). Neurochemical characteristics of
+Fujita, Y., Imagawa, T., & Uehara, M. (2001). Fine structure                          myelin-like structure in the chick retina. Journal of Neuro-
+  of the retino-optic nerve junction in the chicken. Tissue &                         chemistry, 34(3), 662–668.
+  Cell, 33(2), 129–134.                                                            Lee, K. H., Kim, S. W., Kwon, S. S., Oh, J., & Huh, K. (2015).
+Gao, L., Macklin, W., Gerson, J., & Miller, R. H. (2006).                             Microperimetry and spectral domain optical coherence
+  Intrinsic and extrinsic inhibition of oligodendrocyte                               tomography in myelinated retinal nerve fibers. International
+  development by rat retina. Developmental Biology, 290(2),                           Journal of Ophthalmology, 9(1), 170–172.
+  277–286.                                                                         Laurila, M., Pilto, T., & Hohtola, E. (2005). Testing the
+Greschner, M., Field, G. D., Li, P. H., Schiff, M. L., Gauthier,                      flexibility of fasting-induced hypometabolism in birds:
+  J. L., Ahn, D., Sher, A., Litke, A. M., & Chichilnisky,                             Effect of photoperiod and repeated food deprivations.
+  E. J. (2014). A polyaxonal amacrine cell population in                              Journal of Thermal Biology, 30(2), 131–138.
+  the primate retina. The Journal of Neuroscience, 34(10),                         Leary, S., Underwood, W., Anthony, R., Cartner, S., Grandin,
+  3597–3606.                                                                          T., Greenacre, C., Gwaltney-Brant, S., McCrackin, M. A.,
+Grundy, D. (2015). Principles and standards for reporting                             Meyer, R., Miller, D., Shearer, J., Turner, T., & Yanong, R.
+  animal experiments in The Journal of Physiology and                                 (2020). AVMA Guidelines for the Euthanasia of Animals:
+  Experimental Physiology. The Journal of Physiology,                                 2020 Edition. American Veterinary Medical Association.
+  593(12), 2547–2549.                                                                 https://www.avma.org/resources-tools/avma-policies/avma-
+Grzybowski, A., & Winiarczyk, I. (2015). Myelinated retinal                           guidelines-euthanasia-animals
+  nerve fibers (MRNF) – Dilemmas related to their influence                        Litke, A. M., Bezayiff, N., Chichilnisky, E. J., Cunningham,
+  on visual function. Saudi Journal of Ophthalmology, 29(1),                          W., Dabrowski, W., Grillo, A. A., Grivich, M., Grybos, P.,
+  85–88.                                                                              Hottowy, P., Kachiguine, S., Kalmar, R. S., Mathieson, K.,
+Hess, A., & Young, J. Z. (1949). Correlation of internodal                            Petrusca, D., Rahman, M., & Sher, A. (2004). What does
+  length and fibre diameter in the central nervous system.                            the eye tell the brain?: Development of a system for the
+  Nature, 164(4168), 490–491.                                                         large-scale recording of retinal output activity. Institute of
+Hodes, R. (1953). Linear relationship between fiber diameter                          Electrical and Electronics Engineers Transactions on Nuclear
+  and velocity of conduction in giant axon of squid. Journal of                       Science, 51(4), 1434–1440.
+  Neurophysiology, 16(2), 145–154.
+
+
+© 2025 The Author(s). The Journal of Physiology published by John Wiley & Sons Ltd on behalf of The Physiological Society.
+6546                                                           Block and others                                                           J Physiol 603.21
+
+
+Liu, Y., Jiang, Y., Xu, J., & Liao, W. (2023). Evolution of Avian           Schmidt, H., & Knösche, T. R. (2019). Action potential
+  eye size is associated with habitat openness, food type and                  propagation and synchronisation in myelinated axons. PLoS
+  brain size. Animals, 13(10), 1675.                                           Computational Biology, 15(10), e1007004.
+Marshall, J., Mellerio, J., & Palmer, D. A. (1973). A schematic             Schnitzer, J. (1985). Distribution and immunoreactivity of
+  eye for the pigeon. Vision Research, 13(12), 2449–2453.                      glia in the retina of the rabbit. The Journal of Comparative
+Moore, J. W., Joyner, R. W., Brill, M. H., Waxman, S. D., &                    Neurology, 240(2), 128–142.
+  Najar-Joa, M. (1978). Simulations of conduction in uniform                Seidl, A. H., Rubel, E. W., & Harris, D. M. (2010). Mechanisms
+  myelinated fibers. Relative sensitivity to changes in nodal                  for adjusting interaural time differences to achieve binaural
+  and internodal parameters. Biophysical Journal, 21(2),                       coincidence detection. The Journal of Neuroscience, 30(1),
+  147–160.                                                                     70–80.
+Nakazawa, T., Tachi, S., Aikawa, E., & Ihnuma, M. (1993).                   Seifert, M., Roberts, P. A., Kafetzis, G., Osorio, D., & Baden,
+  Formation of the myelinated nerve fiber layer in the chicken                 T. (2023). Birds multiplex spectral and temporal visual
+  retina. Glia, 8(2), 114–121.                                                 information via retinal on- and off-channels. Nature
+O’Brien, B. J., Caldwell, J. H., Ehring, G. R., Bumsted                        Communications, 14(1), 5308.
+  O’Brien, K. M., Luo, S., & Levinson, S. R. (2008).                        Seo, J. H., Haam, Y. G., Park, S. W., Kim, D. W., Jeon, G. S.,
+  Tetrodotoxin-resistant voltage-gated sodium channels                         Lee, C., Hwang, D. H., Kim, Y. S., & Cho, S. S. (2001).
+  Na(v)1.8 and Na(v)1.9 are expressed in the retina. The                       Oligodendroglia in the avian retina: Immunocytochemical
+  Journal of Comparative Neurology, 508(6), 940–951.                           demonstration in the adult bird. Journal of Neuroscience
+O’Halloran, K. D. (2024). Update on requirements for ethics                    Research, 65(2), 173–183.
+  and welfare reporting in The Journal of Physiology. The                   Shimmura, T., Ohashi, S., & Yoshimura, T. (2015). The
+  Journal of Physiology, 602(10), 2149–2151.                                   highest-ranking rooster has priority to announce the break
+Perge, J. A., Koch, K., Miller, R., Sterling, P., &                            of dawn. Scientific Reports, 5(1), 11683.
+  Balasubramanian, V. (2009). How the optic nerve allocates                 Sköld-Chiriac, S., Nord, A., Tobler, M., Nilsson, J.-Å., &
+  space, energy capacity, and information. The Journal of                      Hasselquist, D. (2015). Body temperature changes during
+  Neuroscience, 29(24), 7917–7928.                                             simulated bacterial infection in a songbird: Fever at night
+Potier, S., Mitkus, M., & Kelber, A. (2020). Visual adaptations                and hypothermia during the day. Journal of Experimental
+  of diurnal and nocturnal raptors. Seminars in Cell &                         Biology, 218(18), 2961–2969.
+  Developmental Biology, 106, 116–126.                                      Stanford, L. R. (1987). Conduction velocity variations mini-
+Prinzinger, R., Preßmar, A., & Schleucher, E. (1991). Body                     mize conduction time differences among retinal ganglion
+  temperature in birds. Comparative Biochemistry and Physio-                   cell axons. Science, 238(4825), 358–360.
+  logy Part A: Physiology, 99(4), 499–506.                                  Stett, A., Barth, W., Weiss, S., Haemmerle, H., & Zrenner,
+Pumphrey, R., & Young, J. (1938). The rates of conduction                      E. (2000). Electrical multisite stimulation of the isolated
+  of nerve fibres of various diameters in cephalopods. The                     chicken retina. Vision Research, 40(13), 1785–1795.
+  Journal of Experimental Biology, 15(4), 453–466.                          Stone, J., & Freeman, R. B. (1971). Conduction velocity groups
+Radivojevic, M., Franke, F., Altermatt, M., Müller, J.,                        in the cat’s optic nerve classified according to their retinal
+  Hierlemann, A., & Bakkum, D. J. (2017). Tracking                             origin. Experimental Brain Research, 13(5), 489–497.
+  individual action potentials throughout mammalian axonal                  Swadlow, H. A. (1990). Efferent neurons and suspected inter-
+  arbors. eLife, 6, e30198.                                                    neurons in S-1 forelimb representation of the awake rabbit:
+Rasband, M. N., Peles, E., Trimmer, J. S., Levinson, S. R., Lux,               Receptive fields and axonal properties. Journal of Neuro-
+  S. E., & Shrager, P. (1999). Dependence of nodal sodium                      physiology, 63(6), 1477–1498.
+  channel clustering on paranodal axoglial contact in the                   Swadlow, H. A., & Weyand, T. G. (1985). Receptive-field and
+  developing CNS. The Journal of Neuroscience, 19(17),                         axonal properties of neurons in the dorsal lateral geniculate
+  7516–7528.                                                                   nucleus of awake unparalyzed rabbits. Journal of Neuro-
+Rashotte, M. E., Basco, P. S., & Henderson, R. P. (1995).                      physiology, 54(1), 168–183.
+  Daily cycles in body temperature, metabolic rate, and                     Takahashi, K. (1965). Slow and fast groups of pyramidal tract
+  substrate utilization in pigeons: Influence of amount and                    cells and their respective membrane properties. Journal of
+  timing of food consumption. Physiology & Behavior, 57(4),                    Neurophysiology, 28(5), 908–924.
+  731–746.                                                                  Thorne, P. S., Yeske, C. P., & Karol, M. H. (1987). Monitoring
+Rashotte, M. E., Saarela, S., Henderson, R. P., & Hohtola,                     guinea pig core temperature by telemetry during inhalation
+  E. (1999). Shivering and digestion-related thermo-                           exposures. Fundamental and Applied Toxicology, 9(3),
+  genesis in pigeons during dark phase. American Journal of                    398–408.
+  Physiology-Regulatory, Integrative and Comparative Physio-                Underwood, H., Steele, C. T., & Zivkovic, B. (1999). Effects
+  logy, 277(6), R1579–R1587.                                                   of fasting on the circadian body temperature rhythm of
+Savory, C. J., Kostal, L., & Nevison, I. M. (2006). Circadian                  Japanese quail. Physiology & Behavior, 66(1), 137–143.
+  variation in heart rate, blood pressure, body temperature                 Vagionitis, S., Auer, F., Xiao, Y., Almeida, R. G., Lyons, D.
+  and EEG of immature broiler breeder chickens in                              A., & Czopka, T. (2022). Clusters of neuronal neurofascin
+  restricted-fed and ad libitum-fed states. British Poultry                    prefigure the position of a subset of nodes of Ranvier
+  Science, 47(5), 599–606.                                                     along individual central nervous system axons in vivo. Cell
+                                                                               Reports, 38(7), 110366.
+
+
+                                © 2025 The Author(s). The Journal of Physiology published by John Wiley & Sons Ltd on behalf of The Physiological Society.
+J Physiol 603.21                                     Saltatory axonal conduction in the avian retina                                           6547
+
+van der Vinne, V., Pothecary, C. A., Wilcox, S. L., McKillop,                        Competing interests
+  L. E., Benson, L. A., Kolpakova, J., Tam, S. K. E., Krone,
+  L. B., Fisk, A. S., Wilson, T. S., Yamagata, T., Cantley, J.,                      The authors declare they have no competing interests.
+  Vyazovskiy, V. V., & Peirson, S. N. (2020). Continuous
+  and non-invasive thermography of mouse skin accurately
+  describes core body temperature patterns, but not absolute                         Author contributions
+  core temperature. Scientific Reports, 10(1), 20680.                                C.P., M.G. and M.T.A. conceptualized the study. C.T.B., C.P.,
+Van Hook, M. J., Nawy, S., & Thoreson, W. B. (2019). Voltage-                        M.G. and M.T.A. provided the methodologies. C.T.B., C.P. and
+  and calcium-gated ion channels of neurons in the vertebrate                        M.T.A. curated data for this study. C.T.B., M.T.A. and M.M.
+  retina. Progress in Retinal and Eye Research, 72, 100760.                          analysed the study. C.P., C.T.B., M.M., D.R.P. and M.G. acquired
+Vaney, D. I. (1980). A quantitative comparison between the
+                                                                                     data. C.T.B., MG, M.M. and M.T.A. visualized the study. M.T.A.
+  ganglion cell populations and axonal outflows of the visual
+                                                                                     and M.G. wrote the original draft. C.T.B., C.P., D.R.P. and
+  streak and periphery of the rabbit retina. The Journal of
+                                                                                     M.M. reviewed and edited the writing. C.P. and M.G. super-
+  Comparative Neurology, 189(2), 215–233.
+Vizoso, A. D., & Young, J. Z. (1948). Internode length and                           vised the study. All authors have approved the final version of
+  fibre diameter in developing and regenerating nerves.                              the manuscript and agreed to be accountable for all aspects of
+  Journal of Anatomy, 82(Pt 1–2), 110–134.                                           the work in ensuring that questions related to the accuracy or
+Waxman, S. G. (1980). Determinants of conduction velocity in                         integrity of any part of the work are appropriately investigated
+  myelinated nerve fibers. Muscle & Nerve, 3(2), 141–150.                            and resolved. All persons designated as authors qualify for
+Waxman, S. G., & Bennett, M. V. (1972). Relative conduction                          authorship, and all those who qualify for authorship are listed.
+  velocities of small myelinated and non-myelinated fibres in
+  the central nervous system. Nature: New Biology, 238(85),
+  217–219.                                                                           Funding
+Wilson, M., & Lindstrom, S. H. (2011). What the bird’s brain                         This research was supported by SFB 1372 and RTG 1885/2,
+  tells the bird’s eye: The function of descending input to the
+                                                                                     Deutsche Forschungsgemeinschaft (M.G.).
+  avian retina. Visual Neuroscience, 28(4), 337–350.
+Witkovsky, P. (1971). Synapses made by myelinated fibers
+  running to teleost and elasmobranch retinas. The Journal of                        Acknowledgements
+  Comparative Neurology, 142(2), 205–221.
+Wolburg, H. (1980). Myelinated axons of ganglion cells in                            We are grateful to Karin Dedek, Heiko Schmaljohann, Henrique
+  the retinae of teleosts. Cell and Tissue Research, 210(3),                         von Gersdorff and Michael Winklhofer for their comments on
+  517–520.                                                                           an earlier version of the manuscript.
+Won, M. H., Kang, T.-C., & Cho, S. S. (2000). Glial cells in                            Open access funding enabled and organized by Projekt
+  the bird retina. Microscopy Research and Technique, 50(2),                         DEAL.
+  151–160.
+Yasumoto, Y., Nakao, R., & Oishi, K. (2015). Free access to
+  a running-wheel advances the phase of behavioral and                               Author’s present address
+  physiological circadian rhythms and peripheral molecular
+  clocks in mice. PLoS ONE, 10(1), e0116476.                                         C. Puller: Department of Computational Neuroethology, Max
+Zagkle, E., Grosiak, M., Bauchinger, U., & Sadowska, E. T.                           Planck Institute for Neurobiology of Behavior – caesar, Bonn,
+  (2020). Rest-phase hypothermia reveals a link between                              Germany.
+  aging and oxidative stress: A novel hypothesis. Frontiers
+  in Physiology, 11, 575060.
+Zeck, G., Lambacher, A., & Fromherz, P. (2011). Axonal                               Keywords
+  transmission in the retina introduces a small dispersion
+                                                                                     Avian, multi electrode array, retinal ganglion cell, saltatory
+  of relative timing in the ganglion cell population response.
+                                                                                     conduction
+  PLoS ONE, 6(6), e20810.
+
+
+Additional information                                                               Supporting information
+                                                                                     Additional supporting information can be found online in the
+Data availability statement
+                                                                                     Supporting Information section at the end of the HTML view of
+The data is available on the University of Oldenburg Dataverse                       the article. Supporting information files available:
+server: https://doi.org/10.57782/BWMQUV
+                                                                                     Peer Review History
+
+
+
+
+© 2025 The Author(s). The Journal of Physiology published by John Wiley & Sons Ltd on behalf of The Physiological Society.
+

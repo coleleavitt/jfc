@@ -1,0 +1,10 @@
+[package]
+name = "ui-model"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+linkscope = { workspace = true }
+
+[lints]
+workspace = true

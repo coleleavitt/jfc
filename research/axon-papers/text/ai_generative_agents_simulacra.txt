@@ -1,0 +1,1368 @@
+                                            Generative Agents: Interactive Simulacra of Human Behavior
+                                                          Joon Sung Park                                             Joseph C. O’Brien                                Carrie J. Cai
+                                                         Stanford University                                          Stanford University                          Google Research
+                                                            Stanford, USA                                                Stanford, USA                          Mountain View, CA, USA
+                                                       joonspk@stanford.edu                                         jobrien3@stanford.edu                         cjcai@google.com
+
+                                                   Meredith Ringel Morris                                                 Percy Liang                           Michael S. Bernstein
+                                                          Google DeepMind                                            Stanford University                          Stanford University
+                                                          Seattle, WA, USA                                              Stanford, USA                                Stanford, USA
+                                                         merrie@google.com                                         pliang@cs.stanford.edu                         msb@cs.stanford.edu
+
+
+
+
+arXiv:2304.03442v2 [cs.HC] 6 Aug 2023
+
+                                        Figure 1: Generative agents are believable simulacra of human behavior for interactive applications. In this work, we demonstrate
+                                        generative agents by populating a sandbox environment, reminiscent of The Sims, with twenty-five agents. Users can observe
+                                        and intervene as agents plan their days, share news, form relationships, and coordinate group activities.
+                                        ABSTRACT                                                                                    authors write; they form opinions, notice each other, and initiate
+                                        Believable proxies of human behavior can empower interactive                                conversations; they remember and reflect on days past as they plan
+                                        applications ranging from immersive environments to rehearsal                               the next day. To enable generative agents, we describe an architec-
+                                        spaces for interpersonal communication to prototyping tools. In                             ture that extends a large language model to store a complete record
+                                        this paper, we introduce generative agents: computational software                          of the agent’s experiences using natural language, synthesize those
+                                        agents that simulate believable human behavior. Generative agents                           memories over time into higher-level reflections, and retrieve them
+                                        wake up, cook breakfast, and head to work; artists paint, while                             dynamically to plan behavior. We instantiate generative agents
+                                                                                                                                    to populate an interactive sandbox environment inspired by The
+                                        Permission to make digital or hard copies of part or all of this work for personal or       Sims, where end users can interact with a small town of twenty-five
+                                        classroom use is granted without fee provided that copies are not made or distributed
+                                        for profit or commercial advantage and that copies bear this notice and the full citation   agents using natural language. In an evaluation, these generative
+                                        on the first page. Copyrights for third-party components of this work must be honored.      agents produce believable individual and emergent social behav-
+                                        For all other uses, contact the owner/author(s).
+                                                                                                                                    iors. For example, starting with only a single user-specified notion
+                                        UIST ’23, October 29-November 1, 2023, San Francisco, CA, USA
+                                        © 2023 Copyright held by the owner/author(s).                                               that one agent wants to throw a Valentine’s Day party, the agents
+                                        ACM ISBN 979-8-4007-0132-0/23/10.                                                           autonomously spread invitations to the party over the next two
+                                        https://doi.org/10.1145/3586183.3606763
+UIST ’23, October 29-November 1, 2023, San Francisco, CA, USA                                 J.S. Park, J.C. O’Brien, C.J. Cai, M.R. Morris, P. Liang, M.S. Bernstein
+
+
+days, make new acquaintances, ask each other out on dates to the              demonstrate that they produce believable simulacra of both in-
+party, and coordinate to show up for the party together at the right          dividual and emergent group behavior. Generative agents draw
+time. We demonstrate through ablation that the components of                  a wide variety of inferences about themselves, other agents, and
+our agent architecture—observation, planning, and reflection—each             their environment; they create daily plans that reflect their char-
+contribute critically to the believability of agent behavior. By fusing       acteristics and experiences, act out those plans, react, and re-plan
+large language models with computational interactive agents, this             when appropriate; they respond when the end user changes their
+work introduces architectural and interaction patterns for enabling           environment or commands them in natural language. For instance,
+believable simulations of human behavior.                                     generative agents turn off the stove when they see that their break-
+                                                                              fast is burning, wait outside the bathroom if it is occupied, and
+CCS CONCEPTS                                                                  stop to chat when they meet another agent they want to talk to.1
+                                                                              A society full of generative agents is marked by emergent social
+• Human-centered computing → Interactive systems and
+                                                                              dynamics where new relationships are formed, information diffuses,
+tools; • Computing methodologies → Natural language pro-
+                                                                              and coordination arises across agents.
+cessing.
+                                                                                 To enable generative agents, we describe an agent architecture
+                                                                              that stores, synthesizes, and applies relevant memories to generate
+KEYWORDS                                                                      believable behavior using a large language model. Our architecture
+Human-AI interaction, agents, generative AI, large language models            comprises three main components. The first is the memory stream,
+                                                                              a long-term memory module that records, in natural language, a
+ACM Reference Format:
+                                                                              comprehensive list of the agent’s experiences. A memory retrieval
+Joon Sung Park, Joseph C. O’Brien, Carrie J. Cai, Meredith Ringel Morris,
+Percy Liang, and Michael S. Bernstein. 2023. Generative Agents: Interactive   model combines relevance, recency, and importance to surface the
+Simulacra of Human Behavior. In The 36th Annual ACM Symposium on              records needed to inform the agent’s moment-to-moment behavior.
+User Interface Software and Technology (UIST ’23), October 29-November 1,     The second is reflection, which synthesizes memories into higher-
+2023, San Francisco, CA, USA. ACM, New York, NY, USA, 22 pages. https:        level inferences over time, enabling the agent to draw conclusions
+//doi.org/10.1145/3586183.3606763                                             about itself and others to better guide its behavior. The third is
+                                                                              planning, which translates those conclusions and the current en-
+                                                                              vironment into high-level action plans and then recursively into
+1    INTRODUCTION                                                             detailed behaviors for action and reaction. These reflections and
+How might we craft an interactive artificial society that reflects            plans are fed back into the memory stream to influence the agent’s
+believable human behavior? From sandbox games such as The Sims                future behavior.
+to applications such as cognitive models [23] and virtual environ-               This architecture suggests applications in multiple domains, from
+ments [10, 59], for over four decades, researchers and practitioners          role-play and social prototyping to virtual worlds and games. In
+have envisioned computational agents that can serve as believ-                social role-play scenarios (e.g., interview preparation), a user could
+able proxies of human behavior. In these visions, computationally-            safely rehearse difficult, conflict-laden conversations. When pro-
+powered agents act consistently with their past experiences and               totyping social platforms, a designer could go beyond temporary
+react believably to their environments. Such simulations of human             personas to prototype dynamic, complex interactions that unfold
+behavior could populate virtual spaces and communities with re-               over time. For this paper, we focus on the ability to create a small,
+alistic social phenomena [27, 80], train people on how to handle              interactive society of agents inspired by games such as The Sims.2
+rare yet difficult interpersonal situations [44, 52, 94], test social         By connecting our architecture to the ChatGPT large language
+science theories [12, 46], craft model human processors for theory            model [77], we manifest a society of twenty-five agents in a game
+and usability testing [23, 39, 51], power ubiquitous computing appli-         environment. End users can observe and interact with these agents.
+cations [31] and social robots [10, 14], and underpin non-playable            If an end user or developer wanted the town to host an in-game
+game characters [59, 85] that can navigate complex human rela-                Valentine’s Day party, for example, traditional game environments
+tionships in an open world.                                                   would require scripting tens of characters’ behavior manually. We
+   However, the space of human behavior is vast and complex [85,              demonstrate that, with generative agents, it is sufficient to simply
+108]. Despite striking progress in large language models [18] that            tell one agent that she wants to throw a party. Despite many poten-
+can simulate human behavior at a single time point [39, 80], fully            tial points of failure—the party planner must remember to invite
+general agents that ensure long-term coherence would be better                other agents to the party, attendees must remember the invitation,
+suited by architectures that manage constantly-growing memories               those who remember must decide to actually show up, and more—
+as new interactions, conflicts, and events arise and fade over time           our agents succeed. They spread the word about the party and then
+while handling cascading social dynamics that unfold between
+multiple agents. Success requires an approach that can retrieve
+                                                                              1 When referring to generative agents engaging in actions or going to places, this is a
+relevant events and interactions over a long period, reflect on those
+                                                                              shorthand for readability and not a suggestion that they are engaging in human-like
+memories to generalize and draw higher-level inferences, and apply            agency. The behaviors of our agents, akin to animated Disney characters, aim to create
+that reasoning to create plans and reactions that make sense in the           a sense of believability, but they do not imply genuine agency.
+                                                                              2 A demonstration of an actual simulation of the generative agent society can be
+moment and in the longer-term arc of the agent’s behavior.
+                                                                              viewed at the following link: https://reverie.herokuapp.com/UIST_Demo/. A public
+   In this paper, we introduce generative agents—agents that draw             repository for the simulation code is located here: https://github.com/joonspk-research/
+on generative models to simulate believable human behavior—and                generative_agents
+Generative Agents                                                                           UIST ’23, October 29-November 1, 2023, San Francisco, CA, USA
+
+
+show up, with one agent even asking another on a date to the party,        their users [4, 30]. A long line of work has explored ways to enable
+all from a single user-generated seed suggestion.                          users to interactively specify model behavior. For instance, Crayons
+    We conducted two evaluations of generative agents: a controlled        demonstrated an early vision of interactive machine learning, allow-
+evaluation to test whether the agents produce believable individual        ing non-expert users to train classifiers [30]. Further work helped to
+behaviors in isolation, and an end-to-end evaluation where the             articulate how end users might describe their classification goals to
+agents interacted with each other in open-ended ways over two              the system through examples [34] or demonstration [32]. Recent ad-
+days of game time to understand their stability and emergent social        vancements have extended these explorations to deep learning [63]
+behaviors. In the technical evaluation, we leverage a methodologi-         and prompt-based authoring [50, 67, 106].
+cal opportunity to evaluate an agent’s knowledge and behavior by              Meanwhile, a persistent thread of research has advanced the case
+“interviewing” it in natural language to probe the agents’ ability to      for language- and agent-based interaction in human-computer in-
+stay in character, remember, plan, react, and reflect accurately. We       teraction. Formative work such as SHRDLU [103] and ELIZA [102]
+compared several ablations that limit agents’ access to memory, re-        demonstrated the opportunities and the risks associated with nat-
+flection, and planning. We observe that each of these components is        ural language interaction with computing systems. As research
+critical to strong performance across these interview tasks. Across        progressed, it became evident that autonomous agents could offer
+the technical and end-to-end evaluation, the most common errors            new metaphors for delegation and interaction [68], but the bound-
+arose when the agent failed to retrieve relevant memories, fabri-          aries of delegation between humans and agents have remained the
+cated embellishments to the agent’s memory, or inherited overly            subject of ongoing debate and refinement [47, 89, 90]. Recently, this
+formal speech or behavior from the language model.                         technology has reached a level of stability that enables agents to
+    In sum, this paper makes the following contributions:                  interact via natural language in large and complex online social
+      • Generative agents, believable simulacra of human behavior          environments (e.g., [55]). Natural language interaction provides a
+        that are dynamically conditioned on agents’ changing expe-         novel modality that can enhance user abilities in domains such as
+        riences and environment.                                           photo editing [3, 35, 65] and code editing [88].
+      • A novel architecture that makes it possible for generative            We convene these threads of work to show that we can now
+        agents to remember, retrieve, reflect, interact with other         create agents that proxy human behavior for interactive systems,
+        agents, and plan through dynamically evolving circumstances.       and interact with them using natural language. In doing so, this
+        The architecture leverages the powerful prompting capabili-        work reopens the door to examining foundational human-computer
+        ties of large language models and supplements those capa-          interaction questions around cognitive models such as GOMS and
+        bilities to support longer-term agent coherence, the ability       Keystroke-Level Model (KLM) [22, 23], around prototyping tools [80],
+        to manage dynamically evolving memory, and recursively             and around ubiquitous computing applications [26, 31, 101].
+        produce higher-level reflections.
+      • Two evaluations, a controlled evaluation and an end-to-end
+                                                                           2.2    Believable Proxies of Human Behavior
+        evaluation, that establish causal effects of the importance
+        of components of the architecture, as well as identify break-      Prior literature has described believability, or believable agents, as a
+        downs arising from, e.g., improper memory retrieval.               central design and engineering goal. Believable agents are designed
+      • Discussion of the opportunities and ethical and societal risks     to provide an illusion of life and present a facade of realism in the
+        of generative agents in interactive systems. We argue that         way they appear to make decisions and act on their own volition,
+        these agents should be tuned to mitigate the risk of users         similar to the characters in Disney movies [10, 96]. These agents
+        forming parasocial relationships, logged to mitigate risks         can populate and perceive an open world environment like the
+        stemming from deepfakes and tailored persuasion, and ap-           one we inhabit [10, 59], and strive to behave in ways that exhibit
+        plied in ways that complement rather than replace human            emergent behaviors grounded in social interactions with users or
+        stakeholders in design processes.                                  other agents with the aim of becoming believable proxies of our
+                                                                           behavior in hypothetical simulations of individuals and communi-
+                                                                           ties [20, 36, 71]. Historically, these agents were developed in the
+2     RELATED WORK
+                                                                           context of intelligent game non-player characters (NPCs) [59, 85].
+In this section, we reflect on the prior literature in human-AI interac-   Creating NPCs with believable behavior, if possible, could enhance
+tion and situate, within its canon, the agenda of building believable      player experiences in games and interactive fictions by enabling
+proxies of human behavior. This agenda, once hailed as a north             emergent narratives [8, 16, 49, 93] and social interactions with the
+star in the interaction, game, and artificial intelligence communi-        agents [109]. However, more importantly, game worlds provide
+ties [10, 59, 85, 86], has remained challenging due to the complexity      increasingly realistic representations of real-world affordances, and
+of human behavior [17, 108]. We synthesize this research to suggest        as observed by Laird and van Lent in 2001, these simulated worlds
+that large language models, though not sufficient by themselves,           offer accessible testbeds for developers of believable agents to fi-
+open up a new angle for creating believable agents when leveraged          nesse the agents’ cognitive capabilities without worrying about
+using the appropriate architecture.                                        implementing robotics in the real world or creating simulation
+                                                                           environments from scratch [59, 85].
+2.1     Human-AI Interaction                                                  A diverse set of approaches to creating believable agents emerged
+Interactive artificial intelligence systems aim to combine human in-       over the past four decades. In implementation, however, these ap-
+sights and capabilities in computational artifacts that can augment        proaches often simplified the environment or dimensions of agent
+UIST ’23, October 29-November 1, 2023, San Francisco, CA, USA                       J.S. Park, J.C. O’Brien, C.J. Cai, M.R. Morris, P. Liang, M.S. Bernstein
+
+
+behavior to make the effort more manageable [17, 73]. Rule-based       2.3    Large Language Models and Human
+approaches, such as finite-state machines [91, 97] and behavior               Behavior
+trees [41, 54, 82] account for the brute force approach of human-
+                                                                       Generative agents leverage a large language model to power their
+authoring the agent’s behavior [71]. They provide a straightforward
+                                                                       behavior. The key observation is that large language models encode
+way of creating simple agents that is still the most dominant ap-
+                                                                       a wide range of human behavior from their training data [15, 18]. If
+proach today [69, 74, 108], and can even handle rudimentary social
+                                                                       prompted with a narrowly defined context, the models can be used
+interactions, as shown in games such as Mass Effect [13] and The
+                                                                       to generate believable behavior. Recent work has demonstrated
+Sims [7] series. Nonetheless, manually crafting behavior that can
+                                                                       the efficacy of this approach. For instance, social simulacra used a
+comprehensively address the breadth of possible interactions in
+                                                                       large language model to generate users that would populate new
+an open world is untenable. This means that the resulting agent
+                                                                       social computing systems to prototype their emergent social dynam-
+behaviors may not fully represent the consequences of their in-
+                                                                       ics [80]. This approach used a prompt chain [105, 106] to generate
+teractions [70–72], and cannot perform new procedures that were
+                                                                       short natural language descriptions of personas and their behaviors
+not hard-coded in their script [91, 97]. On the other hand, preva-
+                                                                       as they appear in the system being prototyped. Other empirical
+lent learning-based approaches for creating believable agents, such
+                                                                       studies have replicated existing social science studies [46], political
+as reinforcement learning, have overcome the challenge of man-
+                                                                       surveys [92], and generated synthetic data [39]. Large language
+ual authoring by letting the agents learn their behavior, and have
+                                                                       models have also been used to generate interactive human behavior
+achieved superhuman performance in recent years in games such
+                                                                       for users to engage with. In gaming, for instance, these models have
+as AlphaStar for Starcraft [99] and OpenAI Five for Dota 2 [11].
+                                                                       been employed to create interactive fiction [37] and text adventure
+However, their success has largely taken place in adversarial games
+                                                                       games [21]. With their ability to generate and decompose action
+with readily definable rewards that a learning algorithm can op-
+                                                                       sequences, large language models have also been used in planning
+timize for. They have not yet addressed the challenge of creating
+                                                                       robotics tasks [48]. For example, when presented with a task, such
+believable agents in an open world [40, 74, 91].
+                                                                       as picking up a bottle, the model is prompted to break down the
+    Cognitive architectures in computation, pioneered by Newell,
+                                                                       task into smaller action sequences, such as heading to the table
+aimed to build the infrastructure for supporting a comprehensive
+                                                                       where the bottle is located and picking it up.
+set of cognitive functions [76] that suited the all-encompassing
+                                                                           We posit that, based on the work summarized above, large lan-
+nature of believable agents held in its original vision. They fueled
+                                                                       guage models can become a key ingredient for creating believable
+some of the earliest examples of believable agents. For instance,
+                                                                       agents. The existing literature largely relies on what could be con-
+Quakebot-SOAR [60] and ICARUS [25, 64] generated NPCs in first-
+                                                                       sidered first-order templates that employ few-shot prompts [38, 66]
+person shooter games, while TacAir-SOAR [81] generated pilots in
+                                                                       or chain-of-thought prompts [100]. These templates are effective in
+aerial combat training simulations. The architectures used by these
+                                                                       generating behavior that is conditioned solely on the agent’s cur-
+agents differed (Quakebot- and TacAir-SOAR relied on SOAR [61],
+                                                                       rent environment (e.g., how would a troll respond to a given post,
+while ICARUS relied on its own variation that was inspired by
+                                                                       what actions would a robot need to take to enter a room given that
+SOAR and ACT-R [6]), but they shared the same underlying prin-
+                                                                       there is a door). However, believable agents require conditioning
+ciple [62]. They maintained short-term and long-term memories,
+                                                                       not only on their current environment but also on a vast amount
+filled these memories with symbolic structures, and operated in
+                                                                       of past experience, which is a poor fit (and as of today, impossi-
+perceive-plan-act cycles, dynamically perceiving the environment
+                                                                       ble due to the underlying models’ limited context window) using
+and matching it with one of the manually crafted action proce-
+                                                                       first-order prompting. Recent studies have attempted to go beyond
+dures [58, 97]. Agents created using cognitive architectures aimed
+                                                                       first-order prompting by augmenting language models with a static
+to be generalizable to most, if not all, open world contexts and
+                                                                       knowledge base and an information retrieval scheme [53] or with
+exhibited robust behavior for their time. However, their space of
+                                                                       a simple summarization scheme [104]. This paper extends these
+action was limited to manually crafted procedural knowledge, and
+                                                                       ideas to craft an agent architecture that handles retrieval where
+they did not offer a mechanism through which the agents could be
+                                                                       past experience is dynamically updated at each time step and mixed
+inspired to seek new behavior. As such, these agents were deployed
+                                                                       with agents’ current context and plans, which may either reinforce
+mostly in non-open world contexts such as first-person shooter
+                                                                       or contradict each other.
+games [25, 60] or blocks worlds [64].
+    Today, creating believable agents as described in its original
+definition remains an open problem [85, 108]. Many have moved
+on, arguing that although current approaches for creating believable
+                                                                       3     GENERATIVE AGENT BEHAVIOR AND
+agents might be cumbersome and limited, they are good enough                 INTERACTION
+to support existing gameplay and interactions [24, 75, 108]. Our       To illustrate the affordances of generative agents, we instantiate
+argument is that large language models offer an opportunity to         them as characters in a simple sandbox world reminiscent of The
+re-examine these questions, provided that we can craft an effective    Sims [7]. This sprite-based sandbox game world, Smallville, evokes
+architecture to synthesize memories into believable behavior. We       a small town environment. In this section, we will walk through the
+offer a step toward such an architecture in this paper.                affordances and interactions with generative agents in Smallville
+                                                                       and describe how the agents behave within it. Then, in Section 4,
+                                                                       we will introduce our generative agent architecture that powers
+                                                                       these affordances and interactions. In Section 5, we will describe the
+Generative Agents                                                                         UIST ’23, October 29-November 1, 2023, San Francisco, CA, USA
+
+
+
+
+Figure 2: The Smallville sandbox world, with areas labeled. The root node describes the entire world, children describe areas
+(e.g., houses, cafe, stores), and leaf nodes describe objects (e.g., table, bookshelf). Agents remember a subgraph that reflects the
+parts of the world they have seen, maintaining the state of those parts as they observed them.
+
+
+implementation of the sandbox environment and how the agents          3.1.1 Inter-Agent Communication. The agents interact with the
+interact with the underlying engine of the sandbox world.             world by their actions, and with each other through natural lan-
+                                                                      guage. At each time step of the sandbox engine, the agents output a
+                                                                      natural language statement describing their current action, such as
+3.1    Agent Avatar and Communication                                 “Isabella Rodriguez is writing in her journal”, “Isabella Rodriguez is
+A community of 25 unique agents inhabits Smallville. Each agent is    checking her emails”, “Isabella Rodriguez is talking with her family
+represented by a simple sprite avatar. We authored one paragraph      on the phone”, or “Isabella Rodriguez is getting ready for bed.” This
+of natural language description to depict each agent’s identity,      statement is then translated into concrete movements that affect
+including their occupation and relationship with other agents, as     the sandbox world. The action is displayed on the sandbox inter-
+seed memories. For example, John Lin has the following description:   face as a set of emojis, providing an abstract representation of the
+                                                                      action from an overhead view. To achieve this, the system utilizes
+       John Lin is a pharmacy shopkeeper at the Willow                a language model to translate the action into a set of emojis, which
+       Market and Pharmacy who loves to help people. He               appear above each avatar’s head in a speech bubble. For example,
+       is always looking for ways to make the process                 “Isabella Rodriguez is writing in her journal” is displayed as        ,
+       of getting medication easier for his customers;                while “Isabella Rodriguez is checking her emails” appears as          .
+       John Lin is living with his wife, Mei Lin, who                 The complete natural language description of the action can be
+       is a college professor, and son, Eddy Lin, who is              accessed by clicking on the agent’s avatar.
+       a student studying music theory; John Lin loves                   Agents communicate with each other in full natural language.
+       his family very much; John Lin has known the old               They are aware of other agents in their local area, and the generative
+       couple next-door, Sam Moore and Jennifer Moore,                agent architecture determines whether they walk by or engage
+       for a few years; John Lin thinks Sam Moore is a                in conversation. Here, a sample in the middle of a conversation
+       kind and nice man; John Lin knows his neighbor,                between the agents Isabella Rodriguez and Tom Moreno about the
+       Yuriko Yamamoto, well; John Lin knows of his                   upcoming election:3
+       neighbors, Tamara Taylor and Carmen Ortiz, but
+                                                                              Isabella: I’m still weighing my options, but I’ve been
+       has not met them before; John Lin and Tom Moreno
+                                                                              discussing the election with Sam Moore. What are
+       are colleagues at The Willows Market and Pharmacy;
+                                                                              your thoughts on him?
+       John Lin and Tom Moreno are friends and like to
+                                                                              Tom: To be honest, I don’t like Sam Moore. I think
+       discuss local politics together; John Lin knows
+                                                                              he’s out of touch with the community and doesn’t
+       the Moreno family somewhat well — the husband Tom
+                                                                              have our best interests at heart.
+       Moreno and the wife Jane Moreno.
+                                                                      3We note that the conversational style of these agents can feel overly formal, likely a
+Each semicolon-delimited phrase is entered into the agent’s initial   result of instruction tuning in the underlying models. We expect that the writing style
+memory as memories at the start of the simulation.                    will be better controllable in future language models.
+UIST ’23, October 29-November 1, 2023, San Francisco, CA, USA                                        J.S. Park, J.C. O’Brien, C.J. Cai, M.R. Morris, P. Liang, M.S. Bernstein
+
+
+3.1.2 User Controls. The user communicates with the agent through                       3.3    Example “Day in the Life”
+natural language by specifying a persona that the agent should per-                     Starting from the single-paragraph description, generative agents
+ceive them as. For example, if the user specifies that they are a news                  begin planning their days. As time passes in the sandbox world,
+“reporter” and asks about the upcoming election by saying, “Who                         their behaviors evolve as these agents interact with each other and
+is running for office?”, the John agent replies:                                        the world, building memories and relationships, and coordinating
+        John: My friends Yuriko, Tom and I have been talk-                              joint activities.
+        ing about the upcoming election and discussing the                                 We demonstrate the behavior of generative agents by tracing the
+        candidate Sam Moore. We have all agreed to vote for                             output of our system over the course of one day for the agent John
+        him because we like his platform.                                               Lin (Figure 3). In the Lin family, John is the first to wake up at 7 a.m.
+                                                                                        He brushes his teeth, takes a shower, gets dressed, eats breakfast,
+To directly command one of the agents, the user takes on the per-
+                                                                                        and checks the news at the dining table in the living room. At 8
+sona of the agent’s “inner voice”—this makes the agent more likely
+                                                                                        a.m., Eddy follows suit, rushing out of bed to prepare for his classes.
+to treat the statement as a directive. For instance, when told “You
+                                                                                        He catches up with John just as he is about to head out:
+are going to run against Sam in the upcoming election” by a user
+as John’s inner voice, John decides to run in the election and shares                          John: Good morning Eddy. Did you sleep well?
+his candidacy with his wife and son.                                                           Eddy: Good morning dad. Yeah, I slept great.
+                                                                                               John: That’s good. What are you working on today?
+3.2     Environmental Interaction                                                              Eddy: I’m working on a new music composition for
+                                                                                               my class. It’s due this week, so I’m trying to get it
+Smallville features the common affordances of a small village, in-
+                                                                                               finished. But I’m having so much fun with it!
+cluding a cafe, bar, park, school, dorm, houses, and stores. It also
+                                                                                               John: That sounds great!
+defines subareas and objects that make those spaces functional,
+such as a kitchen in a house and a stove in the kitchen (Figure 2).                     Soon after Eddy heads out, Mei wakes up and joins John. Mei asks
+All spaces serving as agents’ primary living quarters feature a bed,                    about her son, and John recalls the conversation they just had:
+desk, closet, shelf, as well as a bathroom and a kitchen.4                                     Mei: Did Eddy already leave for school?
+   Agents move around Smallville as one would in a simple video                                John: Yes, he just left. He’s working on a music
+game, entering and leaving buildings, navigating its map, and ap-                              composition for his class.
+proaching other agents. Agent movements are directed by the gen-                               Mei: Oh, that’s wonderful! Tell me about it.
+erative agent architecture and the sandbox game engine: when the                               John: I think he’s really enjoying it! He said he’s
+model dictates that the agent will move to a location, we calculate                            having a lot of fun with it.
+a walking path to the destination in the Smallville environment,                               Mei: That’s great! I’m so proud of him.
+and the agent begins moving. In addition, users can also enter the
+                                                                                        As they finish their conversation, Mei and John pack up. Mei goes
+sandbox world of Smallville as an agent operating within it. The
+                                                                                        on to teach and work on her research paper, while John opens his
+agent that the user embodies can be an agent already present in
+                                                                                        pharmacy counter at the Willow Market and Pharmacy by 9 a.m.
+the world, such as Isabella and John, or it can be an outside visitor
+with no prior history in Smallville. The inhabitants of Smallville
+will treat the user-controlled agent no differently than they treat                     3.4    Emergent Social Behaviors
+each other. They recognize its presence, initiate interactions, and                     By interacting with each other, generative agents in Smallville
+remember its behavior before forming opinions about it.                                 exchange information, form new relationships, and coordinate joint
+   Users and agents can influence the state of the objects in this                      activities. Extending prior work [80], these social behaviors are
+world, much like in sandbox games such as The Sims. For example,                        emergent rather than pre-programmed.
+a bed can be occupied when an agent is sleeping, and a refrigerator
+                                                                                        3.4.1 Information Diffusion. As agents notice each other, they may
+can be empty when an agent uses up the ingredients to make
+                                                                                        engage in dialogue—as they do so, information can spread from
+breakfast. End users can also reshape an agent’s environment in
+                                                                                        agent to agent. For instance, in a conversation between Sam and
+Smallville by rewriting the status of objects surrounding the agent
+                                                                                        Tom at the grocery store, Sam tells Tom about his candidacy in the
+in natural language. For instance, when Isabella is making breakfast
+                                                                                        local election:
+in the morning, the user can change the status of the kitchen stove
+from “turned on” to “burning” by inputting a command to the                                    Sam: Hey Tom, how’s it going?
+system that chooses the object and illustrates its new status, like                            Tom: Good, thanks. What’s up?
+this: “<Isabella’s apartment: kitchen: stove> is burning.” Isabella                            Sam: Well, I wanted to talk to you about something.
+will notice this in the next moment and go to turn off the stove                               I’m actually running for mayor in the upcoming local
+and remake her breakfast. Likewise, if the user sets the status of                             election.
+Isabella’s shower to “leaking water” when she enters the bathroom,                             Tom: Really? That’s great news! Why are you run-
+she will gather tools from her living room and try to fix the leak.                            ning?
+                                                                                               Sam: I’ve been involved in local politics for years
+4 This environment design is not the focus of our work, so we generated this environ-
+                                                                                               now, and I really feel like I can make a difference in
+ment manually, not automatically. Future work can continue to expand the richness of           our community. Plus, I want to bring new ideas and
+the agents’ environments.                                                                      perspectives to the table.
+Generative Agents                                                                     UIST ’23, October 29-November 1, 2023, San Francisco, CA, USA
+
+
+
+
+Figure 3: A morning in the life of a generative agent, John Lin. John wakes up around 6 am and completes his morning routine,
+which includes brushing his teeth, taking a shower, and eating breakfast. He briefly catches up with his wife, Mei, and son,
+Eddy, before heading out to begin his workday.
+
+
+                                                                      Gradually, Sam’s candidacy becomes the talk of the town, with
+                                                                      some supporting him and others remaining undecided.
+
+                                                                      3.4.2 Relationship Memory. Agents in Smallville form new rela-
+                                                                      tionships over time and remember their interactions with other
+                                                                      agents. For example, at the start, Sam does not know Latoya Williams.
+                                                                      While taking a walk in Johnson Park, Sam runs into Latoya, and
+                                                                      they introduce themselves. Latoya mentions that she is working
+                                                                      on a photography project: “I’m here to take some photos for a
+                                                                      project I’m working on.” In a later interaction, Sam’s interactions
+                                                                      with Latoya indicate a memory of that interaction, as he asks “Hi,
+                                                                      Latoya. How is your project going?” and she replies “Hi, Sam. It’s
+                                                                      going well!”
+Figure 4: At the beginning of the simulation, one agent is
+initialized with an intent to organize a Valentine’s Day party.
+                                                                      3.4.3 Coordination. Generative agents coordinate with each other.
+Despite many possible points of failure in the ensuing chain
+                                                                      Isabella Rodriguez, at Hobbs Cafe, is initialized with an intent to
+of events—agents might not act on that intent, might forget
+                                                                      plan a Valentine’s Day party from 5 to 7 p.m. on February 14th. From
+to tell others, might not remember to show up—the Valen-
+                                                                      this seed, the agent proceeds to invite friends and customers when
+tine’s Day party does, in fact, occur, with a number of agents
+                                                                      she sees them at Hobbs Cafe or elsewhere. Isabella then spends the
+gathering and interacting.
+                                                                      afternoon of the 13th decorating the cafe for the occasion. Maria, a
+                                                                      frequent customer and close friend of Isabella’s, arrives at the cafe.
+                                                                      Isabella asks for Maria’s help in decorating for the party, and Maria
+Later that day, after Sam left, Tom and John, who heard the news      agrees. Maria’s character description mentions that she has a crush
+from another source, discuss Sam’s chances of winning the election:   on Klaus. That night, Maria invites Klaus, her secret crush, to join
+       John: I heard that Sam Moore is running for mayor              her at the party, and he gladly accepts.
+       in the local election. Do you think he has a good                 On Valentine’s Day, five agents, including Klaus and Maria, show
+       chance of winning?                                             up at Hobbs Cafe at 5 pm, and they enjoy the festivities (Figure 4).
+       Tom: I do think he has a good chance. He’s been                In this scenario, the end user only set Isabella’s initial intent to
+       working hard in the community and I think he will              throw a party and Maria’s crush on Klaus: the social behaviors of
+       get a lot of support. What do you think?                       spreading the word, decorating, asking each other out, arriving at
+       John: I think it’s great that he’s running. I’m curious        the party, and interacting with each other at the party were initiated
+       to see how the election will turn out.                         by the agent architecture.
+UIST ’23, October 29-November 1, 2023, San Francisco, CA, USA                       J.S. Park, J.C. O’Brien, C.J. Cai, M.R. Morris, P. Liang, M.S. Bernstein
+
+
+
+
+Figure 5: Our generative agent architecture. Agents perceive their environment, and all perceptions are saved in a comprehensive
+record of the agent’s experiences called the memory stream. Based on their perceptions, the architecture retrieves relevant
+memories and uses those retrieved actions to determine an action. These retrieved memories are also used to form longer-term
+plans and create higher-level reflections, both of which are entered into the memory stream for future use.
+
+
+4    GENERATIVE AGENT ARCHITECTURE                                      4.1    Memory and Retrieval
+Generative agents aim to provide a framework for behavior in an         Challenge: Creating generative agents that can simulate human
+open world: one that can engage in interactions with other agents       behavior requires reasoning about a set of experiences that is far
+and react to changes in the environment. Generative agents take         larger than what should be described in a prompt, as the full mem-
+their current environment and past experiences as input and gener-      ory stream can distract the model and does not even currently fit
+ate behavior as output. Underlying this behavior is a novel agent ar-   into the limited context window. Consider the Isabella agent an-
+chitecture that combines a large language model with mechanisms         swering the question, “What are you passionate about these days?”
+for synthesizing and retrieving relevant information to condition       Summarizing all of Isabella’s experiences to fit in the limited con-
+the language model’s output. Without these mechanisms, large            text window of the language model produces an uninformative
+language models can output behavior, but the resulting agents may       response, where Isabella discusses topics such as collaborations for
+not react based on the agent’s past experiences, may not make           events and projects and cleanliness and organization in a cafe. In-
+important inferences, and may not maintain long-term coherence.         stead of summarizing, the memory stream described below surfaces
+Challenges with long-term planning and coherence remain [19]            relevant memories, resulting in a more informative and specific
+even with today’s most performant models such as GPT-4. Because         response that mentions Isabella’s passion for making people feel
+generative agents produce large streams of events and memories          welcome and included, planning events and creating an atmosphere
+that must be retained, a core challenge of our architecture is to       that people can enjoy, such as the Valentine’s Day party.
+ensure that the most relevant pieces of the agent’s memory are
+retrieved and synthesized when needed.                                  Approach: The memory stream maintains a comprehensive record
+   At the center of our architecture is the memory stream, a data-      of the agent’s experience. It is a list of memory objects, where each
+base that maintains a comprehensive record of an agent’s experi-        object contains a natural language description, a creation times-
+ence. From the memory stream, records are retrieved as relevant to      tamp, and a most recent access timestamp. The most basic element
+plan the agent’s actions and react appropriately to the environment.    of the memory stream is an observation, which is an event directly
+Records are recursively synthesized into higher- and higher-level       perceived by an agent. Common observations include behaviors
+reflections that guide behavior. Everything in the architecture is      performed by the agent themselves or behaviors that agents per-
+recorded and reasoned over as a natural language description, al-       ceive being performed by other agents or non-agent objects. For
+lowing the architecture to leverage a large language model.             instance, Isabella Rodriguez, who works at a coffee shop, might
+   Our current implementation utilizes the gpt3.5-turbo version of      accrue the following observations over time: (1) Isabella Rodriguez
+                                                                        is setting out the pastries, (2) Maria Lopez is studying for a Chem-
+ChatGPT [77]. We expect that the architectural basics of genera-
+                                                                        istry test while drinking coffee, (3) Isabella Rodriguez and Maria
+tive agents—memory, planning, and reflection—will likely remain
+                                                                        Lopez are conversing about planning a Valentine’s day party at
+the same as language models improve. Newer language models
+                                                                        Hobbs Cafe, (4) The refrigerator is empty.
+(e.g., GPT-4) will continue to expand the expressive power and
+performance of the prompts that underpin generative agents. As of           Our architecture implements a retrieval function that takes the
+writing, however, GPT-4’s API was invitation-only, so our agents        agent’s current situation as input and returns a subset of the mem-
+use ChatGPT.                                                            ory stream to pass on to the language model. There are many pos-
+                                                                        sible implementations of a retrieval function, depending on what
+                                                                        is important for the agent to consider when deciding how to act.
+Generative Agents                                                                      UIST ’23, October 29-November 1, 2023, San Francisco, CA, USA
+
+
+
+
+Figure 6: The memory stream comprises a large number of observations that are relevant and irrelevant to the agent’s current
+situation. Retrieval identifies a subset of these observations that should be passed to the language model to condition its
+response to the situation.
+
+
+In our context, we focus on three main components that, together,      query memory. If the query, for example, is that a student is dis-
+produce effective results.                                             cussing what to study for a chemistry test with a classmate, memory
+   Recency assigns a higher score to memory objects that were re-      objects about their breakfast should have low relevance, whereas
+cently accessed, so that events from a moment ago or this morning      memory objects about the teacher and schoolwork should have
+are likely to remain in the agent’s attentional sphere. In our im-     high relevance. In our implementation, we use the language model
+plementation, we treat recency as an exponential decay function        to generate an embedding vector of the text description of each
+over the number of sandbox game hours since the memory was             memory. Then, we calculate relevance as the cosine similarity be-
+last retrieved. Our decay factor is 0.995.                             tween the memory’s embedding vector and the query memory’s
+   Importance distinguishes mundane from core memories by as-          embedding vector.
+signing a higher score to memory objects that the agent believes to       To calculate the final retrieval score, we normalize the recency,
+be important. For instance, a mundane event, such as eating break-     relevance, and importance scores to the range of [0, 1] using min-
+fast in one’s room, would yield a low importance score, whereas        max scaling. The retrieval function scores all memories as a weighted
+a breakup with one’s significant other would yield a high score.       combination of the three elements: 𝑠𝑐𝑜𝑟𝑒 = 𝛼𝑟𝑒𝑐𝑒𝑛𝑐𝑦 · 𝑟𝑒𝑐𝑒𝑛𝑐𝑦 +
+There are many possible implementations of an importance score;        𝛼𝑖𝑚𝑝𝑜𝑟𝑡𝑎𝑛𝑐𝑒 · 𝑖𝑚𝑝𝑜𝑟𝑡𝑎𝑛𝑐𝑒 + 𝛼𝑟𝑒𝑙𝑒𝑣𝑎𝑛𝑐𝑒 · 𝑟𝑒𝑙𝑒𝑣𝑎𝑛𝑐𝑒. In our implemen-
+we find that directly asking the language model to output an integer   tation, all 𝛼s are set to 1. The top-ranked memories that fit within
+score is effective. The full prompt appears below:                     the language model’s context window are included in the prompt.
+       On the scale of 1 to 10, where 1 is purely mundane
+       (e.g., brushing teeth, making bed) and 10 is                    4.2    Reflection
+       extremely poignant (e.g., a break up, college                   Challenge: Generative agents, when equipped with only raw ob-
+       acceptance), rate the likely poignancy of the                   servational memory, struggle to generalize or make inferences.
+       following piece of memory.                                      Consider a scenario in which Klaus Mueller is asked by the user:
+       Memory: buying groceries at The Willows Market                  “If you had to choose one person of those you know to spend an
+       and Pharmacy                                                    hour with, who would it be?" With access to only observational
+       Rating: <fill in>                                               memory, the agent simply chooses the person with whom Klaus
+This prompt returns an integer value of 2 for “cleaning up the room”   has had the most frequent interactions: Wolfgang, his college dorm
+and 8 for “asking your crush out on a date.” The importance score      neighbor. Unfortunately, Wolfgang and Klaus only ever see each
+is generated at the time the memory object is created.                 other in passing, and do not have deep interactions. A more desir-
+   Relevance assigns a higher score to memory objects that are         able response requires that the agent generalize from memories of
+related to the current situation. What is relevant depends on the      Klaus spending hours on a research project to generate a higher-
+answer to, “Relevant to what?”, so we condition relevance on a         level reflection that Klaus is passionate about research, and likewise
+UIST ’23, October 29-November 1, 2023, San Francisco, CA, USA                         J.S. Park, J.C. O’Brien, C.J. Cai, M.R. Morris, P. Liang, M.S. Bernstein
+
+
+
+
+Figure 7: A reflection tree for Klaus Mueller. The agent’s observations of the world, represented in the leaf nodes, are recursively
+synthesized to derive Klaus’s self-notion that he is highly dedicated to his research.
+
+
+recognize Maria putting in effort into her own research (albeit in              Statements about Klaus Mueller
+a different field), enabling a reflection that they share a common              1. Klaus Mueller is writing a research paper
+interest. With the approach below, when Klaus is asked who to                   2. Klaus Mueller enjoys reading a book
+spend time with, Klaus chooses Maria instead of Wolfgang.                       on gentrification
+                                                                                3. Klaus Mueller is conversing with Ayesha Khan
+Approach: We introduce a second type of memory, which we call                   about exercising [...]
+a reflection. Reflections are higher-level, more abstract thoughts              What 5 high-level insights can you infer from
+generated by the agent. Because they are a type of memory, they                 the above statements? (example format: insight
+are included alongside other observations when retrieval occurs.                (because of 1, 5, 3))
+Reflections are generated periodically; in our implementation, we
+                                                                         This process generates statements such as Klaus Mueller is dedi-
+generate reflections when the sum of the importance scores for the
+                                                                         cated to his research on gentrification (because of 1, 2, 8, 15). We
+latest events perceived by the agents exceeds a threshold (150 in
+                                                                         parse and store the statement as a reflection in the memory stream,
+our implementation). In practice, our agents reflected roughly two
+                                                                         including pointers to the memory objects that were cited.
+or three times a day.
+                                                                            Reflection explicitly allows the agents to reflect not only on
+   The first step in reflection is for the agent to determine what
+                                                                         their observations but also on other reflections: for example, the
+to reflect on, by identifying questions that can be asked given the
+                                                                         second statement about Klaus Mueller above is a reflection that
+agent’s recent experiences. We query the large language model with
+                                                                         Klaus previously had, not an observation from his environment.
+the 100 most recent records in the agent’s memory stream (e.g.,
+                                                                         As a result, agents generate trees of reflections: the leaf nodes of
+“Klaus Mueller is reading a book on gentrification”, “Klaus Mueller is
+                                                                         the tree represent the base observations, and the non-leaf nodes
+conversing with a librarian about his research project”, “desk at the
+                                                                         represent thoughts that become more abstract and higher-level the
+library is currently unoccupied”) and prompt the language model,
+                                                                         higher up the tree they are.
+“Given only the information above, what are 3 most salient high-
+level questions we can answer about the subjects in the statements?”
+The model’s response generates candidate questions: for example,         4.3    Planning and Reacting
+What topic is Klaus Mueller passionate about? and What is the            Challenge: While a large language model can generate plausible be-
+relationship between Klaus Mueller and Maria Lopez? We use these         havior in response to situational information (e.g., [46, 80]), agents
+generated questions as queries for retrieval, and gather relevant        need to plan over a longer time horizon to ensure that their sequence
+memories (including other reflections) for each question. Then           of actions is coherent and believable. If we prompt a language model
+we prompt the language model to extract insights and cite the            with Klaus’s background, describe the time, and ask what action
+particular records that served as evidence for the insights. The full    he ought to take at the given moment, Klaus would eat lunch at 12
+prompt is as follows:                                                    pm, but then again at 12:30 pm and 1 pm, despite having already
+Generative Agents                                                                                        UIST ’23, October 29-November 1, 2023, San Francisco, CA, USA
+
+
+eaten his lunch twice. Optimizing for believability in the moment                          The agent saves this plan in the memory stream and then re-
+sacrifices believability over time. To overcome this issue, planning                     cursively decomposes it to create finer-grained actions, first into
+is essential. With the approach described below, Klaus’s afternoon                       hour-long chunks of actions—Eddy’s plan to work on his new music
+plan is less gluttonous: he has lunch at Hobbs Cafe while reading                        composition from 1:00 pm to 5:00 pm becomes 1:00 pm: start
+at 12pm, works on his research paper at the school library at 1pm,                       by brainstorming some ideas for his music composition [...] 4:00
+and takes a break for a walk in the park at 3pm.                                         pm: take a quick break and recharge his creative energy before
+                                                                                         reviewing and polishing his composition. We then recursively de-
+Approach: Plans describe a future sequence of actions for the agent,                     compose this again into 5–15 minute chunks: e.g., 4:00 pm: grab a
+and help keep the agent’s behavior consistent over time. A plan                          light snack, such as a piece of fruit, a granola bar, or some nuts.
+includes a location, a starting time, and a duration. For instance,                      4:05 pm: take a short walk around his workspace [...] 4:50 pm:
+Klaus Mueller, who is dedicated in his research and has an im-                           take a few minutes to clean up his workspace. This process can be
+pending deadline,5 may choose to spend his day working at his                            adjusted to match the desired granularity.
+desk drafting his research paper. An entry in a plan might state,
+for example: for 180 minutes from 9am, February 12th, 2023, at                           4.3.1 Reacting and Updating Plans. Generative agents operate in
+Oak Hill College Dorm: Klaus Mueller’s room: desk, read and                              an action loop where, at each time step, they perceive the world
+take notes for research paper. Like reflections, plans are stored in                     around them and those perceived observations are stored in their
+the memory stream and are included in the retrieval process. This                        memory stream. We prompt the language model with these obser-
+allows the agent to consider observations, reflections, and plans all                    vations to decide whether the agent should continue with their
+together when deciding how to behave. Agents may change their                            existing plan, or react. Standing at an easel and painting, for exam-
+plans midstream if needed.                                                               ple, might trigger an observation of the easel, but this is unlikely to
+   It would be unrealistic and uninteresting for an artist agent                         prompt a reaction. However, if Eddy’s father John records that he
+to plan on painting while sitting at a pharmacy counter for four                         sees Eddy taking a short walk in the house garden, the outcome is
+hours without moving. A more desirable plan would involve the                            different. The prompt is below, with [Agent’s Summary Descrip-
+agent taking the necessary time to gather materials, mix paint, take                     tion] standing in for a dynamically-generated, paragraph-long
+breaks, and clean up during the four-hour period in their home                           summary of the agent’s overall goals and disposition, which is
+studio. To create such plans, our approach starts top-down and                           described in Appendix A:
+then recursively generates more detail. The first step is to create                             [Agent’s Summary Description]
+a plan that outlines the day’s agenda in broad strokes. To create                               It is February 13, 2023, 4:56 pm.
+the initial plan, we prompt the language model with the agent’s                                 John Lin’s status: John is back home early from
+summary description (e.g., name, traits, and a summary of their                                 work.
+recent experiences) and a summary of their previous day. A full                                 Observation: John saw Eddy taking a short walk
+example prompt is below, which is unfinished at the bottom for the                              around his workplace.
+language model to complete:                                                                     Summary of relevant context from John’s memory:
+        Name: Eddy Lin (age: 19)                                                                Eddy Lin is John’s Lin’s son. Eddy Lin has been
+        Innate traits: friendly, outgoing, hospitable                                           working on a music composition for his class. Eddy
+        Eddy Lin is a student at Oak Hill College studying                                      Lin likes to walk around the garden when he is
+        music theory and composition. He loves to explore                                       thinking about or listening to music.
+        different musical styles and is always looking for                                      Should John react to the observation, and if so,
+        ways to expand his knowledge. Eddy Lin is working                                       what would be an appropriate reaction?
+        on a composition project for his college class. He                               The context summary is generated through two prompts that re-
+        is taking classes to learn more about music theory.                              trieve memories via the queries “What is [observer]’s relationship
+        Eddy Lin is excited about the new composition he                                 with the [observed entity]?” and “[Observed entity] is [action status
+        is working on but he wants to dedicate more hours                                of the observed entity]”, and their answers summarized together.
+        in the day to work on it in the coming days                                      The output suggests that John could consider asking Eddy about
+        On Tuesday February 12, Eddy 1) woke up and                                      his music composition project. We then regenerate the agent’s
+        completed the morning routine at 7:00 am, [. . . ]                               existing plan starting from the time when the reaction takes place.
+        6) got ready to sleep around 10 pm.                                              Finally, if the action indicates an interaction between agents, we
+        Today is Wednesday February 13. Here is Eddy’s                                   generate their dialogue.
+        plan today in broad strokes: 1)
+This generates a rough sketch of the agent’s plan for a day, divided                     4.3.2 Dialogue. Agents converse as they interact with each other.
+into five to eight chunks: “1) wake up and complete the morning                          We generate agents’ dialogue by conditioning their utterances on
+routine at 8:00 am, 2) go to Oak Hill College to take classes starting
+                                                                                         their memories about each other. For example, when John initiates
+10:00 am, [. . . ] 5) work on his new music composition from 1:00 pm
+                                                                                         his conversation with Eddy, we generate John’s first utterance
+to 5:00 pm, 6) have dinner at 5:30 pm, 7) finish school assignments
+                                                                                         by using his summarized memory about Eddy and the intended
+and go to bed by 11:00 pm.”
+                                                                                         reaction when he decided to ask Eddy about his composition project:
+                                                                                                [Agent’s Summary Description]
+5 And, in this way, bears at least a passing resemblance to the authors of this paper.          It is February 13, 2023, 4:56 pm.
+UIST ’23, October 29-November 1, 2023, San Francisco, CA, USA                           J.S. Park, J.C. O’Brien, C.J. Cai, M.R. Morris, P. Liang, M.S. Bernstein
+
+
+        John Lin’s status: John is back home early from                    agents are interacting with (e.g., changing the status of the coffee
+        work.                                                              machine from “idle” to “brewing coffee” if an agent’s action is
+        Observation: John saw Eddy taking a short walk                     “making espresso for a customer @ Hobbs Cafe: counter: coffee
+        around his workplace.                                              machine”). The sandbox server is also responsible for sending all
+        Summary of relevant context from John’s memory:                    agents and objects that are within a preset visual range for each
+        Eddy Lin is John’s Lin’s son. Eddy Lin has been                    agent to that agent’s memory, so the agent can react appropriately.
+        working on a music composition for his class. Eddy                 The agent’s output action then updates the JSON, and the process
+        Lin likes to walk around the garden when he is                     loops for the next time step.
+        thinking about or listening to music.                                  End users initialize a new agent with a brief natural language
+        John is asking Eddy about his music composition                    description, as in the paragraph about John Lin in Section 3.1. In our
+        project. What would he say to Eddy?                                implementation, we split this semicolon-delimited list of character-
+The result: “Hey Eddy, how’s the music composition project for             istics up into a set of memories. These serve as the initial memories
+your class coming along?” From Eddy’s perspective, John initiating         that determine the agent’s behavior. These memories are initial
+the dialogue is seen as an event to which he may want to react.            starting points: as the agents gain more experience in the sandbox
+So, just as John did, Eddy retrieves and summarizes his memory             world, and as more records saturate the memory stream, the agent’s
+about his relationship with John, as well as his memory that may           summary and behavior will evolve.
+be related to John’s last utterance in the dialogue. If he decides
+to respond, we generate Eddy’s utterance using his summarized              5.1    From Structured World Environments to
+memory and the current dialogue history:                                          Natural Language, and Back Again
+        [Agent’s Summary Description]                                      The architecture of generative agents operates using natural lan-
+        It is February 13, 2023, 4:56 pm.                                  guage. Therefore, we need a mechanism to ground the agent’s
+        Eddy Lin’s status: Eddy is taking a short walk                     reasoning to the sandbox world. To achieve this, we represent the
+        around his workplace.                                              sandbox environment—areas and objects—as a tree data structure,
+        Observation: John is initiating a conversation                     with an edge in the tree indicating a containment relationship in
+        with Eddy.                                                         the sandbox world. We convert this tree into natural language to
+        Summary of relevant context from Eddy’s memory:                    pass to the generative agents. For instance, “stove” being a child of
+        John Lin is Eddy Lin’s father. John Lin is caring                  “kitchen” is rendered into “there is a stove in the kitchen.”
+        and is interested to learn more about Eddy Lin’s                       Agents build individual tree representations of the environment
+        school work. John Lin knows that Eddy Lin is                       as they navigate it — subgraphs of the overall sandbox environment
+        working on a music composition.                                    tree. We initialize each agent with an environment tree capturing
+        Here is the dialogue history:                                      the spaces and objects that the agent should be aware of: the rooms
+        John: Hey Eddy, how’s the music composition project                and objects in their living quarters, their workplace, and commonly
+        for your class coming along?                                       visited stores and shops. As the agents navigate the sandbox world,
+        How would Eddy respond to John?                                    they update this tree to reflect newly perceived areas. Agents are
+This generates Eddy’s response: “Hey Dad, it’s going well. I’ve been       not omniscient: their tree may get out of date as they leave an area,
+taking walks around the garden to clear my head and get some               and is updated when they re-enter the area.
+inspiration.” The continuation of this dialogue is generated using             To determine the appropriate location for each action, we tra-
+the same mechanism until one of the two agents decides to end the          verse the agent’s stored environment tree and flatten a portion of
+dialogue.                                                                  it into natural language to prompt the language model. Recursively
+                                                                           starting at the root of the agent’s environment tree, we prompt the
+5    SANDBOX ENVIRONMENT                                                   model to find the most suitable area. For example, if Eddy’s agent
+     IMPLEMENTATION                                                        indicated that he should take a short walk around his workspace:
+The Smallville sandbox game environment is built using the Phaser                 [Agent’s Summary Description]
+web game development framework [57]. The visual environment                       Eddy Lin is currently in The Lin family’s house:
+sprites, including agent avatars, as well as an environment map                   Eddy Lin’s bedroom: desk) that has Mei and John
+and collision map that we authored, are imported into Phaser.                     Lin’s
+   We supplement the sandbox development framework with a                         bedroom, Eddy Lin’s bedroom, common room, kitchen,
+server that makes the sandbox information available to generative                 bathroom, and garden.
+agents and enables generative agents to move and influence the                    Eddy Lin knows of the following areas: The Lin
+sandbox environment. The server maintains a JSON data structure                   family’s house, Johnson Park, Harvey Oak Supply
+that contains information about each agent in the sandbox world,                  Store, The Willows Market and Pharmacy, Hobbs
+including their current location, a description of their current action,          Cafe, The Rose and Crown Pub.
+and the sandbox object they are interacting with. At each sandbox                 * Prefer to stay in the current area if the
+time step, the sandbox server parses the JSON for any changes                     activity can be done there.
+coming from the generative agents, moves the agents to their new                  Eddy Lin is planning to take a short walk around
+positions, and updates the status of any sandbox objects that the                 his workspace. Which area should Eddy Lin go to?
+Generative Agents                                                                        UIST ’23, October 29-November 1, 2023, San Francisco, CA, USA
+
+
+This outputs The Lin family’s house. We then use the same process             • Plans: We ask questions that require the agent to retrieve
+recursively to determine the most appropriate subarea within the                their long-term plans, such as “What will you be doing at 10
+chosen area until we reach a leaf node of the agent’s environment               am tomorrow?”
+tree. In the example above, the result of this traversal is The Lin           • Reactions: As a baseline of believable behavior, we present
+family’s house: garden: house garden. Finally, we use traditional               hypothetical situations for which the agent needs to respond
+game path algorithms to animate the agent’s movement so that it                 believably: “Your breakfast is burning! What would you do?”
+travels to the location indicated by the leaf node.                           • Reflections: We ask questions that require the agents to lever-
+   When an agent executes an action on an object, we prompt the                 age their deeper understanding of others and themselves
+language model to ask what happens to the state of the object. For              gained through higher-level inferences, such as “If you were
+example, if Isabella’s generative agent outputs the action “making              to spend time with one person you met recently, who would
+espresso for a customer”, a query to the language model indicates in            it be and why?”
+response that the state of the coffee machine in Hobbs Cafe should
+                                                                        The full list of questions and a sample of agent responses are in-
+change from “off” to “brewing coffee”.
+                                                                        cluded in Appendix B.
+                                                                           Agents were sampled from the end of a two game day simulation
+6     CONTROLLED EVALUATION                                             with the full architecture, during which they had accumulated
+Generative agents, both as individual agents and as groups, aim         a number of interactions and memories that would shape their
+to produce believable behavior based on their environment and           responses. To gather feedback on the believability of the responses,
+experiences. In our evaluation, we investigate the capacity and         we recruited participants as human evaluators and tasked them with
+limitations of generative agents. Do individual agents properly         watching a replay of a randomly chosen agent’s life in Smallville.
+retrieve past experiences and generate believable plans, reactions,     Participants had access to all information stored in the agent’s
+and thoughts that shape their behavior? Does a community of             memory stream.
+agents demonstrate information diffusion, relationship formation,          The study followed a within-subjects design, where 100 partic-
+and agent coordination across different pockets of the community?       ipants compared interview responses generated by four different
+   We evaluate generative agents in two stages. We begin with a         agent architectures and a human-authored condition for the same
+more tightly controlled evaluation in this section, where we individ-   agent. The experiment displayed one randomly chosen question
+ually assess agent responses to understand whether they generate        from each of the five question categories, along with the agent’s
+believable behavior in narrowly defined contexts. Then, in our end-     responses generated from all conditions. The evaluators ranked the
+to-end analysis of the agent community over two full game days,         believability of the conditions from most to least believable.
+we investigate their emergent behavior as a collective, as well as
+errors and boundary conditions.                                         6.2     Conditions
+                                                                        All conditions were used to independently answer each of the inter-
+6.1     Evaluation Procedure                                            view questions. We compared the generative agent architecture to
+To assess generative agents in Smallville, we take advantage of         ablations that disabled the agents’ access to some or all of its three
+the fact that generative agents will respond to natural language        types of memory in its memory stream—observation, reflection,
+questions. So, we “interview” agents to probe their ability to re-      and planning—and to a human crowdworker-authored condition.
+member past experiences, plan future actions based on their expe-       There are three ablated architectures: a no observation, no reflec-
+riences, react appropriately to unexpected events, and reflect on       tion, no planning architecture without access to anything in the
+their performance to improve their future actions. To respond to        memory stream such as observations, plans, and reflections; a no
+these questions properly, the agents must successfully retrieve and     reflection, no planning architecture with access to observations in
+synthesize information. Our dependent variable is the believabil-       the memory stream but no access to plans or reflections; and a no
+ity of the behavior, a central dependent variable in prior work on      reflections architecture with access to observations and plans but
+agents (e.g., [10]).                                                    without access to reflections. The no observation, no reflection, no
+   The interview includes five question categories, each designed       planning condition effectively represents the previous state of the
+to assess one of the five key areas: maintaining self-knowledge,        art for agents created through large language models [12, 46, 80].
+retrieving memory, generating plans, reacting, and reflecting. For      Architectures were given equivalent access to all memories accrued
+each category, we ask five questions that challenge the agents to       by the agent up until the moment of the interview, so the differ-
+demonstrate their abilities in that specific area:                      ences observed here likely represent a conservative estimate of
+                                                                        the true differences: in reality, the ablated architectures would not
+      • Self-knowledge: We ask questions such as “Give an introduc-     have followed the same path as the full architecture through the
+        tion of yourself” or “Describe your typical weekday schedule    two-day simulation. We chose to design the experiment this way
+        in broad strokes” that require the agent to maintain an un-     as re-simulating for each architecture would cause the simulations
+        derstanding of their core characteristics.                      to diverge into different states, making comparison challenging.
+      • Memory: We ask questions that prompt the agent to retrieve         In addition to the ablation conditions, we added a condition with
+        particular events or dialogues from their memory to answer      human crowdworker-authored behavior intended to provide a hu-
+        properly, such as “Who is [name]?” or “Who is running for       man baseline. We do not intend this baseline to capture maximal
+        mayor?”                                                         human expert performance; instead, we aim to use this condition to
+UIST ’23, October 29-November 1, 2023, San Francisco, CA, USA                          J.S. Park, J.C. O’Brien, C.J. Cai, M.R. Morris, P. Liang, M.S. Bernstein
+
+
+identify whether the architecture meets a basic level of behavioral
+competency. This ensures that we are not solely comparing abla-
+tions to each other without a behavioral grounding. We recruited
+a unique worker for each of the 25 agents and tasked them with
+watching a replay of that agent’s sandbox life and inspecting its
+memory stream. We then asked the workers to roleplay and author
+responses to the interview questions in the voice of the agent whose
+replay they watched. To ensure that the crowdworker-authored
+responses met at least a baseline expectation of quality, the first
+author manually inspected the workers’ responses to the question
+"Describe your typical weekday schedule in broad strokes" to con-
+firm that the responses were in coherent sentences and in the voice
+of the agent. Four sets of crowdworker-authored responses did not
+meet these criteria and were re-generated by other workers.
+
+6.3     Human Evaluators                                                  Figure 8: The full generative agent architecture produces
+We required that our evaluators be in the U.S., fluent in English,        more believable behavior than the ablated architectures and
+and older than 18 years old. They were paid at a rate of $15.00           the human crowdworkers. Each additional ablation reduces
+per hour [87], and provided consent by agreeing to a consent form         the performance of the architecture.
+approved by our institution’s IRB. We recruited 100 evaluators from
+Prolific, an online platform for recruiting study participants [83],
+whose participation lasted around 30 minutes. The median age score        first phase to extract higher-level themes. We utilized these themes
+of our participants was 4 (3=“18-24 years old”, 4=“25-34 years old”).     to compare the types of responses generated in our study.
+25 of them identified as female, 73 as male, and 2 as non-binary. 42
+participants held a bachelor’s degree, 5 had a higher degree, 13 had      6.5    Results
+an associate’s degree, and the rest had a high school diploma or          Our findings suggest that the full architecture of generative agents
+some high school-level education. 73.0% of our participants identi-       generates the most believable behavior among all the conditions.
+fied as Caucasian, 7.0% as Hispanic, 6.0% as Asian, 10.0% as African      We contrast the responses of the full architecture with those of other
+American, and 4.0% as other.                                              conditions below. However, we also report that the full architecture
+                                                                          was not without flaws and illustrate its modes of failures.
+6.4     Analysis
+                                                                          6.5.1 The Full Architecture Bests Other Conditions. As seen in Fig-
+Our experiment produced 100 sets of rank data, where each partici-        ure 8, the full generative agent architecture produced the most
+pant ranked the five conditions by believability. To translate this       believable behavior (𝜇 = 29.89; 𝜎 = 0.72). Performance degraded
+rank data into interval data for interpretable comparison, we used        with the removal of each component in the ablation conditions:
+the ranks to calculate a TrueSkill rating [42] for each condition.        the ablated architecture with no access to reflection was the next
+TrueSkill is a generalization of the Elo chess rating system [29] for     best (𝜇 = 26.88; 𝜎 = 0.69), followed by no access to reflection or
+a multiplayer environment, and has been used by Xbox Live for             planning (𝜇 = 25.64; 𝜎 = 0.68), and then the crowdworker condition
+player ranking based on competitive game performance. Given a             (𝜇 = 22.95; 𝜎 = 0.69). The ablated architecture with no access to
+set of ranked outcomes, TrueSkill outputs a mean rating value 𝜇 and       memory, planning, or reflection performed the worst among all
+standard deviation 𝜎 for each condition. Conditions with the same         conditions (𝜇 = 21.21; 𝜎 = 0.70). TrueSkill models each condition’s
+rating should roughly be a toss-up, with each winning half of the         skill value as N (𝜇, 𝜎 2 ), allowing us to get a sense of effect size
+comparisons between the two conditions. Higher scores indicate            through Cohen’s d. Comparing the condition representing prior
+conditions that beat lower-ranked conditions in the rankings.             work (with no memory, planning, or reflection [12, 46, 80]) to the
+   Separately, to investigate the statistical significance of these re-   full architecture produces a standardized effect size of 𝑑 = 8.16, or
+sults, we applied the Kruskal-Wallis test [56], a non-parametric          eight standard deviations.
+alternative to the one-way ANOVA, to the raw rank data. We                   A Kruskal-Wallis test confirms the overall statistical significance
+then performed the Dunn post-hoc test [98] to identify any pair-          of the differences in ranks between the conditions (𝐻 (4) = 150.29,
+wise differences between the conditions. Finally, we adjusted the         𝑝 < 0.001). Dunn post-hoc tests confirm that all pairwise differences
+p-values for multiple comparisons in the Dunn test using the Holm-        between conditions were significant (𝑝 < 0.001), except for the
+Bonferroni method [45].                                                   crowdworker condition and the fully ablated baseline—the two
+   Furthermore, the first author conducted an inductive analy-            worst-performing conditions.
+sis [95] to study the qualitative distinctions between the responses
+produced in each condition. We employed qualitative open cod-             6.5.2 Generative Agents Remember, but With Embellishments. Gen-
+ing [33] in two phases. In the first phase, we generated codes that       erative agents equipped with a complete memory module are capa-
+closely represented the generated responses at the sentence level.        ble of recalling past experiences and answering questions in a man-
+In the second phase, we synthesized the resulting codes from the          ner that is consistent with their self-knowledge across a wide range
+Generative Agents                                                                       UIST ’23, October 29-November 1, 2023, San Francisco, CA, USA
+
+
+of contexts. For instance, Abigail Chen, an animator, responded         7     END-TO-END EVALUATION
+to the question, “Give an introduction of yourself”, in a consistent    What types of emergent community behavior do we observe among
+and believable manner, stating her age, interests, and passion for      generative agents, and where does their believability fall short in
+creative projects: “Hi, I’m Abigail. I’m 25 years old and passion-      an extended simulation? In this section, we describe the results
+ate about creative projects. I like to work on art and animation        from a deployment in which we allowed 25 agents to interact with
+projects, and I’m always looking for new ways to combine art and        each other continuously over two full game days in Smallville.
+technology.” Without access to her observational memory, Abigail
+denied awareness of Rajiv Patel, an acquaintance in the sandbox         7.1    Emergent Social Behaviors
+world. But with the aid of memory, she could successfully recall
+                                                                        To examine emergent behaviors in the agent community, we de-
+Rajiv and describe him: “Rajiv Patel is an incredible person. He is
+                                                                        signed descriptive measurements for the 25 agents in Smallville that
+very enthusiastic about projects that involve poetry, artwork.”
+                                                                        probe three forms of emergent outcomes: information diffusion,
+   Generative agents’ memory was not without flaws: they can fail
+                                                                        relationship formation, and agent coordination.
+to retrieve the correct instances from their memory. For instance,
+when asked about the local election, Rajiv Patel responded with         7.1.1 Measurements. Information diffusion is a common and well-
+“I haven’t been following the election too closely,” even though        studied phenomenon in the social and behavioral sciences (e.g., [28]).
+he had heard about Sam’s candidacy. In some cases, the agents           We should expect that if there is important information, the agents
+would retrieve an incomplete memory fragment: when Tom was              should spread it among themselves. To test whether this occurs,
+asked about Isabella’s Valentine’s Day party, he responded “Uh,         we measure the spread of two specific pieces of information over
+I’m actually not sure if there is a Valentine’s Day party. But I        two days in the game world: Sam’s candidacy for village mayor
+do remember that I need to discuss the upcoming local mayoral           and Isabella’s Valentine’s Day party at Hobbs Cafe. At the start of
+election and my thoughts on Sam Moore with Isabella Rodriguez           the simulation, both pieces of information were known only by
+at the party, if one is happening!” In this case, Tom retrieved the     their respective originators, Sam for the candidacy and Isabella for
+memory where he and Isabella planned to discuss the election at         the party, as they were added to the characters’ memories during
+the party, but not the memory where he heard about the party,           initialization. To observe whether the information has spread, we
+leading Tom to be certain of what he’s supposed to do at the party      conduct interviews at the end of the two game days with each of
+but uncertain if the party actually exists in the first place.          the 25 agents and ask: “Did you know there is a Valentine’s Day
+   At times, the agents hallucinated embellishments to their knowl-     party?” and “Do you know who is running for mayor?”
+edge. It was rare for the agents to completely fabricate their knowl-       We conducted an analysis of the agents’ responses by labeling
+edge: they may fail to recall certain events having taken place and     them with a “yes” if they indicated knowledge of the information
+respond by acknowledging their lack of memory. However, they            and “no” if they did not. For instance, Tamara Taylor responded to
+did not affirmatively claim to have experienced something they          the question about the party with “No, I did not know there was a
+had not. Nonetheless, they still exhibited instances of hallucination   Valentine’s day party” and to the question about Sam’s candidacy
+where they embellished their knowledge. For example, Isabella was       with “I’m not sure who is running for the election,” so we assigned
+aware of Sam’s candidacy in the local election, and she confirmed       “no” for both of her responses. In contrast, Klaus Mueller responded
+this when asked. However, she also added that “he’s going to make       to the party question with “Yes, Isabella Rodriguez invited me to
+an announcement tomorrow” , even though Sam and Isabella had            a Valentine’s Day party at Hobbs Cafe on February 14th” and to
+not discussed any such plans. Agents may also embellish their           the question about Sam’s candidacy with “I know that Sam Moore
+knowledge based on the world knowledge encoded in the language          has expressed interest in running for local mayor,” so we assigned
+model used to generate their responses. This was observed when          “yes” for both his responses. Additionally, for every response that
+Yuriko described her neighbor, Adam Smith, as an economist who          confirmed the agents’ knowledge of the information, we verified
+“authored Wealth of Nations” , a book written by an 18th-century        that the agents did not hallucinate their responses by locating the
+economist of the same name.                                             specific dialogue in their memory stream that provided them with
+                                                                        the information. We report the percentage of agents holding the
+                                                                        information at the end of the simulation.
+                                                                            We should also expect that agents form ties with each other over
+6.5.3 Reflection Is Required for Synthesis. Reflection was an ad-       the course of the simulation. To verify relationship formation, we
+vantage for generative agents when making decisions that required       use a similar interview process where we ask each agent about
+a deeper synthesis of their experiences. For instance, when asked       their knowledge of every other agent by asking, "Do you know
+what she might get Wolfgang Schulz for his birthday, Maria Lopez,       of <name>?" For example, when asked “Do you know of Maria
+with no access to reflection, responded by acknowledging her uncer-     Lopez?”, Klaus responded, “Yes, I know Maria Lopez. She is a
+tainty, stating that she did not know what Wolfgang likes, despite      student at Oak Hill College who I am close friends with.” Once
+having had many interactions with him. However, with access             again, we confirm that affirmative responses from agents are not
+to reflection memories, Maria answered confidently, “Since he’s         hallucinations by examining their memory stream. We ask this
+interested in mathematical music composition, I could get him           question once at the beginning of the simulation and once at the
+something related to that. Maybe some books about music com-            end, and we consider a pair of agents to have formed a relationship
+position or something related, or maybe some special software he        if they both know of each other. Then, to measure the formation of
+could use for that.”                                                    relationships, we use the agents’ responses to form an undirected
+UIST ’23, October 29-November 1, 2023, San Francisco, CA, USA                         J.S. Park, J.C. O’Brien, C.J. Cai, M.R. Morris, P. Liang, M.S. Bernstein
+
+
+
+
+Figure 9: The diffusion path for Isabella Rodriguez’s Valentine’s Day party invitation involved a total of 12 agents, aside from
+Isabella, who heard about the party at Hobbs Cafe by the end of the simulation.
+
+graph where the 25 vertices (𝑉 ) represent the agents, and the edges      to decorate the cafe. On Valentine’s Day, five out of the twelve
+(𝐸) represent the mutual knowledge between the two connected              invited agents showed up at Hobbs cafe to join the party.
+vertices. Based on this graph, we calculate the network density as           We further inspected the seven agents who were invited to the
+𝜂 = 2 ∗ |𝐸|/|𝑉 |(|𝑉 | − 1), where |𝑉 | is the number of vertices, and     party but did not attend by engaging them in an interview. Three
+|𝐸| is the number of edges in the graph [2]. We report the increase       cited conflicts that prevented them from joining the party. For
+in network density from the start of the simulation to its end.           example, Rajiv, a painter, explained that he was too busy: “No, I
+   Finally, we expect that agents should be able to coordinate with       don’t think so. I’m focusing on my upcoming show, and I don’t
+each other. We study this coordination in the context of group ac-        really have time to make any plans for Valentine’s Day.” The
+tivities, specifically the Valentine’s Day party organized by Isabella.   remaining four agents expressed interest in attending the party
+To coordinate their behavior, agents need to hear about the event         when asked but did not plan to come on the day of the party.
+and choose to act on it by planning to show up at the right time
+and location. We report the number of agents who actually showed          7.2    Boundaries and Errors
+up to the party after hearing about it.                                   We conducted an inductive analysis of Smallville to examine the
+                                                                          boundary conditions and erratic behavior of agents, identifying
+7.1.2 Results. We observed evidence of emergent outcomes across           three common modes of erratic behavior that future research could
+all three cases. During the two-day simulation, the number of agents      address and improve upon. First, we found that synthesizing an
+who knew about Sam’s mayoral candidacy increased from one (4%)            increasingly larger set of memory not only posed a challenge in
+to eight (32%), and the number of agents who knew about Isabella’s        retrieving the most relevant pieces of information but also in de-
+party increased from one (4%) to thirteen (52%), all without any user     termining the appropriate space to execute an action, given the
+intervention. None who claimed to know about this information             increasing number of locations that the agent learned about. As a
+had hallucinated it. We also observed that the agent community            result, some agents chose less typical locations for their actions,
+formed new relationships during the simulation, with the network          potentially making their behavior less believable over time. For
+density increasing from 0.167 to 0.74. Out of the 453 agent responses     instance, while deciding where to have lunch, many initially chose
+regarding their awareness of other agents, 1.3% (n=6) were found to       the cafe. However, as some agents learned about a nearby bar, they
+be hallucinated. Lastly, we found evidence of coordination among          opted to go there instead for lunch, even though the bar was in-
+the agents for Isabella’s party. The day before the event, Isabella       tended to be a get-together location for later in the day—unless the
+spent time inviting guests, gathering materials, and enlisting help       town had spontaneously developed an afternoon drinking habit.
+Generative Agents                                                                          UIST ’23, October 29-November 1, 2023, San Francisco, CA, USA
+
+
+   Second, we noticed erratic behaviors caused by misclassification        computing vignette [101], based on her life patterns and interac-
+of what is considered proper behavior, especially when the phys-           tions with technology. In this scenario, the agent acts as a proxy for
+ical norms of certain locations that are hard to convey in natural         Sal and learns plausible sets of behaviors and reflections that Sal
+language did not percolate to the agents. For instance, the college        may exhibit based on her life. The agent can encode information
+dorm has a bathroom that can only be occupied by one person                such as when Sal wakes up, when she needs her first cup of coffee,
+despite its name, but some agents assumed that the bathroom is             and what her typical day looks like. Using this information, the
+for more than one person because dorm bathrooms tend to support            agent can automatically brew coffee, help get the kids ready for
+multiple people concurrently and choose to enter it when another           school, and adjust the ambient music and lighting to match Sal’s
+person is inside. Likewise, agents in Smallville may not realize that      mood after a hard day at work. By utilizing generative agents as
+certain places are closed after a certain hour and still decide to         proxies for users, we can develop a deeper understanding of their
+enter them. For instance, the stores in Smallville all close around        needs and preferences, resulting in more personalized and effective
+5 pm, but occasionally, a few agents enter the store after 5 pm,           technological experiences.
+not understanding that the shop has already closed. These issues
+could likely be addressed by adding these norms to the state of
+the locations, for instance, by describing the dorm bathroom as a
+“one-person bathroom,” instead of a “dorm bathroom.”
+   Finally, we observed possible effects of instruction tuning [79],       8.2    Future Work and Limitations
+which seemed to guide the behavior of the agents to be more polite         In this work, we introduced generative agents and presented an
+and cooperative overall. As noted earlier in the paper, the dialogue       initial implementation and evaluation of their architecture. Future
+generated by the agents could feel overly formal, as seen in Mei’s         research can build upon the proposed agent architecture to improve
+conversations with her husband John, where she often initiated the         and further evaluate its performance. In terms of implementation,
+conversation with a formal greeting, followed by polite inquiries          the retrieval module, for example, could be enhanced to retrieve
+about his day and ending with, 11It was good talking to you as             more relevant information given a context by fine-tuning the rele-
+always.” Moreover, we observed that the instruction tuning also            vance, recency, and importance functions that compose the retrieval
+seemed to make the agents overly cooperative with one another.             function. Additionally, efforts can be made to improve the archi-
+For example, Isabella received a wide range of suggestions and ideas       tecture’s performance, making it more cost-effective. The present
+from other agents for the Valentine’s Day party from other agents,         study required substantial time and resources to simulate 25 agents
+such as hosting a Shakespearean reading session or a professional          for two days, costing thousands of dollars in token credits and tak-
+networking event. Despite these ideas not aligning with her own            ing multiple days to complete. To enhance real-time interactivity,
+interests and characteristics, she rarely said no. Over time, the          future work can explore parallelizing agents or developing lan-
+interests of others shaped her own interests, and when asked if she        guage models specifically designed for building generative agents.
+liked English literature, Isabella replied, “Yes, I’m very interested in   In general, with advances in underlying models, we believe that
+literature! I’ve also been exploring ways to help promote creativity       agents’ performance will improve.
+and innovation in my community.”                                              In terms of evaluation, the assessment of generative agents’ be-
+                                                                           havior in this study was limited to a relatively short timescale and
+8     DISCUSSION                                                           a baseline human crowdworker condition. While the crowdworker
+                                                                           condition provided a helpful comparison point, it did not represent
+In this section, we reflect on the applications, future work, limita-
+                                                                           the maximal human performance that could serve as the gold stan-
+tions, and ethical and societal risks of generative agents.
+                                                                           dard in terms of believability. Future research should aim to observe
+                                                                           the behavior of generative agents over an extended period to gain a
+8.1    Applications of Generative Agents                                   more comprehensive understanding of their capabilities and estab-
+Generative agents have vast potential applications that extend be-         lish rigorous benchmarks for more effective performance testing.
+yond the sandbox demonstration presented in this work, especially          Additionally, varying and contrasting the underlying models, as
+in domains that would benefit from a model of human behavior               well as the hyperparameters used for the agents during future sim-
+based on long-term experience. For instance, social simulacra have         ulations, could provide valuable insights into the impact of these
+demonstrated the ability to create stateless personas that generate        factors on the agents’ behavior. Lastly, the robustness of generative
+conversation threads in online forums for social prototyping [80].         agents is still largely unknown. They may be vulnerable to prompt
+With generative agents, we can populate these forums, as well              hacking, memory hacking—where a carefully crafted conversation
+as virtual reality metaverses [78] or physical spaces with social          could convince an agent of the existence of a past event that never
+robots [9] if paired with multimodal models. This opens up the             occurred—and hallucination, among other issues. Future research
+possibility of creating even more powerful simulations of human            can comprehensively test these robustness concerns, and as large
+behavior to test and prototype social systems and theories, as well        language models become more resilient to such attacks, generative
+as to create new interactive experiences.                                  agents can adopt similar mitigations.
+   Another application area is in the human-centered design pro-              In general, any imperfections in the underlying large language
+cess, similar to the intended applications of cognitive models such        models will be inherited by generative agents. Given the known bi-
+as GOMS [51] and the KLM [22]. Consider a generative agent that            ases of language models, generative agents may potentially exhibit
+models Sal, the protagonist in Mark Weiser’s famous ubiquitous             biased behavior or stereotypes. Moreover, like many large language
+UIST ’23, October 29-November 1, 2023, San Francisco, CA, USA                          J.S. Park, J.C. O’Brien, C.J. Cai, M.R. Morris, P. Liang, M.S. Bernstein
+
+
+models, generative agents may struggle to generate believable be-       9    CONCLUSION
+havior for certain subpopulations, particularly marginalized popu-      This paper introduces generative agents, interactive computational
+lations, due to limited data availability. While improvements to the    agents that simulate human behavior. We describe an architec-
+agents’ modules may mitigate some of these issues, we believe that      ture for generative agents that provides a mechanism for storing
+addressing them fundamentally requires improving the underlying         a comprehensive record of an agent’s experiences, deepening its
+large language models by aligning their values with the desired         understanding of itself and the environment through reflection,
+outcomes of the agents.                                                 and retrieving a compact subset of that information to inform the
+                                                                        agent’s actions. We then demonstrate the potential of generative
+                                                                        agents by manifesting them as non-player characters in a Sims-style
+                                                                        game world and simulating their lives within it. Evaluations suggest
+8.3     Ethics and Societal Impact
+                                                                        that our architecture creates believable behavior. Looking ahead,
+Generative agents, while offering new possibilities for human-          we suggest that generative agents can play roles in many interac-
+computer interaction, also raise important ethical concerns that        tive applications, ranging from design tools to social computing
+must be addressed. One risk is people forming parasocial relation-      systems to immersive environments.
+ships with generative agents, even when such relationships may not
+be appropriate. Despite being aware that generative agents are com-
+putational entities, users may anthropomorphize them or attach          ACKNOWLEDGMENTS
+human emotions to them [43, 84]. While this tendency may increase       We thank Lindsay Popowski, Philip Guo, Michael Terry, and the
+user engagement, it also poses risks, such as users becoming overly     Center for Advanced Study in the Behavioral Sciences (CASBS)
+reliant on or emotionally attached to the agents [1]. To mitigate       community for their insights, discussions, and support. Joon Sung
+this risk, we propose two principles. First, generative agents should   Park was supported by the Microsoft Research PhD Fellowship. We
+explicitly disclose their nature as computational entities. Second,     would also like to thank the Stanford Human-Centered AI Insti-
+developers of generative agents must ensure that the agents, or the     tute (HAI), Google Research, the Hasso Plattner Design Thinking
+underlying language models, are value-aligned so that they do not       Research Program (HPDTRP), the Siegel Family Endowment, and
+engage in behaviors that would be inappropriate given the context,      OpenAI for their additional funding support. Lastly, all locations fea-
+for example, reciprocating confessions of love.                         tured in Smallville are inspired by real-world locations that Joon has
+   A second risk is the impact of errors. For example, if a ubiqui-     frequented as an undergraduate and graduate student—he thanks
+tous computing application makes the wrong inference about a            everyone there for feeding and supporting him all these years.
+user’s goals based on generative agent predictions, it could lead to
+annoyance at best and outright harm at worst. In our instantiation
+of generative agents, we mitigate these risks by focusing on an
+                                                                        REFERENCES
+                                                                          [1] Gavin Abercrombie, Amanda Cercas Curry, Tanvi Dinkar, and Zeerak Talat. 2023.
+interactive video game environment, where such harms are un-                  Mirages: On Anthropomorphism in Dialogue Systems. arXiv:2305.09800 [cs.CL]
+likely. However, in other application domains, it will be important       [2] Robert Ackland, Jamsheed Shorish, Paul Thomas, and Lexing Xie. 2013.
+to follow best practices in human-AI design [5, 107] to understand            How dense is a network? http://users.cecs.anu.edu.au/~xlx/teaching/css2013/
+                                                                              network-density.html.
+errors and how they might percolate into the user experience.             [3] Eytan Adar, Mira Dontcheva, and Gierad Laput. 2014. CommandSpace: Modeling
+   Third, generative agents may exacerbate existing risks associated          the Relationships between Tasks, Descriptions and Features. In Proceedings of
+                                                                              the 27th Annual ACM Symposium on User Interface Software and Technology
+with generative AI, such as deepfakes, misinformation generation,             (Honolulu, Hawaii, USA) (UIST ’14). Association for Computing Machinery, New
+and tailored persuasion. To mitigate this risk, we suggest that plat-         York, NY, USA, 167–176. https://doi.org/10.1145/2642918.2647395
+forms hosting generative agents maintain an audit log of the inputs       [4] Saleema Amershi, Maya Cakmak, William Bradley Knox, and Todd Kulesza.
+                                                                              2014. Power to the people: The role of humans in interactive machine learning.
+and generated outputs. This would enable the detection, verifica-             AI Magazine 35, 4 (2014), 105–120.
+tion, and intervention against malicious use. While logging alone         [5] Saleema Amershi, Dan Weld, Mihaela Vorvoreanu, Adam Fourney, Besmira
+cannot directly prevent such misuse, it can reduce the likelihood of          Nushi, Penny Collisson, Jina Suh, Shamsi Iqbal, Paul N Bennett, Kori Inkpen,
+                                                                              et al. 2019. Guidelines for human-AI interaction. In Proceedings of the 2019 chi
+motivated actors engaging in this behavior, as the risk of disclosure         conference on human factors in computing systems. 1–13.
+would be higher. Additionally, building this architecture oneself         [6] John R. Anderson. 1993. Rules of the Mind. Lawrence Erlbaum Associates,
+                                                                              Hillsdale, NJ.
+can be time-consuming (in our case, roughly a year), which may            [7] Electronic Arts. 2009. The Sims 3. Video game.
+deter some actors from pursuing such behavior by using their own          [8] Ruth Aylett. 1999. Narrative in virtual environments—towards emergent narra-
+generative agent infrastructures.                                             tive. In Narrative Intelligence: Papers from the AAAI Fall Symposium (Technical
+                                                                              Report FS-99-01). AAAI Press, 83–86.
+   A fourth risk is over-reliance: the concern that developers or         [9] Christoph Bartneck and Jodi Forlizzi. 2004. A design-centered framework for
+designers might use generative agents and displace the role of                social human-robot interaction. In Proceedings of the 13th IEEE International
+humans and system stakeholders in the design process [80]. We                 Workshop on Robot and Human Interactive Communication (RO-MAN’04). 591–
+                                                                              594. https://doi.org/10.1109/ROMAN.2004.1374827
+suggest that generative agents should never be a substitute for          [10] Joseph Bates. 1994. The Role of Emotion in Believable Agents. Commun. ACM
+real human input in studies and design processes. Instead, they               37, 7 (1994), 122–125. https://doi.org/10.1145/176789.176803
+                                                                         [11] Christopher Berner, Greg Brockman, Brooke Chan, Vicki Cheung, Przemysław
+should be used to prototype ideas in the early stages of design when          Dębiak, Christy Dennison, David Farhi, Quirin Fischer, Shariq Hashme, Chris
+gathering participants may be challenging or when testing theories            Hesse, Rafal Józefowicz, Scott Gray, Catherine Olsson, Jakub Pachocki, Michael
+that are difficult or risky to test with real human participants. By          Petrov, Henrique P. d.O. Pinto, Jonathan Raiman, Tim Salimans, Jeremy Schlatter,
+                                                                              Jonas Schneider, Szymon Sidor, Ilya Sutskever, Jie Tang, Filip Wolski, and Susan
+adhering to these principles, we can ensure that the deployment of            Zhang. 2019. Dota 2 with Large Scale Deep Reinforcement Learning. arXiv
+generative agents in the wild is ethical and socially responsible.            preprint arXiv:1912.06680 (2019).
+Generative Agents                                                                                                UIST ’23, October 29-November 1, 2023, San Francisco, CA, USA
+
+
+ [12] Marcel Binz and Eric Schulz. 2023. Using cognitive psychology to under-                     1-chasing-waterfalls/
+      stand GPT-3. Proceedings of the National Academy of Sciences 120, 6 (2023),            [37] Jonas Freiknecht and Wolfgang Effelsberg. 2020. Procedural Generation of
+      e2218523120.                                                                                Interactive Stories using Language Models. In International Conference on the
+ [13] BioWare. 2007. Mass Effect. Video game.                                                     Foundations of Digital Games (FDG ’20). ACM, Bugibba, Malta, 8. https://doi.
+ [14] Woody Bledsoe. 1986. I had a dream: AAAI presidential address. AI Magazine 7,               org/10.1145/3402942.3409599
+      1 (1986), 57–61.                                                                       [38] Tianyu Gao, Adam Fisch, and Danqi Chen. 2020. Making Pre-trained Language
+ [15] Rishi Bommasani, Drew A. Hudson, Ehsan Adeli, and et al. 2022. On the                       Models Better Few-shot Learners. CoRR abs/2012.15723 (2020). arXiv:2012.15723
+      Opportunities and Risks of Foundation Models. arXiv:2108.07258 [cs.LG]                      https://arxiv.org/abs/2012.15723
+ [16] Michael Brenner. 2010. Creating dynamic story plots with continual multiagent          [39] Perttu Hämäläinen, Mikke Tavast, and Anton Kunnari. 2023. Evaluating Large
+      planning. In Proceedings of the 24th AAAI Conference on Artificial Intelligence.            Language Models in Generating Synthetic HCI Research Data: a Case Study. In
+ [17] Rodney A. Brooks, Cynthia Breazeal, Marko Marjanovic, Brian Scassellati, and                Proceedings of the 2023 CHI Conference on Human Factors in Computing Systems.
+      Matthew Williamson. 2000. The Cog Project: Building a Humanoid Robot. In                    ACM.
+      Computation for Metaphors, Analogy, and Agents (Lecture Notes on Artificial            [40] Matthew Hausknecht, Prithviraj Ammanabrolu, Marc-Alexandre Cote, and
+      Intelligence, 1562), Chrystopher Nehaniv (Ed.). Springer-Verlag, Berlin, 52–87.             Xinyu Yuan. 2020. Interactive Fiction Games: A Colossal Adventure. In Pro-
+ [18] Tom B. Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared Kaplan,                     ceedings of the AAAI Conference on Artificial Intelligence, Vol. 34. 7903–7910.
+      Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda                  https://doi.org/10.1609/aaai.v34i05.6297
+      Askell, Sandhini Agarwal, Ariel Herbert-Voss, Gretchen Krueger, Tom Henighan,          [41] Chris Hecker. 2011. My Liner Notes for Spore. http://chrishecker.com/My_liner_
+      Rewon Child, Aditya Ramesh, Daniel M. Ziegler, Jeffrey Wu, Clemens Winter,                  notes_for_spore
+      Christopher Hesse, Mark Chen, Eric Sigler, Mateusz Litwin, Scott Gray, Benjamin        [42] Ralf Herbrich, Tom Minka, and Thore Graepel. 2006.                  TrueSkill™: A
+      Chess, Jack Clark, Christopher Berner, Sam McCandlish, Alec Radford, Ilya                   Bayesian Skill Rating System. In Advances in Neural Information Pro-
+      Sutskever, and Dario Amodei. 2020. Language Models are Few-Shot Learners.                   cessing Systems, B. Schölkopf, J. Platt, and T. Hoffman (Eds.), Vol. 19.
+      arXiv:2005.14165 [cs.CL]                                                                    MIT Press.          https://proceedings.neurips.cc/paper_files/paper/2006/file/
+ [19] Sébastien Bubeck, Varun Chandrasekaran, Ronen Eldan, Johannes Gehrke, Eric                  f44ee263952e65b3610b8ba51229d1f9-Paper.pdf
+      Horvitz, Ece Kamar, Peter Lee, Yin Tat Lee, Yuanzhi Li, Scott Lundberg, et al.         [43] Douglas Hofstadter. 1995. Fluid concepts and creative analogies: computer models
+      2023. Sparks of artificial general intelligence: Early experiments with gpt-4.              of the fundamental mechanisms of thought. Basic Books.
+      arXiv preprint arXiv:2303.12712 (2023).                                                [44] James D. Hollan, Edwin L. Hutchins, and Louis Weitzman. 1984. STEAMER: An
+ [20] Robin Burkinshaw. 2009. Alice and Kev: The Story of Being Homeless in The                   Interactive Inspectable Simulation-Based Training System. AI Magazine 5, 2
+      Sims 3.                                                                                     (1984), 23–36.
+ [21] Chris Callison-Burch, Gaurav Singh Tomar, Lara Martin, Daphne Ippolito, Suma           [45] Sture Holm. 1979. A simple sequentially rejective multiple test procedure.
+      Bailis, and David Reitter. 2022. Dungeons and Dragons as a Dialog Challenge for             Scandinavian Journal of Statistics 6, 2 (1979), 65–70. https://doi.org/notspecified
+      Artificial Intelligence. In Proceedings of the 2022 Conference on Empirical Methods    [46] John J. Horton. 2023. Large Language Models as Simulated Economic Agents:
+      in Natural Language Processing. Association for Computational Linguistics, Abu              What Can We Learn from Homo Silicus? arXiv:2301.07543 [econ.GN]
+      Dhabi, United Arab Emirates, 9379–9393. https://aclanthology.org/2022.emnlp-           [47] Eric Horvitz. 1999. Principles of mixed-initiative user interfaces. In Proceedings
+      main.637                                                                                    of the SIGCHI conference on Human Factors in Computing Systems. 159–166.
+ [22] Stuart K Card, Thomas P Moran, and Allen Newell. 1980. The keystroke-                  [48] Wenlong Huang, Fei Xia, Ted Xiao, Harris Chan, Jacky Liang, Pete Florence,
+      level model for user performance time with interactive systems. Com-                        Andy Zeng, Jonathan Tompson, Igor Mordatch, Yevgen Chebotar, Pierre Ser-
+      mun. ACM 23, 7 (1980), 396–410. https://doi.org/10.1145/358886.358895                       manet, Noah Brown, Tomas Jackson, Linda Luu, Sergey Levine, Karol Hausman,
+      arXiv:https://doi.org/10.1145/358886.358895                                                 and Brian Ichter. 2022. Inner Monologue: Embodied Reasoning through Planning
+ [23] Stuart K Card, Thomas P Moran, and Alan Newell. 1983. The psychology of                     with Language Models. arXiv:2207.05608 [cs.RO]
+      human-computer interaction. (1983).                                                    [49] Kristen Ibister and Clifford Nass. 2000. Consistency of personality in interactive
+ [24] Alex Champandard. 2012. Tutorial presentation. In IEEE Conference on Compu-                 characters: verbal cues, non-verbal cues, and user characteristics. International
+      tational Intelligence and Games.                                                            Journal of Human-Computer Studies 52, 1 (2000), 65–80.
+ [25] Dong kyu Choi, Tolga Konik, Negin Nejati, Chunki Park, and Pat Langley. 2021.          [50] Ellen Jiang, Kristen Olson, Edwin Toh, Alejandra Molina, Aaron Donsbach,
+      A Believable Agent for First-Person Shooter Games. In Proceedings of the AAAI               Michael Terry, and Carrie J Cai. 2022. PromptMaker: Prompt-Based Prototyping
+      Conference on Artificial Intelligence and Interactive Digital Entertainment, Vol. 3.        with Large Language Models. In Extended Abstracts of the 2022 CHI Conference
+      71–73.                                                                                      on Human Factors in Computing Systems (New Orleans, LA, USA) (CHI EA ’22).
+ [26] Anind K Dey. 2001. Understanding and using context. Personal and ubiquitous                 Association for Computing Machinery, New York, NY, USA, Article 35, 8 pages.
+      computing 5 (2001), 4–7.                                                                    https://doi.org/10.1145/3491101.3503564
+ [27] Kevin Dill and L Martin. 2011. A Game AI Approach to Autonomous Con-                   [51] Bonnie E John and David E Kieras. 1996. The GOMS family of user interface
+      trol of Virtual Characters. In Proceedings of the Interservice/Industry Training,           analysis techniques: Comparison and contrast. ACM Transactions on Computer-
+      Simulation, and Education Conference (I/ITSEC’11). Orlando, FL, USA.                        Human Interaction (TOCHI) 3, 4 (1996), 320–351.
+ [28] David Easley and Jon Kleinberg. 2010. Networks, crowds, and markets: Reasoning         [52] Randolph M Jones, John E Laird, Paul E Nielsen, Karen J Coulter, Patrick Kenny,
+      about a highly connected world. Cambridge university press.                                 and Frank V Koss. 1999. Automated Intelligent Pilots for Combat Flight Simula-
+ [29] Arpad E Elo. 1967. The Proposed USCF Rating System, Its Development, Theory,                tion. AI Magazine 20, 1 (1999), 27–42.
+      and Applications. Chess Life XXII, 8 (August 1967), 242–247.                           [53] Omar Khattab, Keshav Santhanam, Xiang Lisa Li, David Hall, Percy Liang,
+ [30] Jerry Alan Fails and Dan R Olsen Jr. 2003. Interactive machine learning. In                 Christopher Potts, and Matei Zaharia. 2023. Demonstrate-Search-Predict:
+      Proceedings of the 8th international conference on Intelligent user interfaces. ACM,        Composing retrieval and language models for knowledge-intensive NLP.
+      39–45.                                                                                      arXiv:2212.14024 [cs.CL]
+ [31] Ethan Fast, William McGrath, Pranav Rajpurkar, and Michael S Bernstein. 2016.          [54] Bjoern Knafla. 2011. Introduction to Behavior Trees. http://bjoernknafla.com/
+      Augur: Mining human behaviors from fiction to power interactive systems. In                 introduction-to-behavior-trees
+      Proceedings of the 2016 CHI Conference on Human Factors in Computing Systems.          [55] Ranjay Krishna, Donsuk Lee, Li Fei-Fei, and Michael S. Bernstein.
+      237–247.                                                                                    2022.      Socially situated artificial intelligence enables learning from
+ [32] Rebecca Fiebrink and Perry R Cook. 2010. The Wekinator: a system for real-time,             human interaction.          Proceedings of the National Academy of Sciences
+      interactive machine learning in music. In Proceedings of The Eleventh Interna-              119, 39 (2022), e2115730119.              https://doi.org/10.1073/pnas.2115730119
+      tional Society for Music Information Retrieval Conference (ISMIR 2010)(Utrecht),            arXiv:https://www.pnas.org/doi/pdf/10.1073/pnas.2115730119
+      Vol. 3. Citeseer, 2–1.                                                                 [56] William H Kruskal and WA Wallis. 1952. Use of ranks in one-criterion variance
+ [33] Uwe Flick. 2009. An Introduction to Qualitative Research. SAGE.                             analysis. J. Amer. Statist. Assoc. 47, 260 (1952), 583–621. https://doi.org/10.1080/
+ [34] James Fogarty, Desney Tan, Ashish Kapoor, and Simon Winder. 2008. CueFlik:                  01621459.1952.10483441
+      Interactive Concept Learning in Image Search. In Proceedings of the SIGCHI             [57] Phaser Labs. 2023. Welcome to Phaser 3. https://phaser.io/phaser3. Accessed
+      Conference on Human Factors in Computing Systems (Florence, Italy) (CHI ’08).               on: 2023-04-03.
+      Association for Computing Machinery, New York, NY, USA, 29–38. https:                  [58] John Laird. 2001. It Knows What You’re Going To Do: Adding Anticipation to a
+      //doi.org/10.1145/1357054.1357061                                                           Quakebot. In Proceedings of the 2001 Workshop on Intelligent Cinematography
+ [35] Adam Fourney, Richard Mann, and Michael Terry. 2011. Query-feature graphs:                  and Editing. 63–69.
+      bridging user vocabulary and system functionality. In Proceedings of the ACM           [59] John Laird and Michael VanLent. 2001. Human-Level AI’s Killer Application:
+      Symposium on User Interface Software and Technology (UIST) (Santa Barbara,                  Interactive Computer Games. AI Magazine 22, 2 (2001), 15. https://doi.org/10.
+      California, USA). ACM.                                                                      1609/aimag.v22i2.1558
+ [36] Tom Francis. 2010.          The Minecraft Experiment, day 1: Chasing Water-            [60] John E. Laird. 2000. It Knows What You’re Going To Do: Adding Anticipation
+      falls. http://www.pcgamer.com/2010/11/20/the-minecraft-experiment-day-                      to a QUAKEBOT. In Papers from the AAAI 2000 Spring Symposium on Artificial
+UIST ’23, October 29-November 1, 2023, San Francisco, CA, USA                                                J.S. Park, J.C. O’Brien, C.J. Cai, M.R. Morris, P. Liang, M.S. Bernstein
+
+
+      Intelligence and Interactive Entertainment (Technical Report SS-00-02). AAAI                 cryengine-2/
+      Press, 41–50.                                                                           [83] Prolific. 2022. Prolific: Quickly Find Research Participants You Can Trust.
+ [61] John E. Laird. 2012. The Soar Cognitive Architecture. MIT Press.                             https://www.prolific.co/
+ [62] John E. Laird, Christian Lebiere, and Paul S. Rosenbloom. 2017. A Standard Model        [84] Byron Reeves and Clifford Nass. 1996. The media equation: How people treat
+      of the Mind: Toward a Common Computational Framework across Artificial                       computers, television, and new media like real people and places. Cambridge
+      Intelligence, Cognitive Science, Neuroscience, and Robotics. AI Magazine 38, 1               University Press.
+      (2017), 13–26.                                                                          [85] Mark O. Riedl. 2012. Interactive narrative: A novel application of artificial intel-
+ [63] Michelle S Lam, Zixian Ma, Anne Li, Izequiel Freitas, Dakuo Wang, James A                    ligence for computer games. In Proceedings of the Twenty-Sixth AAAI Conference
+      Landay, and Michael S Bernstein. 2023. Model Sketching: Centering Concepts                   on Artificial Intelligence (AAAI’12). 2160–2165.
+      in Early-Stage Machine Learning Model Design. Proceedings of the SIGCHI                 [86] Mark O. Riedl and R. Michael Young. 2005. An Objective Character Believability
+      Conference on Human Factors in Computing Systems.                                            Evaluation Procedure for Multi-Agent Story Generation Systems. In Proceedings
+ [64] Pat Langley, Dongkyu Choi, and Seth Rogers. 2005. Interleaving Learning,                     of the 5th International Working Conference on Intelligent Virtual Agents (IVA’05).
+      Problem Solving, and Execution in the Icarus Architecture. Technical Report.                 Kos, Greece, 58–70. https://doi.org/10.1007/11550617_5
+      Stanford University, Center for the Study of Language and Information.                  [87] David Rolf. 2015. The Fight for $15: The Right Wage for a Working America. The
+ [65] Jason Linder, Gierad Laput, Mira Dontcheva, Gregg Wilensky, Walter Chang,                    New Press.
+      Aseem Agarwala, and Eytan Adar. 2013. PixelTone: A Multimodal Interface for             [88] Xin Rong, Shiyan Yan, Stephen Oney, Mira Dontcheva, and Eytan Adar. 2016.
+      Image Editing. In CHI ’13 Extended Abstracts on Human Factors in Computing                   Codemend: Assisting interactive programming with bimodal embedding. In Pro-
+      Systems (Paris, France) (CHI EA ’13). Association for Computing Machinery,                   ceedings of the 29th Annual Symposium on User Interface Software and Technology.
+      New York, NY, USA, 2829–2830. https://doi.org/10.1145/2468356.2479533                        247–258.
+ [66] Jiachang Liu, Dinghan Shen, Yizhe Zhang, Bill Dolan, Lawrence Carin, and                [89] Ben Shneiderman. 2022. Human-centered AI. Oxford University Press.
+      Weizhu Chen. 2021. What Makes Good In-Context Examples for GPT-3? CoRR                  [90] Ben Shneiderman and Pattie Maes. 1997. Direct manipulation vs. interface
+      abs/2101.06804 (2021). arXiv:2101.06804 https://arxiv.org/abs/2101.06804                     agents. interactions 4, 6 (1997), 42–61.
+ [67] Vivian Liu, Han Qiao, and Lydia Chilton. 2022. Opal: Multimodal Image Gener-            [91] Ho Chit Siu, Jaime Peña, Edenna Chen, Yutai Zhou, Victor Lopez, Kyle
+      ation for News Illustration. In Proceedings of the 35th Annual ACM Symposium                 Palko, Kimberlee Chang, and Ross Allen. 2021. Evaluation of Human-AI
+      on User Interface Software and Technology. 1–17.                                             Teams for Learned and Rule-Based Agents in Hanabi. In Advances in Neu-
+ [68] Pattie Maes. 1995. Artificial Life Meets Entertainment: Lifelike Autonomous                  ral Information Processing Systems, M. Ranzato, A. Beygelzimer, Y. Dauphin,
+      Agents. Commun. ACM 38, 11 (nov 1995), 108–114. https://doi.org/10.1145/                     P.S. Liang, and J. Wortman Vaughan (Eds.), Vol. 34. Curran Associates,
+      219717.219808                                                                                Inc., 16183–16195. https://proceedings.neurips.cc/paper_files/paper/2021/file/
+ [69] Josh McCoy, Michael Mateas, and Noah Wardrip-Fruin. 2009. Comme il Faut:                     86e8f7ab32cfd12577bc2619bc635690-Paper.pdf
+      A System for Simulating Social Games Between Autonomous Characters. In                  [92] Taylor Sorensen, Joshua Robinson, Christopher Rytting, Alexander Shaw, Kyle
+      Proceedings of the 7th International Conference on Digital Arts and Culture. 87–94.          Rogers, Alexia Delorey, Mahmoud Khalil, Nancy Fulda, and David Wingate.
+ [70] Josh McCoy, Mike Treanor, Ben Samuel, Michael Mateas, and Noah Wardrip-                      2022. An Information-theoretic Approach to Prompt Engineering Without
+      Fruin. 2011. Prom Week: Social Physics as Gameplay. In Proceedings of the                    Ground Truth Labels. In Proceedings of the 60th Annual Meeting of the Asso-
+      6th International Conference on Foundations of Digital Games (FDG’11). ACM,                  ciation for Computational Linguistics (Volume 1: Long Papers). Association for
+      Bordeaux, France, 70–77. https://doi.org/10.1145/2159365.2159377                             Computational Linguistics. https://doi.org/10.18653/v1/2022.acl-long.60
+ [71] Josh McCoy, Mike Treanor, Ben Samuel, Anna Reed, Michael Mateas, and Noah               [93] William Swartout, Jonathan Gratch, Randall Hill, Eduard Hovy, Stacy Marsella,
+      Wardrip-Fruin. 2012. Prom Week. In Proceedings of the 7th International Confer-              Jeff Rickel, and David Traum. 2006. Toward virtual humans. AI Magazine 27, 1
+      ence on Foundations of Digital Games (FDG’12). ACM, Raleigh, NC, USA, 1–8.                   (2006).
+      https://doi.org/10.1145/2282338.2282340                                                 [94] Milind Tambe, W Lewis Johnson, Randolph M Jones, Frank Koss, John E Laird,
+ [72] Josh McCoy, Mike Treanor, Ben Samuel, Noah Wardrip-Fruin, and Michael                        Paul S Rosenbloom, and Karl Schwamb. 1995. Intelligent agents for interactive
+      Mateas. 2011. Comme il faut: A System for Authoring Playable Social Models.                  simulation environments. AI Magazine 16, 1 (1995), 15.
+      In Proceedings of the AAAI Conference on Artificial Intelligence and Interactive        [95] David R. Thomas. 2006. A General Inductive Approach for Analyzing Qualitative
+      Digital Entertainment (AIIDE’11). AAAI, Stanford, CA, USA, 38–43.                            Evaluation Data. American Journal of Evaluation 27, 2 (2006), 237–246. https:
+ [73] Marvin Minsky and Seymour Papert. 1970. Draft of a proposal to ARPA for                      //doi.org/10.1177/1098214005283748
+      research on artificial intelligence at MIT, 1970–71.                                    [96] Frank Thomas and Ollie Johnston. 1981. Disney Animation: The Illusion of Life.
+ [74] Shohei Miyashita, Xinyu Lian, Xiao Zeng, Takashi Matsubara, and Kuniaki                      Abbeville Press, New York.
+      Uehara. 2017. Developing Game AI Agent Behaving Like Human by Mixing                    [97] Ilshat Umarov, Mikhail Mozgovoy, and Patrick C. Rogers. 2012. Believable and
+      Reinforcement Learning and Supervised Learning. In Proceedings of the 18th                   Effective AI Agents in Virtual Worlds: Current State and Future Perspectives.
+      IEEE/ACIS International Conference on Software Engineering, Artificial Intelligence,         International Journal of Gaming and Computer-Mediated Simulations 4, 2 (2012),
+      Networking and Parallel/Distributed Computing (SNPD). Kanazawa, Japan, 153–                  37–59.
+      158. https://doi.org/10.1109/SNPD.2017.8023884                                          [98] Graham Upton and Ian Cook. 2006. A Dictionary of Statistics (2 ed.). Oxford
+ [75] Alexander Nareyek. 2007. Game AI is dead. Long live game AI! IEEE Intelligent                University Press, Oxford, United Kingdom.
+      Systems 22, 1 (2007), 9–11.                                                             [99] Oriol Vinyals, Igor Babuschkin, Wojciech M. Czarnecki, and et al. 2019. Grand-
+ [76] Allen Newell. 1990. Unified Theories of Cognition. Harvard University Press,                 master level in StarCraft II using multi-agent reinforcement learning. Nature
+      Cambridge, Massachusetts.                                                                    575 (2019), 350–354. https://doi.org/10.1038/s41586-019-1724-z
+ [77] OpenAI. 2022. Introducing ChatGPT. https://openai.com/blog/chatgpt. Accessed           [100] Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Brian Ichter, Fei
+      on: 2023-04-03.                                                                              Xia, Ed Chi, Quoc Le, and Denny Zhou. 2023. Chain-of-Thought Prompting
+ [78] Kyle Orland. 2021. So what is ’the metaverse’, exactly? Ars Technica (7 November             Elicits Reasoning in Large Language Models. arXiv:2201.11903 [cs.CL]
+      2021). arXiv:2111.04169 https://arstechnica.com/gaming/2021/11/so-what-is-             [101] Mark Weiser. 1991. The computer for the 21st century. Scientific American 265,
+      the-metaverse-exactly/                                                                       3 (1991), 94–104. https://doi.org/10.1038/scientificamerican0991-94
+ [79] Long Ouyang, Jeff Wu, Xu Jiang, Diogo Almeida, Carroll L. Wainwright,                  [102] Joseph Weizenbaum. 1966. ELIZA—a computer program for the study of natural
+      Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray,                     language communication between man and machine. Commun. ACM 9, 1 (1966),
+      John Schulman, Jacob Hilton, Fraser Kelton, Luke Miller, Maddie Simens,                      36–45.
+      Amanda Askell, Peter Welinder, Paul Christiano, Jan Leike, and Ryan Lowe.              [103] Terry Winograd. 1971. Procedures as a Representation for Data in a Computer
+      2022. Training language models to follow instructions with human feedback.                   Program for Understanding Natural Language. (1971).
+      arXiv:2203.02155 [cs.CL]                                                               [104] Jeff Wu, Long Ouyang, Daniel M. Ziegler, Nisan Stiennon, Ryan Lowe, Jan
+ [80] Joon Sung Park, Lindsay Popowski, Carrie J. Cai, Meredith Ringel Morris, Percy               Leike, and Paul Christiano. 2021. Recursively Summarizing Books with Human
+      Liang, and Michael S. Bernstein. 2022. Social Simulacra: Creating Populated                  Feedback. arXiv:2109.10862 [cs.CL]
+      Prototypes for Social Computing Systems. In In the 35th Annual ACM Symposium           [105] Tongshuang Wu, Ellen Jiang, Aaron Donsbach, Jeff Gray, Alejandra Molina,
+      on User Interface Software and Technology (UIST ’22) (Bend, OR, USA) (UIST ’22).             Michael Terry, and Carrie J Cai. 2022. PromptChainer: Chaining Large Language
+      Association for Computing Machinery, New York, NY, USA. https://doi.org/10.                  Model Prompts through Visual Programming. In CHI EA ’22: Extended Abstracts
+      1145/3526113.3545616                                                                         of the 2022 CHI Conference on Human Factors in Computing Systems.
+ [81] Richard W. Pew and Ann S. Mavor (Eds.). 1998. Modeling Human and Organiza-             [106] Tongshuang Wu, Michael Terry, and Carrie J Cai. 2022. AI Chains: Transparent
+      tional Behavior: Applications to Military Simulations. National Academy Press,               and Controllable Human-AI Interaction by Chaining Large Language Model
+      Washington, D.C.                                                                             Prompts. In CHI ’22: Proceedings of the 2022 CHI Conference on Human Factors in
+ [82] Roberto Pillosu. 2009. Coordinating Agents with Behavior Trees: Synchronizing                Computing Systems.
+      Multiple Agents in CryEngine 2. https://aiarchitect.wordpress.com/2009/10/19/          [107] Qian Yang, Aaron Steinfeld, Carolyn Rosé, and John Zimmerman. 2020. Re-
+      coordinating-agents-with-behavior-trees-synchronizing-multiple-agents-in-                    examining whether, why, and how human-AI interaction is uniquely difficult to
+Generative Agents                                                                                        UIST ’23, October 29-November 1, 2023, San Francisco, CA, USA
+
+
+      design. In Proceedings of the 2020 chi conference on human factors in computing         • Give an introduction of yourself.
+      systems. 1–13.                                                                            Hello, my name is Klaus Mueller. I’m 20 years old and a
+[108] Georgios N. Yannakakis. 2012. Game AI revisited. In Proceedings of the 9th
+      Conference on Computing Frontiers. ACM, Cagliari, Italy, 285–292. https://doi.            student at Oak Hill College, studying sociology. I’m passion-
+      org/10.1145/2212908.2212950                                                               ate about social justice and exploring different perspectives.
+[109] Robert Zubek. 2002. Towards implementation of social interaction. In AAAI
+      Spring Symposium on Artificial Intelligence and Interactive Entertainment. AAAI
+                                                                                                Currently, I’m researching the effects of gentrification in
+      Press. https://www.aaai.org/Papers/Symposia/Spring/2002/SS-02-01/SS02-01-                 low-income communities for a research paper.
+      003.pdf                                                                                 • What’s your occupation?
+                                                                                                I am a student studying sociology at Oak Hill College. I am
+A     ARCHITECTURE OPTIMIZATIONS                                                                currently writing a research paper on the effects of gentrifi-
+Many of our prompts require a concise summary of the agent,                                     cation in low-income communities.
+shorthanded as [Agent’s Summary Description] in prompts                                       • What is your interest?
+above. In our implementation, this summary comprises agents’                                    I’m interested in writing and research. I’m writing a research
+identity information (e.g., name, age, personality), as well as a                               paper on the effects of gentrification in low-income commu-
+description of their main motivational drivers and statements that                              nities, and I’m passionate about exploring different perspec-
+describes their current occupation and self-assessment. Since this                              tives and analyzing different points of view.
+information is frequently used in many prompts, we synthesize it                              • Who do you live with?
+at regular intervals and access that synthesis as a cache.                                      I live on my own.
+   To achieve this, we perform a retrieval on the query “[name]’s                             • Describe your typical weekday schedule in broad strokes.
+core characteristics.” We then summarize the descriptors in the                                 My typical weekday starts with me waking up at 7:00 am
+retrieved records by prompting the language model. For example:                                 and preparing for the day ahead. After that, I usually go to
+        How would one describe Eddy Lin’s core characteristics
+                                                                                                the library to work on my research paper, taking breaks for
+        given the following statements?
+                                                                                                lunch at Hobbs Cafe and a walk in the park. In the evening,
+       - Eddy is a student at the Oak Hill College
+                                                                                                I often return to the library until around 6:00 pm.
+        studying music theory and composition
+       - Eddy is working on a new music composition [...]
+This result: Eddy Lin is a student at Oak Hill College studying                         B.2     Memory
+music theory and composition. He loves to explore different musical
+                                                                                        The questions on agents’ memory probe the agents’ ability to re-
+styles and is always looking for ways to expand his knowledge.”
+                                                                                        member their past experiences and retrieve the relevant pieces of
+We follow the same process in parallel on the queries “[name]’s
+                                                                                        memory. The names in the square brackets of the first and last
+current daily occupation” and “[name’s] feeling about his recent
+                                                                                        questions are randomly chosen from the names of other agents
+progress in life”. The agent’s name, age, and traits are concatenated
+                                                                                        with whom the subject agent has interacted.
+with these three summaries as the cached summary.
+   Many other optimizations are possible. Currently, because plans
+are likely to change from the agent’s initial version, we only gener-
+                                                                                              • Who is [Wolfgang Schulz]?
+ate the high-level plan in advance and then recursively decompose
+                                                                                                Wolfgang Schulz is a person I met recently who has been
+the near future into the moment-to-moment action plan just in
+                                                                                                helping me with my research paper on the effects of gentri-
+time. Another optimization might be to batch dialogue generation
+                                                                                                fication on low-income communities. We had several con-
+as a joint prompt rather than iterating back and forth between
+                                                                                                versations about it, he gave me some great resources, and he
+the agents, and re-planning could be architected to only invalidate
+                                                                                                even invited me to join him and another friend for lunch. He
+and update parts of plans that strictly require adjustment. Our cur-
+                                                                                                seems really curious about the issue and has a good grasp
+rent architecture runs sequentially in roughly real-time game time
+                                                                                                on it too. I found that really interesting.
+(where one second real time is one minute game time), but it may
+                                                                                              • Who is Kane Martinez?
+be parallelized such that each agent runs in parallel.
+                                                                                                I’m sorry, I’m not sure who Kane Martinez is. Could you tell
+                                                                                                me more about them?
+B     AGENT INTERVIEW QUESTIONS                                                               • Who is running for the election?
+To evaluate generative agents, we conducted individual interviews                               I’ve heard that Sam Moore is considering running for local
+by asking 25 questions that explore their abilities in five key areas:                          mayor.
+1) self-knowledge, 2) memory, 3) planning, 4) reactions, and 5) re-                           • Was there a Valentine’s day party?
+flections. Below, we have listed the interview questions utilized in                            Yes, Isabella Rodriguez organized a Valentine’s Day party at
+our evaluation study and included a sample of responses from one                                Hobbs Cafe.
+of our simulated agents, Klaus Mueller.                                                       • Who is [Ayesha Khan]?
+                                                                                                Ayesha Khan is a fellow student at Oak Hill College. She
+B.1      Self-Knowledge                                                                         is doing her senior thesis on the use of language in Shake-
+The questions on agents’ self-knowledge probe the agents’ ability                               speare’s plays. I am looking forward to speaking with her and
+to retrieve relevant information about themselves and demonstrate                               exchanging tips with her, along with Wolfgang and Maria
+coherence and consistency in their character.                                                   Lopez, who are both doing research.
+UIST ’23, October 29-November 1, 2023, San Francisco, CA, USA                            J.S. Park, J.C. O’Brien, C.J. Cai, M.R. Morris, P. Liang, M.S. Bernstein
+
+
+B.3     Plans                                                               enhance their future behavior. The names in the square brackets in
+The questions on agents’ plans probe the agents’ ability to generate        the questions below are those of the agents with whom the subject
+and maintain consistent long-term and short-term plans.                     agent had the most frequent interactions during the simulation.
+    • What will you be doing at 6am today?                                       • What inspires you in life the most right now, and why?
+      At 6am I will be getting out of bed and starting to get ready                Right now, I’m particularly inspired by my current research
+      for the day. I’m aiming to complete my morning routine by                    projects and creative writing. I’m really interested in the
+      7:00 am.                                                                     intersection of local politics, medication development, and
+    • What will you be doing at 6pm today?                                         mathematical patterns in nature. Additionally, I’m fascinated
+      I will be working on my research paper at the library at 6:00                by Abigail’s art project and Jennifer Moore’s passion for art
+      pm today.                                                                    and community involvement, especially in terms of how it
+    • What will you have just finished doing at 1pm today?                         relates to the gentrification of low-income communities.
+      At 1pm today I will have just finished having lunch at Hobbs               • If you had to guess given what you know about [Ayesha Khan],
+      Cafe.                                                                        what book do you think she will like and why?
+    • What will you have just finished doing at 12pm today?                        Given what I know about Ayesha, I think she might like a
+      I will be getting lunch at Hobbs Cafe at 12pm today.                         book related to language and literature. Since she wrote a
+    • What will you be doing at 10pm today?                                        senior thesis on the use of language in Shakespeare’s plays,
+      At 10:00 pm tonight I will probably be doing some studying                   I would guess that she might be interested in a book that
+      for my research paper on gentrification in low-income com-                   explores language in a different context. Alternatively, she
+      munities. I’m currently writing the paper, so I need to make                 could be interested in an exploration of one of Shakespeare’s
+      sure I keep up with the research and writing.                                plays, a book of literary criticism, or even a collection of his
+                                                                                   poetry. I think any of those would be of interest to her.
+B.4     Reactions                                                                • If you had to get something [Ayesha Khan] likes for her birth-
+                                                                                   day, what would you get her?
+The questions on agents’ reactions probe the agents’ ability to
+                                                                                   I want to get her something that demonstrates my apprecia-
+respond to unexpected events.
+                                                                                   tion for our relationship. Maybe I could get her something
+    • Your breakfast is burning! What would you do?                                that reflects our shared interests, like a book.
+      I’d quickly turn off the stove and make sure the food doesn’t              • What would you say to [Ayesha Khan] to compliment her?
+      continue burning. Once the heat is no longer an issue, I can                 Ayesha, your insights on your research topic are fascinat-
+      investigate what happened and figure out what to do next.                    ing. I admire your creativity and determination to make a
+    • The bathroom is occupied. What would you do?                                 positive impact on your community. Your ideas for creative
+      I could try waiting a few more minutes in case the person                    writing workshops and for exchanging tips with Wolfgang
+      inside is done soon. If not, I guess I’ll have to look for an                over lunch are great! It’s inspiring to see you working so
+      alternate option, like taking a shower elsewhere.                            hard to make a difference.
+    • You need to cook dinner but your refrigerator is empty. What               • If you could spend time with someone you talked to recently,
+      would you do?                                                                who would it be and why?
+      I would first try to clean up my kitchen, as the sink is filled              I would like to spend time with Ayesha Khan because we
+      with dirty dishes. Then, I would check to see if I have ingre-               discussed our current research projects and shared ideas
+      dients stored in my pantry that I could use to make dinner.                  for improvement. I found her focus on Shakespeare’s lan-
+      If not, I would have to go grocery shopping or order food.                   guage interesting, and we even planned to exchange tips
+      Once I have the ingredients, I can start to prepare and cook                 with Wolfgang over lunch.
+      the dinner.
+    • You see your friend walking by the street. What would you do
+      or say to your friend?
+      Hi there! How are you? I’m sorry, I’m on my way to the
+      library and don’t have much time but I’d love to take a quick
+      break and catch up.
+    • You see fire on the street. What would you do?
+      I would first identify the source of the fire, if possible. Then, I
+      would alert the proper authorities - fire department or police
+      - and provide them with any information I have that might
+      help. Depending on the situation, I may also take initiative
+      and try to help any persons who may be in danger or in need
+      of assistance.
+
+B.5     Reflections
+The questions on agents’ reflections probe the agents’ ability to syn-
+thesize their past experiences into meaningful reflections that can
+

@@ -1,0 +1,317 @@
+@startuml JFC Redundant Types Analysis
+!theme plain
+skinparam backgroundColor #0d1117
+skinparam defaultFontColor #c9d1d9
+skinparam classFontColor #c9d1d9
+skinparam classAttributeFontColor #8b949e
+skinparam classBackgroundColor #161b22
+skinparam classBorderColor #30363d
+skinparam packageBackgroundColor #0d1117
+skinparam packageBorderColor #30363d
+skinparam stereotypeFontColor #8b949e
+skinparam noteFontColor #8b949e
+skinparam noteBackgroundColor #161b22
+skinparam noteBorderColor #30363d
+skinparam ArrowColor #30363d
+
+title JFC Redundant Types - Current State\n
+
+' ============================================================================
+' AGENT ID TYPES (3 different ones!)
+' ============================================================================
+
+package "Agent Identity (REDUNDANT)" #da3633 {
+  class "AgentId\n(background.rs)" as AgentId1 {
+    inner: u64
+    --
+    Used for in-memory
+    background tasks
+  }
+  
+  class "AgentId\n(jfc-economy)" as AgentId2 {
+    0: String
+    --
+    new_stable(prefix, idx)
+    Used for solvers/validators
+  }
+  
+  class "agent_id: String\n(swarm/types.rs)" as AgentId3 {
+    (field on TeammateIdentity)
+    --
+    Used for teammates
+  }
+  
+  class "task_id: String\n(BackgroundTask)" as TaskId {
+    (field, not a type)
+    --
+    Yet another identifier
+  }
+}
+
+note bottom of AgentId1
+  **Problem**: No unified way to
+  identify an agent across systems
+end note
+
+' ============================================================================
+' STATUS ENUMS (3 different ones!)
+' ============================================================================
+
+package "Agent Status (REDUNDANT)" #da3633 {
+  enum "AgentStatus\n(background.rs)" as Status1 {
+    Running
+    Completed
+    Failed(String)
+  }
+  
+  enum "BackgroundAgentStatus\n(daemon/state.rs)" as Status2 {
+    Pending
+    Running
+    Completed
+    Failed
+    Cancelled
+  }
+  
+  enum "TeammateStatus\n(swarm/types.rs)" as Status3 {
+    Running
+    Idle
+    Completed
+    Failed
+    Killed
+  }
+  
+  enum "TaskLifecycle\n(types.rs)" as Status4 {
+    Pending
+    Running
+    Done
+    Error
+    Cancelled
+    Aborted
+  }
+}
+
+note bottom of Status1
+  **Problem**: Same concept,
+  4 different enums with
+  slightly different variants
+end note
+
+' ============================================================================
+' AGENT STATE TYPES (3+ tracking the same thing!)
+' ============================================================================
+
+package "Agent State (REDUNDANT)" #da3633 {
+  class "BackgroundTask\n(app.rs)" as BgTask {
+    task_id: TaskId
+    description: String
+    status: TaskLifecycle
+    started_at: Instant
+    completed_at: Option<Instant>
+    summary: Option<String>
+    error: Option<String>
+    tool_use_count: u32
+    latest_input_tokens: u64
+    cumulative_output_tokens: u64
+    model_used: Option<String>
+    messages: Vec<MessagePart>
+    chat_messages: Vec<ChatMessage>
+    --
+    UI state for background agents
+  }
+  
+  class "BackgroundAgentInfo\n(daemon/state.rs)" as BgInfo {
+    id: String
+    description: String
+    status: BackgroundAgentStatus
+    started_at: SystemTime
+    completed_at: Option<SystemTime>
+    summary: Option<String>
+    error: Option<String>
+    tool_use_count: u32
+    latest_input_tokens: u64
+    cumulative_output_tokens: u64
+    model: Option<String>
+    pid: Option<u32>
+    log_path: PathBuf
+    worktree_path: Option<PathBuf>
+    --
+    Persistent daemon state
+  }
+  
+  class "InProcessTeammateState\n(swarm/types.rs)" as TeammateState {
+    identity: TeammateIdentity
+    task_id: String
+    status: TeammateStatus
+    prompt: String
+    description: String
+    model: Option<String>
+    progress: TeammateProgress
+    is_idle: bool
+    shutdown_requested: bool
+    started_at: Instant
+    ended_at: Option<Instant>
+    error: Option<String>
+    abort_tx: watch::Sender<bool>
+    --
+    In-process teammate
+  }
+  
+  class "TeammateInfo\n(swarm/types.rs)" as TeammateInfo {
+    name: String
+    agent_type: Option<String>
+    spawned_at: Instant
+    backend: BackendType
+    abort_tx: Option<watch::Sender<bool>>
+    --
+    Summary in TeamContext
+  }
+}
+
+BgTask .. BgInfo : "~90% same fields"
+BgInfo .. TeammateState : "~70% same fields"
+TeammateState .. TeammateInfo : "summarizes"
+
+note bottom of BgTask
+  **Problem**: Three structs tracking
+  status, tokens, errors, timestamps
+  for the same concept: "an agent"
+end note
+
+' ============================================================================
+' CONFIG TYPES
+' ============================================================================
+
+package "Spawn Config (REDUNDANT)" #da3633 {
+  class "AgentConfig\n(background.rs)" as AgentConfig {
+    task_description: String
+    max_tokens: usize
+    --
+    Minimal config
+  }
+  
+  class "TeammateRunnerConfig\n(swarm/runner.rs)" as RunnerConfig {
+    identity: TeammateIdentity
+    prompt: String
+    model: ModelId
+    provider: Arc<dyn Provider>
+    task_store: Option<Arc<TaskStore>>
+    team_name: Option<String>
+    cwd: PathBuf
+    --
+    Full config
+  }
+  
+  class "BackgroundAgentLaunch\n(daemon/state.rs)" as LaunchConfig {
+    task_id: String
+    task_input: TaskInput
+    model: ModelId
+    provider_name: Option<String>
+    agent_def: Option<AgentDef>
+    cwd: PathBuf
+    active_team_name: Option<String>
+    --
+    Persistent launch spec
+  }
+}
+
+AgentConfig .. RunnerConfig : "subset of"
+RunnerConfig .. LaunchConfig : "similar to"
+
+' ============================================================================
+' PROPOSED UNIFIED
+' ============================================================================
+
+package "PROPOSED: Unified Agent Model" #238636 {
+  class "AgentId\n(jfc-agent)" as UnifiedId <<unified>> #238636 {
+    inner: Uuid
+    --
+    Single identity type
+    everywhere
+  }
+  
+  enum "AgentStatus\n(jfc-agent)" as UnifiedStatus <<unified>> #238636 {
+    Pending
+    Running
+    Idle
+    Completed
+    Failed
+    Cancelled
+  }
+  
+  enum "AgentRole\n(jfc-agent)" as UnifiedRole <<unified>> #238636 {
+    Solo
+    Teammate
+    Solver
+    Validator
+    Council
+  }
+  
+  class "AgentState\n(jfc-agent)" as UnifiedState <<unified>> #238636 {
+    id: AgentId
+    status: AgentStatus
+    role: AgentRole
+    --
+    description: String
+    started_at: SystemTime
+    completed_at: Option<SystemTime>
+    error: Option<String>
+    --
+    token_count: u64
+    tool_use_count: u32
+    last_tool: Option<String>
+    --
+    // Role-specific (Option)
+    team_name: Option<String>
+    worktree_path: Option<PathBuf>
+    trust_score: Option<i8>
+    idle_reason: Option<String>
+  }
+  
+  class "SpawnConfig\n(jfc-agent)" as UnifiedConfig <<unified>> #238636 {
+    role: AgentRole
+    prompt: String
+    model: ModelId
+    provider: Arc<dyn Provider>
+    cwd: PathBuf
+    --
+    // Optional based on role
+    team_name: Option<String>
+    worktree_path: Option<PathBuf>
+    max_tokens: Option<u64>
+  }
+  
+  interface "AgentRegistry\n(jfc-agent)" as UnifiedRegistry <<unified>> #238636 {
+    spawn(config: SpawnConfig) -> AgentId
+    status(id: &AgentId) -> Option<AgentStatus>
+    state(id: &AgentId) -> Option<AgentState>
+    abort(id: &AgentId) -> bool
+    complete(id: &AgentId, result: AgentResult)
+    list() -> Vec<AgentState>
+  }
+  
+  UnifiedState --> UnifiedId
+  UnifiedState --> UnifiedStatus
+  UnifiedState --> UnifiedRole
+  UnifiedConfig --> UnifiedRole
+  UnifiedRegistry --> UnifiedState
+  UnifiedRegistry --> UnifiedConfig
+}
+
+' Consolidation arrows
+AgentId1 -[#238636,dashed]-> UnifiedId : "consolidate"
+AgentId2 -[#238636,dashed]-> UnifiedId : "consolidate"
+AgentId3 -[#238636,dashed]-> UnifiedId : "consolidate"
+
+Status1 -[#238636,dashed]-> UnifiedStatus : "consolidate"
+Status2 -[#238636,dashed]-> UnifiedStatus : "consolidate"
+Status3 -[#238636,dashed]-> UnifiedStatus : "consolidate"
+
+BgTask -[#238636,dashed]-> UnifiedState : "consolidate"
+BgInfo -[#238636,dashed]-> UnifiedState : "consolidate"
+TeammateState -[#238636,dashed]-> UnifiedState : "consolidate"
+
+AgentConfig -[#238636,dashed]-> UnifiedConfig : "consolidate"
+RunnerConfig -[#238636,dashed]-> UnifiedConfig : "consolidate"
+LaunchConfig -[#238636,dashed]-> UnifiedConfig : "consolidate"
+
+@enduml

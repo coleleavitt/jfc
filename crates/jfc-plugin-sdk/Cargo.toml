@@ -1,0 +1,17 @@
+[package]
+name = "jfc-plugin-sdk"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+jfc-core = { path = "../jfc-core" }
+linkscope = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

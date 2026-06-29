@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JFC Current Architecture — Fragmented State</title>
+<link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&f[]=jet-brains-mono@400,700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<style>
+:root, [data-theme="dark"] {
+  --color-bg: #0d0f12;
+  --color-surface: #13161b;
+  --color-surface-2: #191d24;
+  --color-surface-3: #1f242e;
+  --color-border: #252b36;
+  --color-text: #e2e8f0;
+  --color-text-muted: #7c8799;
+  --color-text-faint: #3d4554;
+
+  --color-red: #f87171;
+  --color-red-dim: oklch(from #f87171 l c h / 0.12);
+  --color-red-border: oklch(from #f87171 l c h / 0.3);
+
+  --color-teal: #2dd4bf;
+  --color-teal-dim: oklch(from #2dd4bf l c h / 0.12);
+  --color-teal-border: oklch(from #2dd4bf l c h / 0.28);
+
+  --color-blue: #60a5fa;
+  --color-blue-dim: oklch(from #60a5fa l c h / 0.10);
+  --color-blue-border: oklch(from #60a5fa l c h / 0.25);
+
+  --color-violet: #a78bfa;
+  --color-violet-dim: oklch(from #a78bfa l c h / 0.10);
+  --color-violet-border: oklch(from #a78bfa l c h / 0.25);
+
+  --color-amber: #fbbf24;
+  --color-amber-dim: oklch(from #fbbf24 l c h / 0.10);
+  --color-amber-border: oklch(from #fbbf24 l c h / 0.25);
+
+  --color-green: #4ade80;
+  --color-green-dim: oklch(from #4ade80 l c h / 0.10);
+  --color-green-border: oklch(from #4ade80 l c h / 0.25);
+
+  --color-rose: #fb7185;
+  --color-rose-dim: oklch(from #fb7185 l c h / 0.10);
+  --color-rose-border: oklch(from #fb7185 l c h / 0.25);
+
+  --font-body: 'Satoshi', 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+
+  --space-1: 0.25rem; --space-2: 0.5rem; --space-3: 0.75rem;
+  --space-4: 1rem; --space-5: 1.25rem; --space-6: 1.5rem;
+  --space-8: 2rem; --space-10: 2.5rem; --space-12: 3rem; --space-16: 4rem;
+
+  --text-xs: clamp(0.75rem, 0.7rem + 0.25vw, 0.875rem);
+  --text-sm: clamp(0.875rem, 0.8rem + 0.35vw, 1rem);
+  --text-base: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
+  --text-lg: clamp(1.125rem, 1rem + 0.75vw, 1.5rem);
+  --text-xl: clamp(1.5rem, 1.2rem + 1.25vw, 2.25rem);
+  --text-2xl: clamp(2rem, 1.2rem + 2.5vw, 3.5rem);
+
+  --shadow-sm: 0 1px 3px oklch(0 0 0 / 0.4);
+  --shadow-md: 0 4px 16px oklch(0 0 0 / 0.5);
+  --transition: 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
+body { font-family: var(--font-body); font-size: var(--text-base); color: var(--color-text); background: var(--color-bg); min-height: 100dvh; line-height: 1.6; }
+
+.page { max-width: 1360px; margin-inline: auto; padding: var(--space-8) var(--space-6); }
+
+.header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-12); }
+.logo { display: flex; align-items: center; gap: var(--space-3); }
+.logo-text { font-size: var(--text-lg); font-weight: 700; letter-spacing: -0.02em; }
+.logo-text span { color: var(--color-red); }
+.header-badge { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-xs); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-red); background: var(--color-red-dim); border: 1px solid var(--color-red-border); border-radius: 9999px; padding: var(--space-1) var(--space-3); }
+
+.hero { margin-bottom: var(--space-12); }
+.hero-eyebrow { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-xs); font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-red); background: var(--color-red-dim); border: 1px solid var(--color-red-border); border-radius: 9999px; padding: var(--space-1) var(--space-3); margin-bottom: var(--space-4); }
+.hero-title { font-size: var(--text-2xl); font-weight: 700; letter-spacing: -0.03em; line-height: 1.1; margin-bottom: var(--space-4); }
+.hero-title em { font-style: normal; color: var(--color-red); }
+.hero-desc { font-size: var(--text-base); color: var(--color-text-muted); max-width: 78ch; line-height: 1.7; }
+
+.section { margin-bottom: var(--space-12); }
+.section-label { font-size: var(--text-xs); font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-text-faint); margin-bottom: var(--space-6); display: flex; align-items: center; gap: var(--space-3); }
+.section-label::after { content: ''; flex: 1; height: 1px; background: var(--color-border); }
+
+code { font-family: var(--font-mono); font-size: 0.88em; background: var(--color-surface-2); padding: 1px 5px; border-radius: var(--radius-sm); color: var(--color-text); }
+
+/* ── Flow Lanes ── */
+.flow-grid {
+  display: grid;
+  grid-template-rows: auto;
+  gap: var(--space-3);
+  margin-bottom: var(--space-10);
+}
+
+.flow-lane {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.lane-label {
+  font-size: var(--text-xs); font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--color-text-muted); padding-top: var(--space-3); text-align: right;
+  padding-right: var(--space-4); border-right: 2px solid var(--color-border);
+}
+
+.lane-nodes { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+
+.node {
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs); font-family: var(--font-mono); font-weight: 600;
+  border: 1px solid; white-space: nowrap;
+  transition: transform var(--transition), box-shadow var(--transition);
+  cursor: default;
+}
+.node:hover { transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+.node i { width: 13px; height: 13px; flex-shrink: 0; }
+
+.node.blue { background: var(--color-blue-dim); border-color: var(--color-blue-border); color: var(--color-blue); }
+.node.violet { background: var(--color-violet-dim); border-color: var(--color-violet-border); color: var(--color-violet); }
+.node.green { background: var(--color-green-dim); border-color: var(--color-green-border); color: var(--color-green); }
+.node.amber { background: var(--color-amber-dim); border-color: var(--color-amber-border); color: var(--color-amber); }
+.node.rose { background: var(--color-rose-dim); border-color: var(--color-rose-border); color: var(--color-rose); }
+.node.red { background: var(--color-red-dim); border-color: var(--color-red-border); color: var(--color-red); }
+.node.teal { background: var(--color-teal-dim); border-color: var(--color-teal-border); color: var(--color-teal); }
+.node.muted { background: var(--color-surface-2); border-color: var(--color-border); color: var(--color-text-muted); }
+
+.arrow { color: var(--color-text-faint); font-size: var(--text-xs); padding: 0 var(--space-1); }
+
+/* ── Redundancy Table ── */
+.redundancy-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-4);
+  margin-bottom: var(--space-8);
+}
+
+.redundancy-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-red-border);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+}
+
+.redundancy-header {
+  background: var(--color-red-dim);
+  padding: var(--space-3) var(--space-5);
+  font-size: var(--text-xs); font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--color-red); display: flex; align-items: center; gap: var(--space-2);
+  border-bottom: 1px solid var(--color-red-border);
+}
+
+.redundancy-body { padding: var(--space-5); }
+
+.redundancy-item {
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-border);
+  display: flex; flex-direction: column; gap: var(--space-1);
+}
+.redundancy-item:last-child { border-bottom: none; padding-bottom: 0; }
+
+.redundancy-name { font-size: var(--text-xs); font-family: var(--font-mono); font-weight: 700; color: var(--color-text); }
+.redundancy-path { font-size: var(--text-xs); color: var(--color-text-faint); font-family: var(--font-mono); }
+.redundancy-note { font-size: var(--text-xs); color: var(--color-text-muted); line-height: 1.5; margin-top: var(--space-1); }
+
+/* ── Dispatch Table ── */
+.dispatch-table {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  margin-bottom: var(--space-8);
+}
+
+.dt-row {
+  display: grid; grid-template-columns: 220px 1fr 180px 200px;
+  padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+  align-items: center; gap: var(--space-4);
+  transition: background var(--transition);
+}
+.dt-row:last-child { border-bottom: none; }
+.dt-row:hover:not(.dt-header) { background: var(--color-surface-2); }
+.dt-header { background: var(--color-surface-3); font-size: var(--text-xs); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-muted); }
+.dt-tool { font-family: var(--font-mono); font-size: var(--text-xs); font-weight: 700; }
+.dt-handler { font-size: var(--text-sm); color: var(--color-text-muted); }
+.dt-problem { font-size: var(--text-xs); color: var(--color-red); background: var(--color-red-dim); border: 1px solid var(--color-red-border); border-radius: var(--radius-sm); padding: 2px var(--space-2); }
+
+/* ── State Authority Table ── */
+.state-table {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  margin-bottom: var(--space-8);
+}
+
+.st-row {
+  display: grid; grid-template-columns: 200px 180px 1fr 1fr;
+  padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+  align-items: center; gap: var(--space-4);
+  transition: background var(--transition);
+}
+.st-row:last-child { border-bottom: none; }
+.st-row:hover:not(.st-header) { background: var(--color-surface-2); }
+.st-header { background: var(--color-surface-3); font-size: var(--text-xs); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-muted); }
+.st-name { font-family: var(--font-mono); font-size: var(--text-xs); font-weight: 700; }
+.st-authority { font-size: var(--text-xs); color: var(--color-text-muted); }
+.st-drift { font-size: var(--text-xs); color: var(--color-amber); display: flex; align-items: center; gap: var(--space-1); }
+.st-drift i { width: 12px; height: 12px; }
+
+/* ── Bug callout ── */
+.bug-box {
+  background: var(--color-red-dim);
+  border: 1px solid var(--color-red-border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-5) var(--space-6);
+  margin-bottom: var(--space-8);
+  display: flex; gap: var(--space-4);
+}
+.bug-icon { color: var(--color-red); flex-shrink: 0; margin-top: 2px; }
+.bug-title { font-size: var(--text-sm); font-weight: 700; color: var(--color-red); margin-bottom: var(--space-2); }
+.bug-desc { font-size: var(--text-sm); color: var(--color-text-muted); line-height: 1.6; }
+
+/* ── Messaging chaos ── */
+.msg-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-4); margin-bottom: var(--space-8); }
+.msg-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-xl); padding: var(--space-5); }
+.msg-card-title { font-size: var(--text-sm); font-weight: 700; margin-bottom: var(--space-2); display: flex; align-items: center; gap: var(--space-2); }
+.msg-card p { font-size: var(--text-xs); color: var(--color-text-muted); line-height: 1.6; }
+.msg-card code { font-size: 0.82em; }
+
+.footer { margin-top: var(--space-16); padding-top: var(--space-8); border-top: 1px solid var(--color-border); display: flex; justify-content: space-between; align-items: center; }
+.footer-note { font-size: var(--text-xs); color: var(--color-text-faint); }
+
+/* ── Comparison ── */
+.compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-6); }
+.compare-card { background: var(--color-surface); border-radius: var(--radius-xl); overflow: hidden; }
+.compare-head { padding: var(--space-4) var(--space-5); font-size: var(--text-xs); font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; display: flex; align-items: center; gap: var(--space-2); border-bottom: 1px solid var(--color-border); }
+.compare-head.bad { background: var(--color-red-dim); color: var(--color-red); border-color: var(--color-red-border); }
+.compare-head.good { background: var(--color-teal-dim); color: var(--color-teal); border-color: var(--color-teal-border); }
+.compare-body { padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-3); }
+.compare-row { display: flex; align-items: flex-start; gap: var(--space-3); font-size: var(--text-xs); }
+.compare-row i { width: 14px; height: 14px; flex-shrink: 0; margin-top: 1px; }
+.compare-row span { color: var(--color-text-muted); line-height: 1.5; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="header">
+    <div class="logo">
+      <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
+        <rect width="36" height="36" rx="8" fill="#13161b" stroke="#252b36"/>
+        <path d="M10 12h6v9a3 3 0 0 1-6 0" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+        <path d="M19 12h7M22.5 12v12" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+        <circle cx="10" cy="23" r="1" fill="#f87171"/>
+      </svg>
+      <span class="logo-text">jfc <span>current state</span></span>
+    </div>
+    <div class="header-badge">
+      <i data-lucide="alert-triangle" style="width:12px;height:12px;"></i>
+      Fragmented Architecture
+    </div>
+  </header>
+
+  <section class="hero">
+    <div class="hero-eyebrow">
+      <i data-lucide="bug" style="width:12px;height:12px;"></i>
+      As-Is Analysis
+    </div>
+    <h1 class="hero-title">Three <em>AgentIds</em>.<br>Four status enums. Zero shared state.</h1>
+    <p class="hero-desc">The current JFC runtime has one conceptual domain — an invoked agent worker — expressed through a tangle of overlapping types, disconnected lifecycle authorities, and ad-hoc routing logic baked into the dispatch layer. This document is a full read of the problem before the refactor.</p>
+  </section>
+
+  <!-- Known Bug -->
+  <div class="bug-box">
+    <div class="bug-icon"><i data-lucide="shield-alert" style="width:20px;height:20px;"></i></div>
+    <div>
+      <div class="bug-title">Confirmed UI Bug — Dual State Authority</div>
+      <div class="bug-desc">The Agents modal rendered the team section from <code>TeamContext.teammates.abort_tx</code> while the canonical row above rendered from <code>BackgroundTask.status</code>. A completed teammate could therefore show as <strong>Completed</strong> in one row and <strong>Running</strong> in another — because two sources of truth drifted apart. This is a structural problem, not a fixable edge case.</div>
+    </div>
+  </div>
+
+  <!-- Full Flow Lanes -->
+  <section class="section">
+    <div class="section-label">Full Execution Flow — Current Paths</div>
+    <div class="flow-grid">
+
+      <div class="flow-lane">
+        <div class="lane-label">Ingress</div>
+        <div class="lane-nodes">
+          <div class="node blue"><i data-lucide="terminal"></i>User Input</div>
+          <div class="arrow">→</div>
+          <div class="node blue"><i data-lucide="layout-dashboard"></i>App (TUI)</div>
+          <div class="arrow">→</div>
+          <div class="node blue"><i data-lucide="database"></i>EngineState</div>
+          <div class="arrow">→</div>
+          <div class="node blue"><i data-lucide="zap"></i>stream.rs</div>
+          <div class="arrow">→</div>
+          <div class="node blue"><i data-lucide="cloud"></i>Provider::stream()</div>
+        </div>
+      </div>
+
+      <div class="flow-lane">
+        <div class="lane-label">Dispatch</div>
+        <div class="lane-nodes">
+          <div class="node violet"><i data-lucide="git-branch"></i>tool_use event</div>
+          <div class="arrow">→</div>
+          <div class="node violet"><i data-lucide="settings"></i>dispatch.rs execute_tool()</div>
+          <div class="arrow">⎇</div>
+          <div class="node muted"><i data-lucide="hard-drive"></i>bash / fs / search</div>
+          <span style="color:var(--color-text-faint);font-size:var(--text-xs)">·</span>
+          <div class="node amber"><i data-lucide="cpu"></i>Task → subagent.rs</div>
+          <span style="color:var(--color-text-faint);font-size:var(--text-xs)">·</span>
+          <div class="node green"><i data-lucide="users"></i>SendMessage → mailbox</div>
+          <span style="color:var(--color-text-faint);font-size:var(--text-xs)">·</span>
+          <div class="node rose"><i data-lucide="lock"></i>dispatch_heavy.rs</div>
+          <span style="color:var(--color-text-faint);font-size:var(--text-xs)">·</span>
+          <div class="node muted"><i data-lucide="plug"></i>mcp/tool_dispatch.rs</div>
+        </div>
+      </div>
+
+      <div class="flow-lane">
+        <div class="lane-label">Subagent Path</div>
+        <div class="lane-nodes">
+          <div class="node amber"><i data-lucide="cpu"></i>subagent.rs</div>
+          <div class="arrow">⎇</div>
+          <div class="node blue"><i data-lucide="activity"></i>In-Process (tokio::spawn)</div>
+          <div class="arrow">→</div>
+          <div class="node blue"><i data-lucide="database"></i>BackgroundTask registry</div>
+          <div class="arrow">⟳</div>
+          <div class="node blue"><i data-lucide="zap"></i>completion → stream.rs</div>
+          <span style="color:var(--color-text-faint);font-size:var(--text-xs)">OR</span>
+          <div class="node amber"><i data-lucide="server"></i>Daemon (detached process)</div>
+          <div class="arrow">→</div>
+          <div class="node amber"><i data-lucide="file"></i>daemon_state.json</div>
+          <div class="arrow">→</div>
+          <div class="node red"><i data-lucide="refresh-cw"></i>sync_detached poll</div>
+        </div>
+      </div>
+
+      <div class="flow-lane">
+        <div class="lane-label">Team Path</div>
+        <div class="lane-nodes">
+          <div class="node green"><i data-lucide="users"></i>Task {name, team_name}</div>
+          <div class="arrow">→</div>
+          <div class="node green"><i data-lucide="play"></i>swarm/runner.rs start_teammate()</div>
+          <div class="arrow">→</div>
+          <div class="node green"><i data-lucide="repeat"></i>coordinator.rs run_teammate_loop()</div>
+          <div class="arrow">→</div>
+          <div class="node green"><i data-lucide="mail"></i>mailbox.rs JSON inbox poll</div>
+          <div class="arrow">↕</div>
+          <div class="node red"><i data-lucide="alert-triangle"></i>TeamContext state drift</div>
+        </div>
+      </div>
+
+      <div class="flow-lane">
+        <div class="lane-label">Economy Path</div>
+        <div class="lane-nodes">
+          <div class="node rose"><i data-lucide="lock"></i>dispatch_heavy.rs (mutex)</div>
+          <div class="arrow">→</div>
+          <div class="node amber"><i data-lucide="trending-up"></i>MarketOrchestrator</div>
+          <div class="arrow">→</div>
+          <div class="node amber"><i data-lucide="layers"></i>SolverPool / ValidationPool</div>
+          <div class="arrow">→</div>
+          <div class="node amber"><i data-lucide="award"></i>settle() + trust update</div>
+          <div class="arrow">→</div>
+          <div class="node red"><i data-lucide="eye-off"></i>invisible to AgentRegistry</div>
+        </div>
+      </div>
+
+      <div class="flow-lane">
+        <div class="lane-label">Council Path</div>
+        <div class="lane-nodes">
+          <div class="node rose"><i data-lucide="lock"></i>dispatch_heavy.rs (mutex)</div>
+          <div class="arrow">→</div>
+          <div class="node violet"><i data-lucide="git-merge"></i>council.rs parallel stream()</div>
+          <div class="arrow">→</div>
+          <div class="node violet"><i data-lucide="sparkles"></i>arbiter synthesis</div>
+          <div class="arrow">→</div>
+          <div class="node red"><i data-lucide="eye-off"></i>no roster / no lifecycle</div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Redundant Types -->
+  <section class="section">
+    <div class="section-label">Type Redundancy — 3 IDs, 4 Status Enums, 3 State Structs</div>
+    <div class="redundancy-grid">
+
+      <div class="redundancy-card">
+        <div class="redundancy-header"><i data-lucide="fingerprint" style="width:14px;height:14px;"></i> Agent Identity — 3 Types</div>
+        <div class="redundancy-body">
+          <div class="redundancy-item">
+            <div class="redundancy-name">AgentId(u64)</div>
+            <div class="redundancy-path">jfc-engine/src/background.rs</div>
+            <div class="redundancy-note">In-memory counter for background tasks</div>
+          </div>
+          <div class="redundancy-item">
+            <div class="redundancy-name">AgentId(String)</div>
+            <div class="redundancy-path">jfc-economy/src/types.rs</div>
+            <div class="redundancy-note">Prefixed string for solvers/validators</div>
+          </div>
+          <div class="redundancy-item">
+            <div class="redundancy-name">agent_id: String</div>
+            <div class="redundancy-path">swarm/types.rs → TeammateIdentity</div>
+            <div class="redundancy-note">Not even a newtype — bare field on teammate</div>
+          </div>
+          <div class="redundancy-item">
+            <div class="redundancy-name">task_id: String</div>
+            <div class="redundancy-path">BackgroundTask (field, not a type)</div>
+            <div class="redundancy-note">Yet another identifier for the same concept</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="redundancy-card">
+        <div class="redundancy-header"><i data-lucide="activity" style="width:14px;height:14px;"></i> Status Enums — 4 Variants</div>
+        <div class="redundancy-body">
+          <div class="redundancy-item">
+            <div class="redundancy-name">AgentStatus</div>
+            <div class="redundancy-path">background.rs</div>
+            <div class="redundancy-note">Running | Completed | Failed(String)</div>
+          </div>
+          <div class="redundancy-item">
+            <div class="redundancy-name">BackgroundAgentStatus</div>
+            <div class="redundancy-path">daemon/state.rs</div>
+            <div class="redundancy-note">Pending | Running | Completed | Failed | Cancelled</div>
+          </div>
+          <div class="redundancy-item">
+            <div class="redundancy-name">TeammateStatus</div>
+            <div class="redundancy-path">swarm/types.rs</div>
+            <div class="redundancy-note">Running | Idle | Completed | Failed | Killed</div>
+          </div>
+          <div class="redundancy-item">
+            <div class="redundancy-name">TaskLifecycle</div>
+            <div class="redundancy-path">types.rs</div>
+            <div class="redundancy-note">Pending | Running | Done | Error | Cancelled | Aborted</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="redundancy-card">
+        <div class="redundancy-header"><i data-lucide="box" style="width:14px;height:14px;"></i> Agent State — 3+ Structs</div>
+        <div class="redundancy-body">
+          <div class="redundancy-item">
+            <div class="redundancy-name">BackgroundTask</div>
+            <div class="redundancy-path">engine/app.rs — in-memory UI state</div>
+            <div class="redundancy-note">task_id, status, tokens, messages, started_at, model_used…</div>
+          </div>
+          <div class="redundancy-item">
+            <div class="redundancy-name">BackgroundAgentInfo</div>
+            <div class="redundancy-path">daemon/state.rs — persistent daemon state</div>
+            <div class="redundancy-note">~90% same fields as BackgroundTask + pid + log_path</div>
+          </div>
+          <div class="redundancy-item">
+            <div class="redundancy-name">InProcessTeammateState</div>
+            <div class="redundancy-path">swarm/types.rs — in-process teammate</div>
+            <div class="redundancy-note">~70% overlap + abort_tx + idle_reason + is_idle</div>
+          </div>
+          <div class="redundancy-item">
+            <div class="redundancy-name">TeammateInfo</div>
+            <div class="redundancy-path">swarm/types.rs — summary in TeamContext</div>
+            <div class="redundancy-note">Summarizes TeammateState — 4th representation of same entity</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- State Authorities Table -->
+  <section class="section">
+    <div class="section-label">State Authority Fragmentation — Who Owns What</div>
+    <div class="state-table">
+      <div class="st-row st-header">
+        <div>Agent Shape</div>
+        <div>UI State Source</div>
+        <div>Lifecycle Source</div>
+        <div>Problem</div>
+      </div>
+      <div class="st-row">
+        <div class="st-name" style="color:var(--color-blue);">One-shot subagent</div>
+        <div class="st-authority"><code>BackgroundTask</code></div>
+        <div class="st-authority">tokio completion event → stream.rs</div>
+        <div class="st-drift"><i data-lucide="alert-circle"></i>Separate from teams despite being functionally equivalent</div>
+      </div>
+      <div class="st-row">
+        <div class="st-name" style="color:var(--color-amber);">Detached daemon agent</div>
+        <div class="st-authority"><code>BackgroundAgentInfo</code></div>
+        <div class="st-authority">daemon_state.json poll (sync_detached)</div>
+        <div class="st-drift"><i data-lucide="alert-circle"></i>Poll latency — UI lags behind actual daemon status</div>
+      </div>
+      <div class="st-row">
+        <div class="st-name" style="color:var(--color-green);">Persistent teammate</div>
+        <div class="st-authority"><code>BackgroundTask</code> + <code>TeamContext</code></div>
+        <div class="st-authority">TWO sources: abort_tx + BackgroundTask.status</div>
+        <div class="st-drift"><i data-lucide="alert-circle"></i>THE BUG — completed shows active in one panel, done in another</div>
+      </div>
+      <div class="st-row">
+        <div class="st-name" style="color:var(--color-rose);">Economy solver</div>
+        <div class="st-authority">None — invisible to UI</div>
+        <div class="st-authority">SolverPool inside MarketOrchestrator</div>
+        <div class="st-drift"><i data-lucide="alert-circle"></i>Solver agents never appear in the agent roster</div>
+      </div>
+      <div class="st-row">
+        <div class="st-name" style="color:var(--color-violet);">Council member</div>
+        <div class="st-authority">None — invisible to UI</div>
+        <div class="st-authority">Parallel stream + CouncilReport only</div>
+        <div class="st-drift"><i data-lucide="alert-circle"></i>Council seats have no roster, no lifecycle, no abort path</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Messaging Chaos -->
+  <section class="section">
+    <div class="section-label">4 Disconnected Messaging Channels</div>
+    <div class="msg-grid">
+      <div class="msg-card">
+        <div class="msg-card-title" style="color:var(--color-green);">
+          <i data-lucide="mail" style="width:15px;height:15px;color:var(--color-green);"></i>
+          Teammate Mailbox
+        </div>
+        <p><code>swarm/mailbox.rs</code> writes JSON to <code>~/.claude/teams/{name}/inboxes/{agent}.json</code>. Works cross-process but is slow (file poll) and not used by daemons.</p>
+      </div>
+      <div class="msg-card">
+        <div class="msg-card-title" style="color:var(--color-amber);">
+          <i data-lucide="zap" style="width:15px;height:15px;color:var(--color-amber);"></i>
+          TeammateEvent Channel
+        </div>
+        <p><code>TeammateEvent::MessageSent</code> flows through a tokio mpsc channel for in-process teammates. Separate from the file mailbox — same message concept, different path.</p>
+      </div>
+      <div class="msg-card">
+        <div class="msg-card-title" style="color:var(--color-blue);">
+          <i data-lucide="check-circle" style="width:15px;height:15px;color:var(--color-blue);"></i>
+          BackgroundAgentCompletion
+        </div>
+        <p>Daemon workers signal completion through <code>BackgroundAgentCompletion</code> events that get polled by <code>sync_detached_background_tasks()</code>. Yet another message format.</p>
+      </div>
+      <div class="msg-card">
+        <div class="msg-card-title" style="color:var(--color-red);">
+          <i data-lucide="ghost" style="width:15px;height:15px;color:var(--color-red);"></i>
+          SwarmProvider Stub
+        </div>
+        <p><code>SwarmProvider::send_message()</code> in <code>tools/economy.rs</code> is a stub that <strong>only logs</strong>. Economy agents cannot actually send messages — the channel is dead.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Before/After comparison -->
+  <section class="section">
+    <div class="section-label">Current State vs. Target</div>
+    <div class="compare-grid">
+      <div class="compare-card" style="border:1px solid var(--color-red-border);">
+        <div class="compare-head bad"><i data-lucide="x-circle" style="width:14px;height:14px;"></i>Current — Fragmented</div>
+        <div class="compare-body">
+          <div class="compare-row"><i data-lucide="alert-circle" style="color:var(--color-red);"></i><span>3 different <code>AgentId</code> types across crates — no cross-system correlation</span></div>
+          <div class="compare-row"><i data-lucide="alert-circle" style="color:var(--color-red);"></i><span>4 status enums with overlapping but slightly different variants</span></div>
+          <div class="compare-row"><i data-lucide="alert-circle" style="color:var(--color-red);"></i><span><code>BackgroundTask</code> and <code>TeamContext</code> both own teammate status — they drift</span></div>
+          <div class="compare-row"><i data-lucide="alert-circle" style="color:var(--color-red);"></i><span>Economy solvers and council members are invisible to the agent roster UI</span></div>
+          <div class="compare-row"><i data-lucide="alert-circle" style="color:var(--color-red);"></i><span>4 messaging channels, one of which is a no-op stub</span></div>
+          <div class="compare-row"><i data-lucide="alert-circle" style="color:var(--color-red);"></i><span><code>dispatch_heavy.rs</code> holds global mutexes for council and bounty — not composable</span></div>
+          <div class="compare-row"><i data-lucide="alert-circle" style="color:var(--color-red);"></i><span>Team membership checked via <code>team_name</code> string field deep inside dispatch — not typed</span></div>
+        </div>
+      </div>
+      <div class="compare-card" style="border:1px solid var(--color-teal-border);">
+        <div class="compare-head good"><i data-lucide="check-circle" style="width:14px;height:14px;"></i>Target — Unified (jfc-agent crate)</div>
+        <div class="compare-body">
+          <div class="compare-row"><i data-lucide="check-circle" style="color:var(--color-teal);"></i><span>One <code>AgentId(Uuid)</code> type used everywhere — daemon, swarm, economy, council</span></div>
+          <div class="compare-row"><i data-lucide="check-circle" style="color:var(--color-teal);"></i><span>One <code>AgentStatus</code> enum with all meaningful variants (Idle included for teammates)</span></div>
+          <div class="compare-row"><i data-lucide="check-circle" style="color:var(--color-teal);"></i><span><code>AgentRegistry</code> trait is the single source of truth — UI reads only from here</span></div>
+          <div class="compare-row"><i data-lucide="check-circle" style="color:var(--color-teal);"></i><span>Solvers spawn through registry — they appear in the roster like any other agent</span></div>
+          <div class="compare-row"><i data-lucide="check-circle" style="color:var(--color-teal);"></i><span><code>MessageBus</code> unifies in-memory mpsc and file-backed inboxes behind one API</span></div>
+          <div class="compare-row"><i data-lucide="check-circle" style="color:var(--color-teal);"></i><span><code>dispatch.rs</code> becomes trivial routing — no mutexes, no ad-hoc splitting</span></div>
+          <div class="compare-row"><i data-lucide="check-circle" style="color:var(--color-teal);"></i><span>Agent role is a typed <code>AgentRole</code> enum on <code>SpawnConfig</code> — not a string check</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <span class="footer-note">Source: unified-architecture.html + refactored-architecture.html + agent-flow.md</span>
+    <span class="footer-note">Current broken state · pre-jfc-agent refactor</span>
+  </footer>
+
+</div>
+<script>lucide.createIcons();</script>
+</body>
+</html>

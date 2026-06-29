@@ -1,0 +1,751 @@
+                                                                                                                        BMB Rep. 2025; 58(10): 425-436
+BMB                                                                                                                               www.bmbreports.org
+   Reports
+  Invited Mini Review
+
+
+Systems memory consolidation during sleep: oscillations,
+neuromodulators, and synaptic remodeling
+Jaekyung Kim* & Minjeong Park
+Department of Biological Sciences, Korea Advanced Institute of Science and Technology (KAIST), Daejeon 34141, Korea
+
+
+
+Memory consolidation transforms newly acquired experiences                       which newly acquired, initially fragile, and easily modifiable
+into stable long-term memories essential for learning and cog-                   short-term memories undergo stabilization, to ultimately
+nition. This process involves systems consolidation, where                       transform into long-term memories that can persist for days,
+memory traces are reorganized across brain regions, and sy-                      weeks, or even months (1, 2). This transformation is essential
+naptic consolidation, which fine-tunes local neural connec-                      to learning and cognitive development, and ensures that
+tions. Sleep plays a critical role in both, coordinating memory                  relevant information is retained and integrated into existing
+reactivation, synaptic remodeling, and long-range neural com-                    knowledge structures. Memory consolidation is in general ca-
+munication. Systems consolidation is supported by stage-                         tegorized into two distinct but interrelated mechanisms: systems
+specific brain oscillations: during NREM sleep, the coupling of                  consolidation, and synaptic consolidation. Systems consoli-
+slow−oscillations, spindles, and sharp-wave ripples facilitates                  dation refers to large-scale neural reorganization, and involves
+hippocampal-cortical transfer of memory representations,                         changes in synaptic connectivity and neural representations
+while REM sleep theta oscillations contribute to memory in-                      across distributed brain regions. In contrast, synaptic consoli-
+tegration, abstraction, and emotional tagging. Complementary                     dation consists of a more localized process that strengthens
+neuromodulatory dynamics, particularly involving norepine-                       synaptic connections within specific neural circuits, primarily
+phrine and dopamine, regulate the timing and prioritization of                   at the level of individual neurons and synapses. Together,
+memory processing. At the synaptic level, sleep balances                         these processes contribute to the gradual stabilization and
+strengthening and weakening of connections through a coordi-                     optimization of memory traces over time.
+nated interplay of NREM and REM activity. Recent findings                           Among the various factors that influence memory consoli-
+also suggest that dreaming may reflect the subjective correlate                  dation, sleep plays a particularly critical role. Many studies
+of these processes, particularly through the integration of re-                  have consistently demonstrated that sleep deprivation following
+cent and remote memory fragments. Although the precise rela-                     learning experiences severely disrupts memory consolidation,
+tionship between systems-level reorganization and local synaptic                 leading to impaired retention and recall performance (3-5).
+refinement remains unclear—partly due to current technical                       These findings emphasize the importance of sleep-dependent
+limitations—emerging approaches are beginning to bridge these                    mechanisms in stabilizing and restructuring memories. The
+scales. Together, these findings underscore the integrative role                 prevailing theory of active systems consolidation suggests that
+of sleep in optimizing memory consolidation and offer pro-                       during sleep, newly acquired memories—which are initially
+mising avenues for clinical and translational research. [BMB                     stored in the hippocampus—are gradually transferred and inte-
+Reports 2025; 58(10): 425-436]                                                   grated into cortical networks, where they become more per-
+                                                                                 manent, and resistant to interference. This interaction between
+                                                                                 the hippocampus and cortex is thought to be driven by coor-
+INTRODUCTION                                                                     dinated neural activity that includes hippocampal sharp-wave
+                                                                                 ripples, cortical slow-oscillations, and thalamocortical spindles,
+Memory consolidation is a fundamental process by means of                        all of which facilitate memory reactivation and redistribution.
+                                                                                    Traditionally, active systems consolidation was considered
+*Corresponding author. Tel: +82-42-350-7929; E-mail: jaekyung.                   most relevant to hippocampus-dependent declarative memories,
+kim@kaist.ac.kr                                                                  such as episodic and spatial memories. However, recent re-
+                                                                                 search has challenged this distinction, revealing that even
+https://doi.org/10.5483/BMBRep.2025-0033                                         memories previously thought to be hippocampus-independent,
+                                                                                 such as procedural or skill-based motor memories, also involve
+Received 19 February 2025, Revised 20 April 2025,                                hippocampal activity, particularly during the early stages of
+Accepted 1 July 2025, Published online 24 July 2025
+                                                                                 consolidation (6, 7). These findings suggest that the hippo-
+Keywords: Memory consolidation, Neuromodulator, Sleep, Sleep                     campus plays a broader role in processing various types of
+oscillation, Synapse                                                             memory beyond its classical domain.
+
+
+ISSN: 1976-670X (electronic edition)
+Copyright ⓒ 2025 by the Korean Society for Biochemistry and Molecular Biology
+   This is an open-access article distributed under the terms of the Creative Commons Attribution Non-Commercial License (http://creativecommons.org/li-
+censes/by-nc/4.0) which permits unrestricted non-commercial use, distribution, and reproduction in any medium, provided the original work is properly cited.
+    Dynamic processes in sleep-dependent consolidation
+    Jaekyung Kim and Minjeong Park
+
+
+
+
+       In addition to increasing the long-term stability of memories,            sleep, and non-REM (NREM) sleep (Fig. 1A) (9). In human,
+    the consolidation process is associated with higher-order cog-               NREM sleep is traditionally divided into four stages, whereas
+    nitive functions that include abstraction, generalization, and opti-         in rodent, sleep stages are shorter, and more fragmented.
+    mization (8). Through repeated reactivation and refinement, me-              These sleep stages are primarily classified based on electroen-
+    mories become more structured and interconnected, which en-                  cephalogram (EEG) or local field potential (LFP) recordings,
+    hances their accessibility and utility in novel situations. Moreo-           which capture the characteristic brain oscillations associated
+    ver, as memories gradually shift from the hippocampus to dis-                with each stage. During NREM sleep, distinct brain oscillations,
+    tributed cortical regions, they contribute to the formation of               particularly slow-oscillations, spindles, and sharp-wave ripples,
+    knowledge networks that facilitate problem-solving, decision-ma-             are commonly observed, while REM sleep is primarily domi-
+    king, and adaptive behavior. Understanding these mechanisms is               nated by theta waves (Example recordings in the motor cortex
+    critical to advance our knowledge of learning and memory, with               and the hippocampus of a rat are shown in Fig. 1E).
+    potential applications in neuromodulation, neurorehabilitation, and             Slow-oscillation: The first key oscillatory feature of NREM
+    artificial intelligence systems inspired by biological cognition.            sleep is the slow-oscillation (Fig. 1B), a low-frequency wave of
+                                                                                 0.1-4 Hz that is primarily observed in the cerebral cortex (9,
+    Sleep stages and brain oscillations                                          10). Slow-oscillations emerge due to alternating phases of syn-
+    Sleep is broadly categorized into rapid eye movement (REM)                   chronized neuronal activity: up-states, where large populations
+                                                                                 of neurons depolarize and fire together; and down-states,
+                                                                                 where neurons undergo hyperpolarization, and fall silent. These
+                                                                                 oscillations are thought to facilitate network synchronization,
+                                                                                 and play a critical role in memory consolidation.
+                                                                                    Spindle: The second characteristic oscillation, the sleep
+                                                                                 spindle (Fig. 1B), is a transient burst of activity lasting 0.5-2 s,
+                                                                                 oscillating primarily at 10-15 Hz. Spindles originate in the
+                                                                                 thalamocortical system, particularly from GABAergic neurons
+                                                                                 in the nucleus reticularis of the thalamus, and are then
+                                                                                 transmitted to the cerebral cortex via thalamocortical pathways
+                                                                                 (10-12). These oscillations are associated with sensory gating
+                                                                                 to prevent external stimuli from disrupting sleep; they are also
+                                                                                 implicated in synaptic plasticity and memory processing (13).
+                                                                                    Sharp-wave ripple: The third critical oscillatory pattern is
+                                                                                 the sharp-wave ripple (Fig. 1B), a high-frequency oscillation in
+                                                                                 the hippocampus that ranges 150-250 Hz. Sharp-wave ripples
+                                                                                 occur when sharp-waves generated in the CA3 region pro-
+                                                                                 pagate to pyramidal neurons in CA1, leading to synchronous
+                                                                                 neuronal firing (14). Sharp-wave ripples play a fundamental
+                                                                                 role in memory replay and reactivation, where during sleep,
+                                                                                 neural representations of experiences from wakefulness are
+                                                                                 temporally compressed and reactivated (15-17). This replay
+                                                                                 mechanism is considered an important process that underlies
+    Fig. 1. Sleep architecture and neural oscillations. (A) Sleep/wake           memory consolidation (18, 19).
+    architecture of human and rodent. In human, NREM sleep is
+    typically divided into four distinct stages, while in rodent, sleep stages      Theta wave: Lastly, during REM sleep, theta waves at 5-8
+    are shorter, and more fragmented. These stages are primarily iden-           Hz (Fig. 1C) are predominantly observed in the hippocampus.
+    tified through electroencephalogram (EEG) or local field potential           These theta oscillations are driven by glutamatergic, GABAergic,
+    (LFP) recordings; these capture the characteristic brain oscillations        and cholinergic neurons projecting from the medial septum to
+    associated with each sleep phase. (B) During NREM sleep, the
+    key oscillatory patterns that are observed include slow-oscillations,        the hippocampus (20). Theta activity during REM sleep is
+    spindles, and sharp-wave ripples. (C) During REM sleep, the do-              considered critical for memory integration, emotional pro-
+    minant brain wave that is observed is the theta wave. (D) Timing             cessing, and cognitive flexibility, and plays a particularly
+    and interaction of sleep oscillations. The triple coupling of slow-          important role in spatial learning and navigation (21, 22).
+    oscillation, spindle, and sharp-wave ripple is thought to facilitate
+    both the transfer of reactivated hippocampal memories to the neo-               Overall, these distinct brain oscillations across sleep stages
+    cortex, and the synaptic consolidation necessary for memory reorgani-        are essential to consolidate memory and reorganize neural
+    zation. (E) Example of sleep LFP recordings and oscillation detec-           networks, and highlight the intricate relationship between
+    tion in rats. Shown are simultaneously recorded signals from the motor       sleep and learning.
+    cortex and hippocampus during natural sleep, illustrating detected slow
+    oscillations, spindles, and sharp-wave ripples. These traces are the
+    case of co-occurrence of sleep oscillations across brain regions.
+
+
+426 BMB Reports                                                                                                                    http://bmbreports.org
+                                                                                          Dynamic processes in sleep-dependent consolidation
+                                                                                                            Jaekyung Kim and Minjeong Park
+
+
+
+
+Memory consolidation through sleep oscillations                      closed-loop optogenetic manipulation, the study revealed that
+During sleep, slow-oscillations and spindles are predominantly       slow-oscillations promote memory consolidation, while
+observed in the cerebral cortex, while sharp-wave ripples are        delta-waves are associated with forgetting.
+evident in the hippocampus. These sleep-related oscillations            Strikingly, these waves often occur in structured temporal
+regulate interactions between the hippocampus, cerebral cortex,      sequences—such as a slow-oscillation followed by a cluster of
+and other brain regions to facilitate memory reactivation, and       delta-waves—suggesting that they may function as coordinated
+induce changes in neural representations and synaptic pla-           units of memory processing. This temporal arrangement may
+sticity (23, 24). Notably, slow-oscillations and spindles increase   support an efficient balance between synaptic strengthening
+following learning, and exhibit a significant correlation with       and weakening within each NREM sleep epoch, allowing for
+memory reactivation (25-29).                                         memory optimization without overwhelming network
+   Spindles are typically more frequently generated during the       capacity. Future studies are needed to further characterize
+up-states of slow-oscillations (Fig. 1D), while a study suggests     these functional units and their contribution to long-term
+that neuronal spikes during the down-states also play a critical     memory stability and plasticity.
+role in memory consolidation (1, 30). Research has shown that           In contrast to the prominent slow-oscillations, spindles, and
+learning and memory are enhanced by artificially inducing            sharp-wave ripples of NREM sleep, theta oscillations (5-8 Hz),
+spindles during the up-states of slow-oscillations (31, 32).         which dominate REM sleep, play a distinct yet critical role in
+Conversely, weakened synaptic connections in the cortex are          memory consolidation. Theta activity is generated by intera-
+associated with slow-oscillations that occur without spindles.       ctions between the medial septum and hippocampus and is
+Moreover, disruptions in the coordination between slow-              associated with enhanced synaptic plasticity, emotional memory
+oscillations and spindles have been linked to impaired lear-         processing, and the integration of newly acquired information
+ning and memory performance (33, 34).                                into existing networks (41, 42). Studies have shown that hippo-
+   Similarly, sharp-wave ripples generated in the hippocampal        campal theta rhythms during REM sleep sleep facilitate long-
+CA1 region play a crucial role in memory processing (35).            term stabilization of memory traces, particularly through phase-
+Following learning, the coupling among slow-oscillations,            specific coordination with cortical activity and modulation of
+spindles, and sharp-wave ripples increases; coupling refers to       plasticity-related gene expression (43, 44). In both rodents and
+the precise temporal alignment of distinct sleep oscillations        humans, theta oscillations during REM sleep have been linked
+(Fig 1D). This enhanced coupling has been associated with            to abstraction, associative learning, and the generalization of
+improved behavioral performance during memory recall tasks           learned material—functions that complement the precise
+(36). An experiment where precise electrical stimulation was         reactivation mechanisms of NREM sleep (45, 46). Thus, theta
+used to strengthen the synchronization between hippocampal           oscillations appear to support the integration and transfor-
+sharp-wave ripples and other sleep oscillations demonstrated a       mation of memories, forming the latter stage of a coordinated
+reorganization of neural representations in the prefrontal cortex.   two-phase process in which NREM oscillations stabilize newly
+This led to enhanced prefrontal responsiveness to learned            encoded content and REM theta refines and integrates them
+material, resulting in superior memory retention and learning        into broader knowledge networks.
+outcomes (37).                                                          In summary, extensive research highlights that during NREM
+   Furthermore, the recent study has demonstrated that during        sleep, the precise coordination and temporal coupling among
+long-term motor learning, a two-stage modification in cross-         slow-oscillations, spindles, and sharp-wave ripples play crucial
+area coordination among the prefrontal cortex, motor cortex,         roles in memory consolidation by facilitating memory reacti-
+and hippocampal CA1 region—a dynamic transition in sleep-            vation and promoting neural network reorganization (Fig. 2A).
+dependent processing from hippocampus-dependent early                Complementing these NREM-driven processes, theta oscilla-
+memory acquisition to hippocampus-independent late-stage             tions during REM sleep appear to support the integration,
+cortical stabilization—plays a fundamental role in stabilizing       abstraction, and emotional tagging of memories, aiding their
+neural representations that are associated with motor learning,      incorporation into broader semantic frameworks. Together,
+ultimately contributing to memory consolidation (33).                these stage-specific oscillations form a dynamic, two-phase
+   Interestingly, emerging evidence suggests that “slow waves”       consolidation process in which NREM sleep stabilizes memory
+during NREM sleep can be divided into two distinct types with        traces and REM sleep refines and transforms them for long-
+different spatial and temporal characteristics (32, 38, 39). One     term storage and adaptive use.
+class, referred to as slow-oscillations, tends to be more global
+and exhibits larger amplitudes, whereas the other class—often        Neuromodulators and memory consolidation during sleep
+termed delta-waves—is more local with smaller amplitudes (9,         Each sleep stage is accompanied by distinct patterns of activity
+38, 40). A recent study in rats systematically classified these      in neuromodulators, which play an essential role in memory
+two waveforms and demonstrated that slow-oscillations and            consolidation and synaptic plasticity (47). This mini-review
+delta-waves have dissociable and even competing roles in             focuses on norepinephrine (NE) and dopamine (DA)—neuro-
+motor memory processing during NREM sleep (32). Using                modulators that are now being increasingly studied using
+
+
+http://bmbreports.org                                                                                                          BMB Reports     427
+    Dynamic processes in sleep-dependent consolidation
+    Jaekyung Kim and Minjeong Park
+
+
+
+
+                                                                             levels fluctuate significantly, contributing to the state-dependent
+                                                                             modulation of neural excitability and memory consolidation
+                                                                             (51). During NREM sleep, norepinephrine levels oscillate at a
+                                                                             slow frequency of 0.02 Hz, while during REM sleep, norepi-
+                                                                             nephrine activity reaches its lowest levels (Fig. 2B) (52). These
+                                                                             fluctuations are functionally significant, as studies have shown
+                                                                             that norepinephrine signaling directly influences the frequency
+                                                                             and density of spindles—key oscillations that are linked to
+                                                                             memory consolidation (53). Specifically, when neurons in the LC
+                                                                             fire, more spindles are generated to enhance the reactivation of
+                                                                             learned experiences during sleep (Fig. 2B) (51, 53).
+                                                                                Furthermore, neural manipulations of norepinephrine levels
+                                                                             provide insight into its role in memory stability. Suppressing
+                                                                             norepinephrine activity too early during sleep disrupts the
+                                                                             coupling between slow-oscillations and spindles, which is
+                                                                             necessary for the cortical storage of declarative memories
+                                                                             (54-56). On the other hand, artificially increasing norepine-
+    Fig. 2. Memory consolidation mechanisms across sleep stages. (A)         phrine levels during NREM sleep interferes with hippocampal−
+    Distinct roles of NREM and REM sleep in memory consolidation.            cortical communication, impairing the ability to consolidate
+    During NREM sleep, the precise temporal coordination among               new information (57). These findings suggest that the precise
+    slow oscillations, spindles, and sharp-wave ripples facilitates me-
+    mory reactivation and neural network reorganization, supporting          regulation of norepinephrine release during sleep is critical to
+    the stabilization of newly acquired memories. In contrast, REM sleep     optimize memory retention, while preventing excessive syna-
+    is dominated by theta oscillations, which contribute to the inte-        ptic strengthening that could lead to interference between
+    gration, abstraction, and emotional tagging of memories, enabling        overlapping memory traces.
+    their incorporation into broader semantic frameworks. (B) Repre-
+    sentative traces illustrate cortical NE fluctuations and DA dynamics        Dopamine: Like norepinephrine, dopamine (DA) plays a
+    across wakefulness, NREM sleep, and REM sleep in a mouse expre-          significant role in regulating memory consolidation, synaptic
+    ssing a fluorescent NE sensor. During NREM sleep, NE levels              plasticity, and sleep-stage transitions (58-60). Throughout the
+    oscillate slowly (∼0.02 Hz), generating alternating phases of high       sleep cycle, dopamine levels exhibit characteristic fluctuations
+    and low spindle density. These fluctuations are temporally linked
+    to bursts of locus coeruleus (LC) neuron activity, which coincide with   (Fig. 2B), with a sharp increase in concentration marking the
+    the termination of individual spindles. Sustained low NE levels          transition from NREM to REM sleep in the nucleus accumbens
+    during NREM sleep are hypothesized to create a permissive state          (NAc) and the basolateral amygdala (BLA) (59, 61). This increase
+    for synaptic consolidation (orange arrow). In contrast, REM sleep        is thought to signal a critical shift in memory processing, tran-
+    is marked by a sharp and sustained reduction in NE levels, accom-
+    panied by a surge in DA concentration in the nucleus accumbens           sitioning from stabilization and replay during NREM sleep, to
+    (NAc), particularly during the NREM-to-REM transition (red arrow).       integration and abstraction in REM sleep.
+    This dopaminergic increase may signal a functional shift from sta-          Beyond its role in sleep regulation, dopamine is a crucial
+    bilization to integration, supporting the abstraction and emotional      modulator of memory salience and reinforcement learning
+    tagging of memories. (C) Homeostatic synaptic downscaling and
+    reorganization during sleep. Synaptic strength increases during          (62). The role of the ventral tegmental area (VTA), a primary
+    wakefulness through information encoding. Sleep promotes syna-           dopaminergic center, is key in linking reward, novelty, and
+    ptic downscaling, but the mechanisms differ by stage: NREM sleep         memory formation (63). During wakefulness, VTA dopamine
+    selectively downscales highly active neurons, while REM sleep in-        activity influences hippocampal reactivation during sleep, and
+    duces broader network-wide synaptic weakening. Memory-related
+    synaptic assemblies are reactivated during NREM sleep, preserving        may regulate the frequency of hippocampal sharp-wave ripples
+    their strength and potentially enhancing connectivity. The balance       (64). Additionally, VTA dopamine neurons and dopamine release
+    between global downscaling and memory-specific upscaling supports        in the striatum exhibit delta-range fluctuations (65, 66). These
+    synaptic homeostasis and memory reorganization.                          findings indicate that dopamine release during NREM sleep
+                                                                             aligns with memory-related oscillatory patterns, and helps sele-
+                                                                             ctively strengthen memories.
+    emerging in vivo optical monitoring techniques (e.g., fiberpho-            Norepinephrine and dopamine activity during sleep and
+    tometry using sensors of GRAB and dLight)—they regulate                  the optimization of memory storage: Recent findings show
+    neural dynamics during sleep, shaping the stabilization and              that during sleep, dopamine and norepinephrine interact
+    reorganization of newly acquired memories (48).                          dynamically to regulate distinct phases of memory consoli-
+       Norepinephrine: Norepinephrine (NE) is primarily released             dation (67, 68). While LC-driven norepinephrine oscillations
+    from the locus coeruleus (LC), a brainstem structure that                support memory consolidation through spindle clustering and
+    during wakefulness plays a central role in arousal regulation            synchronization, VTA dopamine activity aligns with memory-
+    and attention (49, 50). However, during sleep, norepinephrine            related oscillations, aiding prioritization and reinforcement
+
+
+428 BMB Reports                                                                                                               http://bmbreports.org
+                                                                                           Dynamic processes in sleep-dependent consolidation
+                                                                                                             Jaekyung Kim and Minjeong Park
+
+
+
+
+(47, 53). Additionally, the interaction of these oscillations with   ences and learning strengthen synaptic connections throughout
+hippocampal-cortical oscillations may suggest that neuromo-          the brain. This widespread strengthening, although beneficial
+dulation is a crucial factor in orchestrating the precise neural     in the short term, increases metabolic demand, causes greater
+timing required for memory transfer and integration.                 synaptic noise, and reduces signal-to-noise ratio, which nega-
+   Acetylcholine and serotonin: Acetylcholine (ACh) exhibits         tive effects could ultimately impair neural efficiency. According
+stage-dependent activity, with the highest levels observed           to SHY, NREM sleep plays a critical role in resetting synaptic
+during REM sleep and the lowest during NREM sleep (69).              strength, selectively downscaling weaker synapses, while pre-
+Optogenetic activation of cholinergic neurons in the basal           serving the most relevant connections.
+forebrain increases high-frequency cortical activity while sup-         Many studies have demonstrated that during sleep, the
+pressing slow waves, suggesting that a reduction in cholinergic      contact area between cortical axon terminals and dendritic
+tone is a prerequisite for NREM sleep (70). Although direct          spines is globally reduced, while synaptic AMPA receptor levels
+evidence remains limited, low ACh levels during NREM are             also decrease to result in a measurable reduction in synaptic
+thought to create a permissive environment for hippocampal-          strength (74, 75, 78, 79). This downscaling process is thought
+driven memory reactivation and redistribution, facilitating sys-     to serve a homeostatic function to ensure that memory storage
+tems consolidation across distributed cortical networks.             remains balanced and adaptable, rather than continuously
+Similarly, serotonergic neurons show state-dependent discharge       accumulating, leading to saturation. Furthermore, the con-
+patterns, with high firing rates during wakefulness, reduced         trolled reduction of synaptic weights during sleep enhances
+activity during NREM sleep, and near silence during REM              the brain’s capacity to integrate new information the following
+sleep—closely resembling the pattern observed in LC neurons          day, facilitating continued learning and plasticity.
+(71). Serotonin has also been associated with diminished               Synaptic plasticity during sleep balances weakening and
+sensory responsiveness and muscle atonia during sleep (72).          reinforcement: While sleep is known to weaken synapses,
+However, the precise role of serotonin in regulating arousal         recent research suggests it also plays a role in synaptic pre-
+and sleep-dependent memory processes remains incompletely            servation and formation (80). Studies utilizing two-photon
+understood. Due to the challenges of real-time in vivo moni-         microscopy suggest that rather than indiscriminately weakening
+toring, understanding how acetylcholine and serotonin interact       synapses, NREM sleep may actively preserve and promote the
+with other neuromodulatory systems to influence sleep-dependent      formation of new synaptic connections, particularly in the
+memory consolidation remains an important yet difficult task.        context of motor learning and skill acquisition (81). This dual
+   In summary, neuromodulatory activities, particularly those        mechanism of synaptic downscaling and targeted reinforce-
+that involve norepinephrine and dopamine, play critical roles        ment aligns with behavioral findings that show that even in the
+in coordinating transitions in sleep-stage, modulating memory        absence of further practice, sleep enhances later motor skill
+reactivation, and selectively enhancing specific memories. The       learning (82, 83). Thus, procedural memory consolidation may
+intricate balance of these neuromodulators ensures that im-          depend on a selective balance between synaptic pruning and
+portant experiences are effectively consolidated, while preventing   stabilization to reinforce relevant connections, while weakening
+unnecessary memory interference. Understanding these me-             unnecessary ones.
+chanisms provides valuable insights into sleep-related learning         Synaptic refinement during REM sleep: In addition to its
+processes, and may offer implications for interventions that         role in synaptic restructuring, REM sleep has been implicated
+target memory enhancement and cognitive function.                    in synaptic pruning and network reorganization. Studies have
+                                                                     reported that following REM sleep, neuronal firing rates in
+Synaptic regulation and memory consolidation during sleep            both the hippocampus and cortex decrease, suggesting a role
+The capacity of the brain to store and manage information is         in neural refinement and optimization (43, 84). This supports
+thought to depend on synaptic scaling, a process that adjusts        the hypothesis that REM sleep fine-tunes neural circuits by
+the strength of synaptic connections between neurons that            weakening unnecessary synapses, preventing memory overload,
+encode memories (73, 74). While synaptic potentiation is             and ensuring efficient processing. Furthermore, two-photon
+crucial to learning and memory formation, excessive strengthe-       imaging studies have demonstrated that REM sleep does not
+ning across the brain can lead to saturation, reducing the           just weaken synapses, but also plays an active role in selecting
+capacity for new information storage. To prevent this, sleep         which synapses to maintain or remove (85). This selective
+facilitates the selective weakening or elimination of synapses,      process stabilizes only the most behaviorally relevant connec-
+a process now recognized as a fundamental mechanism of               tions, while systematically pruning redundant or weakly acti-
+memory optimization and neural homeostasis (73).                     vated synapses. Such targeted synaptic refinement may explain
+  Global synaptic downscaling during sleep: A widely                 why REM sleep is particularly associated with emotional me-
+accepted model to explain synaptic regulation during sleep is        mory processing (86), and building unlearned inferential
+the Synaptic Homeostasis Hypothesis (SHY), proposed by               knowledge for problem-solving (87), as it helps optimize
+Tononi and Cirelli (74-77). This model holds that during wake-       cortical networks for flexible and efficient recall.
+fulness, global synaptic potentiation occurs, as new experi-
+
+
+http://bmbreports.org                                                                                                           BMB Reports     429
+    Dynamic processes in sleep-dependent consolidation
+    Jaekyung Kim and Minjeong Park
+
+
+
+
+       Synaptic remodeling - strengthening and refining memory:         memories for consolidation (48, 58). However, further research
+    In addition to the large-scale reorganization of memory traces,     needs to determine the precise interplay between neuro-
+    sleep plays a critical role in the fine-tuning of synaptic con-     modulatory changes and oscillation-driven memory replay
+    nections (Fig. 2C). During the synaptic remodeling phase of         across different sleep stages.
+    memory consolidation, newly acquired memories undergo synaptic
+    strengthening, whereas less relevant or redundant synaptic          Interactions between NREM and REM sleep
+    connections are selectively weakened (1, 73). This dual process     Memory reactivation is a dynamic process that occurs across
+    preserves valuable experiences while preventing excessive           sleep, relying on the complementary roles of non-rapid eye
+    synaptic potentiation that could interfere with future learning.    movement (NREM) and rapid eye movement (REM) sleep.
+       The relationship between systems consolidation and synaptic      Rather than serving as isolated stages, NREM and REM interact
+    refinement remains incompletely understood, partly due to           in a temporally coordinated manner to support systems-level
+    technical limitations in real-time monitoring of synaptic cha-      consolidation.
+    nges during sleep across distributed brain regions. Systems            Complementary roles in memory reactivations: In rodents,
+    consolidation involves large-scale hippocampal-cortical interac-    memory reactivations have been predominantly observed
+    tions (1, 2), while synaptic refinement refers to local streng-     during NREM sleep and periods of quiet wakefulness. As
+    thening or weakening of connections that support memory             described above, these reactivations are closely linked to
+    precision and efficiency (76). Evidence suggests that refinement    characteristic sleep oscillations—such as slow oscillations,
+    occurs in both the hippocampus and the cortex, with NREM            spindles, and sharp-wave ripples (19, 88), which primarily
+    and REM sleep contributing to synaptic potentiation and             occur during early sleep following learning. In contrast, only a
+    pruning, respectively (81, 85). However, how these local synaptic   limited number of studies have reported memory reactivation
+    changes align temporally and anatomically with systems-level        during REM sleep (89, 90). For instance, one study in rodents
+    reorganization is still unclear, and future studies are needed to   demonstrated reactivation of neural activity related to a four-
+    clarify their temporal and anatomical coordination.                 trial sequence in a circular track task, modulated by sub-
+                                                                        cortical theta rhythms (90).
+    Memory reactivation and its role in systems consolidation              Evidence also suggests that external cues during each stage
+    Neural reactivation and the role of sleep oscillations in           of sleep may influence the type of reactivation. Several studies
+    systems consolidation: Memory reactivation, a key mechanism         have shown that auditory stimuli presented during NREM sleep
+    of systems consolidation, is dominantly observed during NREM        enhance hippocampal−cortical communication (91), whereas sti-
+    sleep, when newly encoded neural activity patterns are replayed     muli delivered during REM sleep preferentially promote corti-
+    in the hippocampus and cortex (19). This reactivation faci-         cocortical reactivations (92). The subsequent transfer of infor-
+    litates the transfer of memory representations from hippocampal-    mation to cortical networks during REM sleep may contribute
+    dependent storage to distributed cortical networks to enhance       to memory transformation processes, such as generalization,
+    long-term retention and generalization. The precise coordi-         the formation of associative links, and integration with sema-
+    nation of multiple sleep oscillations, including slow-oscilla-      ntically related knowledge (93, 94). For example, in a rodent
+    tions, spindles, and sharp-wave ripples, primarily drives           maze task, REM sleep was more likely to support the pre-
+    sleep-dependent systems consolidation. These oscillations           dictive association of familiar spatial memories linked to
+    interact dynamically, with slow-oscillation up-states creating a    rewards (87, 90). Although still limited, current evidence suggests
+    window for spindles and hippocampal ripples, which syn-             that the timescale and content of neural reactivations may
+    chronize neural reactivation in the hippocampus and cortex.         differ depending on the sleep stage and the timing within the
+    The coupling of these oscillations has been strongly linked to      sleep cycle.
+    successful memory consolidation, optimizing hippocampal−               Complementary roles in synaptic regulation: Recent fin-
+    cortical communication, while ensuring the long-term stabi-         dings also indicate that NREM and REM sleep play distinct but
+    lization of memory traces.                                          complementary roles in synaptic reorganization (67, 72) (Fig.
+      Neuromodulatory regulation of memory reactivation during          2C). NREM sleep primarily facilitates synaptic potentiation,
+    sleep: While the role of neural oscillations in systems con-        reinforcing neural connections involved in memory encoding
+    solidation has become well-established, the influence of neu-       and storage. In contrast, REM sleep appears to promote syna-
+    romodulatory activities on memory reactivation remains under        ptic pruning, selectively weakening or eliminating less relevant
+    investigation. Emerging evidence suggests that stage-specific       or redundant connections to refine memory networks (60, 63).
+    fluctuations in neuromodulator levels, such as norepinephrine,      This interplay between strengthening and weakening of synap-
+    dopamine, acetylcholine, and GABA, may play a crucial role          ses supports both memory retention and cognitive flexibility.
+    in shaping sleep-dependent memory processing. For example,             Together, these findings suggest that NREM and REM sleep
+    the suppression of norepinephrine during REM sleep has been         jointly support memory consolidation through both reactivation
+    proposed to facilitate synaptic remodeling (53), while dopa-        and synaptic remodeling. While NREM sleep strengthens key
+    minergic activity during NREM sleep may help prioritize salient     neural representations and stabilizes memory traces, REM
+
+
+430 BMB Reports                                                                                                          http://bmbreports.org
+                                                                                                       Dynamic processes in sleep-dependent consolidation
+                                                                                                                         Jaekyung Kim and Minjeong Park
+
+
+
+
+Table 1. List of featured recent studies cited in the current review
+
+           Category                            Reference                                                  Key finding
+
+  Memory consolidation         Lemke SM et al. (2021)                     Motor-striatal coupling increases with skill learning during sleep
+  Memory consolidation         Kim J et al. (2022)                        Sleep-dependent GABA, slow waves, and spindles restore
+                                                                            memory after stroke
+  Memory consolidation         Senzai Y and Scanziani M (2022)            REM eye movements signal underlying cognitive activity
+  Memory consolidation         Sawangjit A et al. (2022)                  Hippocampus is involved in tasks previously considered
+                                                                            hippocampus-independent
+  Memory consolidation         Yang G et al. (2022)                       REM-targeted cues promote memory integration
+  Memory consolidation         Maingret N et al. (2022)                   Hippocampo-cortical coupling mediates sleep memory consolidation
+  Memory consolidation         Kim J et al. (2023)                        Motor learning involves dynamic cortical-hippocampal coupling
+  Memory consolidation         Liu C, Todorova R et al. (2023)            Hippocampal codes enable associative and predictive memory guidance
+  Memory consolidation         Brodt S et al. (2023)                      Sleep: a brain-state serving systems memory consolidation
+  Memory consolidation         Karaba LA et al. (2024)                    Hippocampal circuit balances memory reactivation during sleep
+  Memory consolidation         Darevsky D et al. (2024)                   Spindle train supports persistent reactivation events
+  Memory consolidation         Swanson RA et al. (2025)                   Hippocampal ripples and cortical oscillations interact bidirectionally
+  Neuromodulatory activity     Osorio-Forero A et al. (2021)              NREM substates are regulated by noradrenergic circuits
+  Neuromodulatory activity     Kjaerby C et al. (2022)                    Adrenergic tone dynamically shapes memory-related network activity
+                                                                            during sleep
+  Neuromodulatory activity     Hasegawa M et al. (2022)                   Rapid eye movement sleep is initiated by dopamine signaling
+  Neuromodulatory activity     Duran C et al. (2023)                      Norepinephrine dynamics during NREM to support memory consolidation
+  Neuromodulatory activity     Sulaman BA et al. (2024)                   SFN symposium: functions of neuromodulation during sleep
+  Neuromodulatory activity     Toth AB et al. (2025)                      Dopamine release in the NAc regulates the timing of REM sleep
+  Synaptic regulation          Weiss JT and Donlea JM (2021)              Review: sleep loss impacts synaptic plasticity
+  Synaptic regulation          Koukaroudi et al. (2024)                   Sleep maintains excitatory synapse diversity
+  Synaptic regulation          Sawada T, Iino Y et al. (2024)             Sleep-dependent synaptic regulation through synaptic chemogenetics
+  Dream                        Malinowski JE and Horton CL (2021)         Dream content reflects sleep cognition and predicts memory performance
+  Dream                        Picard-Deland C et al. (2023)              Demonstrated real-time communication with dreamers during NREM sleep
+  Dream                        Horowitz AH, Esfahany K et al. (2023)      Targeted dream incubation at sleep onset enhances creativity after sleep
+  Dream                        Lacaux C et al. (2024)                     Identified sleep onset as a critical state for boosting creative insight
+
+This table provides a curated list of recent studies (2021-2025) cited in the current review, organized by thematic categories: Memory consolidation,
+Synaptic regulation, Neuromodulatory activity, and Dream. For each study, we include the full citation, publication year, and a brief summary of the
+key finding or contribution relevant to sleep-dependent memory processing. The categorization reflects the primary focus of each study as interpreted
+in the context of this review. Studies were selected based on their empirical or theoretical contribution to understanding systems-level consolidation,
+local synaptic plasticity, neuromodulator-guided dynamics, or the cognitive and phenomenological aspects of dreaming.
+
+
+
+sleep contributes to the optimization and integration of these                 and depression (95, 96), where deficits in slow-oscillations,
+memories by removing nonessential connections and pro-                         spindles, or ripple coupling have been linked to impaired
+moting network refinement. This balanced mechanism enhances                    memory consolidation (32). In addition, abnormal neuromo-
+learning capacity, cognitive efficiency, and the long-term                     dulatory dynamics—such as altered norepinephrine or dopa-
+stability of stored information. A deeper understanding of these               mine signaling—may further interfere with memory reactivation
+complementary processes may offer valuable insights into                       and storage (50). These findings highlight the potential of
+sleep-dependent learning, neuroplasticity, and interventions                   targeting sleep physiology through pharmacological or neuro-
+for memory-related disorders.                                                  modulatory interventions to enhance memory processing.
+                                                                                  Closed-loop stimulation techniques that modulate specific
+Clinical implications of systems consolidation                                 sleep oscillations in real time offer promising avenues for
+Understanding the mechanisms of systems consolidation                          restoring memory function (97, 98). Notably, a recent study
+during sleep has growing clinical relevance, particularly for                  demonstrated that neuromodulation aimed at enhancing
+neuropsychiatric and neurodegenerative disorders characterized                 up-states during sleep can promote recovery following stroke
+by memory impairments. Disruptions in sleep architecture and                   (99). It is conceivable that closed-loop neuromodulatory ap-
+oscillatory coordination are commonly observed in conditions                   proaches—designed to suppress delta-waves (associated with
+such as Alzheimer’s disease, Parkinson’s disease, schizophrenia,               forgetting) or enhance slow-oscillations (associated with conso-
+
+
+http://bmbreports.org                                                                                                                       BMB Reports     431
+    Dynamic processes in sleep-dependent consolidation
+    Jaekyung Kim and Minjeong Park
+
+
+
+
+    lidation)—could provide substantial long-term benefits in               have suggested that dreaming (i.e., any conscious experience
+    preventing cognitive decline or improving treatment outcomes.           during sleep) may reflect the manifestation of memory reacti-
+    Future research should aim to translate mechanistic insights            vation processes occurring during sleep (106). Dream experiences
+    into sleep-dependent memory consolidation into effective                vary markedly across sleep stages. While dreams are more
+    therapeutic strategies for clinical populations.                        frequently recalled and emotionally vivid during REM sleep,
+                                                                            they also occur during NREM sleep, particularly at sleep onset
+    Limitations of current systems consolidation models                     (N1) (107-110). NREM dreams are typically shorter, more
+    Despite significant advances, current models of systems con-            realistic, and rich in episodic content, whereas REM dreams
+    solidation remain incomplete and, in some cases, conflicting.           are longer, more narrative-driven, emotionally intense, and
+    The standard consolidation theory posits a time-limited role for        enriched with semantic associations (111). These distinctions
+    the hippocampus, suggesting that memories gradually become              likely arise from differences in the neurophysiological environ-
+    hippocampus-independent as they are transferred to the                  ment—such as neuromodulatory dynamics and cortical acti-
+    neocortex (1, 2). However, considerable evidence from both              vation—that define each sleep stage and influence both the
+    animal and human studies challenges this view, showing                  generation and recall of dreams.
+    persistent hippocampal involvement in the retrieval of remote              The temporal source of dream content also varies. Recent
+    episodic memories (100, 101). In contrast, the multiple trace           experiences, or “day residues,” frequently appear in early-night
+    theory and its variants propose that detailed episodic memories         and N1 dreams, while late-night REM dreams are more likely
+    always depend on the hippocampus (102, 103), yet these                  to incorporate remote memories. A “dream-lag effect” has
+    frameworks do not fully explain the dynamic reorganization              been documented, in which events that occurred 5-7 days
+    and apparent degradation of hippocampal traces over time.               earlier resurface during REM dreams (112). Moreover, distant
+       Recent findings suggest that hippocampal memory represen-            memories may be recruited into dreams through associative
+    tations are inherently unstable—subject to synaptic turnover,           links with recent experiences, potentially facilitating the integ-
+    neurogenesis, and random remapping—raising questions about              ration of novel information into existing memory networks.
+    how stable memory content is retrieved after the original trace         Although the precise neural mechanisms underlying dreaming
+    has faded (104, 105). The scene construction theory offers one          remain debated, future research employing innovative methods
+    resolution, proposing that the hippocampus reconstructs remote          will be crucial for uncovering the complex interactions bet-
+    experiences from neocortical elements rather than retrieving a          ween memory consolidation and dream generation, as well as
+    preserved trace (101). While promising, this framework still            for advancing our understanding of the functional significance
+    requires empirical clarification, particularly regarding how cortical   of dreaming.
+    and hippocampal interactions enable reconstruction. Addi-                  Notwithstanding that significant progress has been made in
+    tionally, existing models often oversimplify the contributions          understanding the neural and molecular mechanisms underlying
+    of sleep-specific oscillations and neuromodulatory dynamics             sleep-dependent memory consolidation (Table 1), many que-
+    in guiding which memories are consolidated, transformed, or             stions remain. Future research should seek to further clarify the
+    pruned (32, 37). Together, these limitations underscore the             precise role of neuromodulators in sleep oscillation dynamics,
+    need for integrative theories that account for both the tra-            how NREM and REM sleep optimize memory storage, and the
+    nsience and reconstructive capacity of hippocampal-cortical             impact of sleep-dependent synaptic reorganization on cog-
+    memory, the temporal structure of sleep, and the selective              nitive function. More profound understanding of these mecha-
+    pressures on memory updating over time.                                 nisms will advance our knowledge of memory processing,
+                                                                            while also potentially providing insights into therapeutic inter-
+    Future perspectives for sleep-dependent memory                          ventions for sleep disorders and memory-related impairments.
+    consolidation
+    Sleep-dependent memory consolidation involves multiple inter-           CONCLUDING REMARKS
+    connected processes. Sleep oscillations act as key temporal
+    organizers, orchestrating hippocampal−cortical interactions to          Systems-level memory consolidation during sleep involves the
+    facilitate systems memory transfer (1, 2, 19). Simultaneously,          gradual reorganization of neural connections, particularly
+    neuromodulatory regulation fine-tunes these interactions, po-           between the hippocampus and neocortex (1, 2). This process
+    tentially influencing which memories are prioritized for long-          is orchestrated by coordinated sleep oscillations, neuromo-
+    term storage (47, 53). Finally, synaptic remodeling during sleep        dulatory dynamics, and synaptic remodeling, with NREM and
+    stabilizes newly formed connections while pruning unne-                 REM sleep contributing complementary functions—NREM
+    cessary ones, to optimize the brain’s capacity for learning and         supporting memory reactivation and stabilization, and REM
+    adaptation (76, 77).                                                    promoting synaptic refinement and integration.
+       Several decades of sleep research have established the                 Recent findings suggest that dreaming may reflect aspects of
+    critical role of two fundamental sleep stages—NREM and REM              these consolidation processes, particularly through the inte-
+    sleep—in memory consolidation. In parallel, a few studies               gration of recent and remote memories during sleep. While
+
+
+432 BMB Reports                                                                                                             http://bmbreports.org
+                                                                                         Dynamic processes in sleep-dependent consolidation
+                                                                                                           Jaekyung Kim and Minjeong Park
+
+
+
+
+the precise mechanisms remain to be clarified, emerging                    Rev Neurosci 20, 746-762
+evidence links dream content to stage-specific memory reacti-        14.   Hulse BK, Moreaux LC, Lubenov EV and Siapas AG
+vation and transformation. Future research should further                  (2016) Membrane potential dynamics of CA1 pyramidal
+explore how conscious experiences during sleep relate to the               neurons during hippocampal ripples in awake mice.
+underlying neural dynamics of memory consolidation.                        Neuron 89, 800-813
+                                                                     15.   Khodagholy D, Gelinas JN and Buzsaki G (2017) Lear-
+                                                                           ning-enhanced coupling between ripple oscillations in
+ACKNOWLEDGEMENTS                                                           association cortices and hippocampus. Science 358,
+                                                                           369-372
+Research was supported by awards from the Korea Basic                16.   Eckert MJ, McNaughton BL and Tatsuno M (2020)
+Science Institute (National research Facilities and Equipment              Neural ensemble reactivation in rapid eye movement
+Center) (RS-2024-00401876 to J.K.); the National Research                  and slow-wave sleep coordinate with muscle activity to
+Foundation of Korea (NRF) grant (RS-2024-00345236, 2019                    promote rapid motor skill learning. Philos Trans R Soc
+R1A6A1A10073887 to J.K.); Samsung Science and Technology                   Lond B Biol Sci 375, 20190655
+Foundation (SSTF-BA2402-05 to J.K.); the KAIST Jang Young            17.   Buch ER, Claudino L, Quentin R, Bonstrup M and Cohen
+                                                                           LG (2021) Consolidation of human skill linked to wa-
+Sil Fellow Program (fellowship to M.P.).
+                                                                           king hippocampo-neocortical replay. Cell Rep 35, 109193
+                                                                     18.   van de Ven GM, Trouche S, McNamara CG, Allen K
+CONFLICTS OF INTEREST                                                      and Dupret D (2016) Hippocampal offline reactivation
+                                                                           consolidates recently formed cell assembly patterns
+The authors have no conflicting interests.                                 during sharp wave-ripples. Neuron 92, 968-974
+                                                                     19.   Joo HR and Frank LM (2018) The hippocampal sharp
+                                                                           wave-ripple in memory retrieval for immediate use and
+REFERENCES                                                                 consolidation. Nat Rev Neurosci 19, 744-757
+                                                                     20.   Hangya B, Borhegyi Z, Szilagyi N, Freund TF and
+   1.    Klinzing JG, Niethard N and Born J (2019) Mechanisms              Varga V (2009) GABAergic neurons of the medial sep-
+         of systems memory consolidation during sleep. Nat                 tum lead the hippocampal network during theta activity.
+         Neurosci 22, 1598-1610                                            J Neurosci 29, 8094-8102
+   2.    Diekelmann S and Born J (2010) The memory function          21.   Colgin LL (2016) Rhythms of the hippocampal network.
+         of sleep. Nat Rev Neurosci 11, 114-126                            Nat Rev Neurosci 17, 239-249
+   3.    Yoo SS, Hu PT, Gujar N, Jolesz FA and Walker MP (2007)      22.   Liu C, Todorova R, Tang W, Oliva A and Fernandez-
+         A deficit in the ability to form new human memories               Ruiz A (2023) Associative and predictive hippocampal
+         without sleep. Nat Neurosci 10, 385-392                           codes support memory-guided behaviors. Science 382,
+   4.    Kim J, Guo L, Hishinuma A et al (2022) Recovery of                eadi8237
+         consolidation after sleep following stroke-interaction of   23.   Karaba LA, Robinson HL, Harvey RE, Chen W, Fernandez-
+         slow waves, spindles, and GABA. Cell Rep 38, 110426               Ruiz A and Oliva A (2024) A hippocampal circuit me-
+   5.    Born J, Rasch B and Gais S (2006) Sleep to remember.              chanism to balance memory reactivation during sleep.
+         Neuroscientist 12, 410-424                                        Science 385, 738-743
+   6.    Kim J, Joshi A, Frank L and Ganguly K (2023) Cortical-      24.   Swanson RA, Chinigo E, Levenstein D et al (2025)
+         hippocampal coupling during manifold exploration in               Topography of putative bi-directional interaction between
+         motor cortex. Nature 613, 103-110                                 hippocampal sharp-wave ripples and neocortical slow
+   7.    Sawangjit A, Oyanedel CN, Niethard N, Salazar C,                  oscillations. Neuron 113, 754-768.e759
+         Born J and Inostroza M (2018) The hippocampus is            25.   Gais S, Molle M, Helms K and Born J (2002) Learning-
+         crucial for forming non-hippocampal long-term memory              dependent increases in sleep spindle density. J Neurosci
+         during sleep. Nature 564, 109-113                                 22, 6830-6834
+   8.    Eichenbaum H (2010) Memory systems. Wiley Inter-            26.   Cross ZR, Helfrich RF, Corcoran AW et al (2025) Slow
+         discip Rev Cogn Sci 1, 478-490                                    oscillation-spindle coupling predicts sequence-based
+   9.    Genzel L, Kroes MC, Dresler M and Battaglia FP (2014)             language learning. J Neurosci 45, e2193232024
+         Light sleep versus slow wave sleep in memory conso-         27.   Darevsky D, Kim J and Ganguly K (2024) Coupling of
+         lidation: a question of global versus local processes?            slow oscillations in the prefrontal and motor cortex
+         Trends Neurosci 37, 10-19                                         predicts onset of spindle trains and persistent memory
+ 10.     Steriade M, McCormick DA and Sejnowski TJ (1993)                  reactivations. J Neurosci 44, e0621242024
+         Thalamocortical oscillations in the sleeping and arou-      28.   Conessa A, Debarnot U, Siegler I and Boutin A (2023)
+         sed brain. Science 262, 679-685                                   Sleep-related motor skill consolidation and gene-
+ 11.     Steriade M (2005) Sleep, epilepsy and thalamic reticular          ralizability after physical practice, motor imagery, and
+         inhibitory neurons. Trends Neurosci 28, 317-324                   action observation. iScience 26, 107314
+ 12.     Fernandez LMJ and Luthi A (2020) Sleep spindles:            29.   Steriade M (2006) Grouping of brain rhythms in corti-
+         mechanisms and functions. Physiol Rev 100, 805-868                cothalamic systems. Neuroscience 137, 1087-1106
+ 13.     Adamantidis AR, Gutierrez Herrera C and Gent TC             30.   Todorova R and Zugaro M (2019) Isolated cortical
+         (2019) Oscillating circuitries in the sleeping brain. Nat         computations during delta waves support memory
+
+http://bmbreports.org                                                                                                         BMB Reports     433
+    Dynamic processes in sleep-dependent consolidation
+    Jaekyung Kim and Minjeong Park
+
+
+
+
+            consolidation. Science 366, 377-381                                   1998-2011
+      31.   Latchoumane CV, Ngo HV, Born J and Shin HS (2017)               49.   Sara SJ (2009) The locus coeruleus and noradrenergic
+            Thalamic spindles promote memory formation during                     modulation of cognition. Nat Rev Neurosci 10,
+            sleep through triple phase-locking of cortical, thalamic,             211-223
+            and hippocampal rhythms. Neuron 95, 424-435.e426                50.   Poe GR, Foote S, Eschenko O et al (2020) Locus
+      32.   Kim J, Gulati T and Ganguly K (2019) Competing roles                  coeruleus: a new look at the blue spot. Nat Rev
+            of slow oscillations and delta waves in memory con-                   Neurosci 21, 644-659
+            solidation versus forgetting. Cell 179, 514-526.e513            51.   Swift KM, Gross BA, Frazer MA et al (2018) Abnormal
+      33.   Helfrich RF, Mander BA, Jagust WJ, Knight RT and                      locus coeruleus sleep activity alters sleep signatures of
+            Walker MP (2018) Old brains come uncoupled in sleep:                  memory consolidation and impairs place cell stability
+            slow wave-spindle synchrony, brain atrophy, and                       and spatial memory. Curr Biol 28, 3599-3609.e3594
+            forgetting. Neuron 97, 221-230.e224                             52.   Brodt S, Inostroza M, Niethard N and Born J (2023)
+      34.   Gonzalez-Rueda A, Pedrosa V, Feord RC, Clopath C                      Sleep-A brain-state serving systems memory consoli-
+            and Paulsen O (2018) Activity-dependent downscaling                   dation. Neuron 111, 1050-1075
+            of subthreshold synaptic inputs during slow-wave-               53.   Kjaerby C, Andersen M, Hauglund N et al (2022)
+            sleep-like activity in vivo. Neuron 97, 1244-1252.e1245               Memory-enhancing properties of sleep depend on the
+      35.   Atherton LA, Dupret D and Mellor JR (2015) Memory                     oscillatory amplitude of norepinephrine. Nat Neurosci
+            trace replay: the shaping of memory consolidation by                  25, 1059-1070
+            neuromodulation. Trends Neurosci 38, 560-570                    54.   Osorio-Forero A, Cardis R, Vantomme G et al (2021)
+      36.   Staresina BP, Bergmann TO, Bonnefond M et al (2015)                   Noradrenergic circuit control of non-REM sleep sub-
+            Hierarchical nesting of slow oscillations, spindles and               states. Curr Biol 31, 5009-5023.e5007
+            ripples in the human hippocampus during sleep. Nat              55.   Duran E, Pandinelli M, Logothetis NK and Eschenko O
+            Neurosci 18, 1679-1686                                                (2023) Altered norepinephrine transmission after spatial
+      37.   Maingret N, Girardeau G, Todorova R, Goutierre M and                  learning impairs sleep-mediated memory consolidation
+            Zugaro M (2016) Hippocampo-cortical coupling mediates                 in rats. Sci Rep 13, 4231
+            memory consolidation during sleep. Nat Neurosci 19,             56.   Eschenko O, Magri C, Panzeri S and Sara SJ (2012)
+            959-964                                                               Noradrenergic neurons of the locus coeruleus are
+      38.   Bernardi G, Siclari F, Handjaras G, Riedner BA and                    phase locked to cortical up-down states during sleep.
+            Tononi G (2018) Local and widespread slow waves in                    Cereb Cortex 22, 426-435
+            stable NREM sleep: evidence for distinct regulation             57.   Novitskaya Y, Sara SJ, Logothetis NK and Eschenko O
+            mechanisms. Front Hum Neurosci 12, 248                                (2016) Ripple-triggered stimulation of the locus coe-
+      39.   Steriade M and Timofeev I (2003) Neuronal plasticity in               ruleus during post-learning sleep disrupts ripple/spindle
+            thalamocortical networks during sleep and waking osci-                coupling and impairs memory consolidation. Learn
+            llations. Neuron 37, 563-576                                          Mem 23, 238-248
+      40.   Siclari F, Bernardi G, Riedner BA, LaRocque JJ, Benca           58.   Isotalus H, Carr WJ, Averill GG et al (2020) Dopamine-
+            RM and Tononi G (2014) Two distinct synchronization                   gated memory selection during slow wave sleep.
+            processes in the transition to sleep: a high-density electro-         bioRxiv, 2020.2005.2023.112375
+            encephalographic study. Sleep 37, 1621-1637                     59.   Hasegawa E, Miyasaka A, Sakurai K, Cherasse Y, Li YL
+      41.   Buzsaki G (2002) Theta oscillations in the hippocampus.               and Sakurai T (2022) Rapid eye movement sleep is
+            Neuron 33, 325-340                                                    initiated by basolateral amygdala dopamine signaling
+      42.   Boyce R, Glasgow SD, Williams S and Adamantidis A                     in mice. Science 375, 994-1000
+            (2016) Causal evidence for the role of REM sleep theta          60.   Berry JA, Cervantes-Sandoval I, Chakraborty M and Davis
+            rhythm in contextual memory consolidation. Science                    RL (2015) Sleep facilitates memory by blocking dopamine
+            352, 812-816                                                          neuron-mediated forgetting. Cell 161, 1656-1667
+      43.   Grosmark AD, Mizuseki K, Pastalkova E, Diba K and               61.   Toth BA and Burgess CR (2025) Phasic dopamine
+            Buzsaki G (2012) REM sleep reorganizes hippocampal                    release in the nucleus accumbens influences REM sleep
+            excitability. Neuron 75, 1001-1007                                    timing. J Neurosci 45, e1374242024
+      44.   Poe GR, Walsh CM and Bjorness TE (2010) Cognitive               62.   Wise RA (2004) Dopamine, learning and motivation.
+            neuroscience of sleep. Prog Brain Res 185, 1-19                       Nat Rev Neurosci 5, 483-494
+      45.   Lewis PA, Knoblich G and Poe G (2018) How memory                63.   Hughes RN, Bakhurin KI, Petter EA et al (2020) Ventral
+            replay in sleep boosts creative problem-solving. Trends               tegmental dopamine neurons control the impulse vec-
+            Cogn Sci 22, 491-503                                                  tor during motivated behavior. Curr Biol 30, 2681-
+      46.   Senzai Y and Scanziani M (2022) A cognitive process                   2694.e2685
+            occurring during sleep is revealed by rapid eye move-           64.   McNamara CG, Tejero-Cantero A, Trouche S,
+            ments. Science 377, 999-1004                                          Campo-Urriza N and Dupret D (2014) Dopaminergic
+      47.   Sulaman BA, Zhang Y, Matosevich N et al (2024)                        neurons promote hippocampal reactivation and spatial
+            Emerging functions of neuromodulation during sleep. J                 memory persistence. Nat Neurosci 17, 1658-1660
+            Neurosci 44, e1277242024                                        65.   Fujisawa S and Buzsaki G (2011) A 4 Hz oscillation
+      48.   Nir Y and de Lecea L (2023) Sleep and vigilance states:               adaptively synchronizes prefrontal, VTA, and hippo-
+            embracing spatiotemporal dynamics. Neuron 111,                        campal activities. Neuron 72, 153-165
+
+434 BMB Reports                                                                                                          http://bmbreports.org
+                                                                                          Dynamic processes in sleep-dependent consolidation
+                                                                                                            Jaekyung Kim and Minjeong Park
+
+
+
+
+ 66.     Krok AC, Maltese M, Mistry P, Miao X, Li Y and Tritsch       85.   Li W, Ma L, Yang G and Gan WB (2017) REM sleep
+         NX (2023) Intrinsic dopamine and acetylcholine dyna-               selectively prunes and maintains new synapses in develop-
+         mics in the striatum of mice. Nature 621, 543-549                  ment and learning. Nat Neurosci 20, 427-437
+ 67.     Feld GB and Born J (2020) Neurochemical mechanisms           86.   Rawson G and Jackson ML (2024) Sleep and emotional
+         for memory processing during sleep: basic findings in              memory: a review of current findings and application
+         humans and neuropsychiatric implications. Neuropsy-                to a clinical population. Curr Sleep Med Rep 10, 378-
+         chopharmacology 45, 31-44                                          385
+ 68.     Ranjbar-Slamloo Y and Fazlali Z (2019) Dopamine and          87.   Abdou K, Nomoto M, Aly MH et al (2024) Prefrontal
+         noradrenaline in the brain; overlapping or dissociate              coding of learned and inferred knowledge during REM
+         functions? Front Mol Neurosci 12, 334                              and NREM sleep. Nat Commun 15, 4566
+ 69.     Vazquez J and Baghdoyan HA (2001) Basal forebrain            88.   Buzsaki G (2015) Hippocampal sharp wave-ripple: a
+         acetylcholine release during REM sleep is significantly            cognitive biomarker for episodic memory and plan-
+         greater than during waking. Am J Physiol Regul Integr              ning. Hippocampus 25, 1073-1188
+         Comp Physiol 280, R598-601                                   89.   Maquet P, Laureys S, Peigneux P et al (2000) Experience-
+ 70.     Han Y, Shi YF, Xi W et al (2014) Selective activation of           dependent changes in cerebral activation during hu-
+         cholinergic basal forebrain neurons induces immediate              man REM sleep. Nat Neurosci 3, 831-836
+         sleep-wake transitions. Curr Biol 24, 693-698                90.   Louie K and Wilson MA (2001) Temporally structured
+ 71.     McGinty DJ and Harper RM (1976) Dorsal raphe                       replay of awake hippocampal ensemble activity during
+         neurons: depression of firing during sleep in cats. Brain          rapid eye movement sleep. Neuron 29, 145-156
+         Res 101, 569-575                                             91.   Rasch B, Buchel C, Gais S and Born J (2007) Odor cues
+ 72.     Jones BE (2020) Arousal and sleep circuits. Neuro-                 during slow-wave sleep prompt declarative memory
+         psychopharmacology 45, 6-20                                        consolidation. Science 315, 1426-1429
+ 73.     Niethard N and Born J (2019) Back to baseline: sleep         92.   Sterpenich V, Schmidt C, Albouy G et al (2014) Memory
+         recalibrates synapses. Nat Neurosci 22, 149-151                    reactivation during rapid eye movement sleep pro-
+ 74.     Vyazovskiy VV, Cirelli C, Pfister-Genskow M, Faraguna              motes its generalization and integration in cortical
+         U and Tononi G (2008) Molecular and electrophysio-                 stores. Sleep 37, 1061-1075, 1075A-1075B
+         logical evidence for net synaptic potentiation in wake       93.   Walker MP and Stickgold R (2010) Overnight alchemy:
+         and depression in sleep. Nat Neurosci 11, 200-208                  sleep-dependent memory evolution. Nat Rev Neurosci
+ 75.     de Vivo L, Bellesi M, Marshall W et al (2017) Ultra-               11, 218; author reply 218
+         structural evidence for synaptic scaling across the          94.   Payne JD (2011) Sleep on it!: stabilizing and transforming
+         wake/sleep cycle. Science 355, 507-510                             memories during sleep. Nat Neurosci 14, 272-274
+ 76.     Tononi G and Cirelli C (2014) Sleep and the price of         95.   Postuma RB, Iranzo A, Hu M et al (2019) Risk and
+         plasticity: from synaptic and cellular homeostasis to me-          predictors of dementia and parkinsonism in idiopathic
+         mory consolidation and integration. Neuron 81, 12-34               REM sleep behaviour disorder: a multicentre study.
+ 77.     Tononi G and Cirelli C (2006) Sleep function and                   Brain 142, 744-759
+         synaptic homeostasis. Sleep Med Rev 10, 49-62                96.   Manoach DS and Stickgold R (2019) Abnormal sleep
+ 78.     Diering GH, Nirujogi RS, Roth RH, Worley PF, Pandey                spindles, memory consolidation, and schizophrenia.
+         A and Huganir RL (2017) Homer1a drives homeostatic                 Annu Rev Clin Psychol 15, 451-479
+         scaling-down of excitatory synapses during sleep.            97.   Antony JW, Piloto L, Wang M, Pacheco P, Norman KA
+         Science 355, 511-515                                               and Paller KA (2018) Sleep spindle refractoriness seg-
+ 79.     Sawada T, Iino Y, Yoshida K et al (2024) Prefrontal syn-           regates periods of memory reactivation. Curr Biol 28,
+         aptic regulation of homeostatic sleep pressure revealed            1736-1743.e1734
+         through synaptic chemogenetics. Science 385, 1459-1465       98.   Ngo HV, Miedema A, Faude I, Martinetz T, Molle M
+ 80.     Koukaroudi D, Qiu Z, Fransen E et al (2024) Sleep                  and Born J (2015) Driving sleep slow oscillations by
+         maintains excitatory synapse diversity in the cortex and           auditory closed-loop stimulation-a self-limiting process.
+         hippocampus. Curr Biol 34, 3836-3843.e3835                         J Neurosci 35, 6630-6638
+ 81.     Yang G, Lai CS, Cichon J, Ma L, Li W and Gan WB              99.   Facchin L, Schone C, Mensen A et al (2020) Slow
+         (2014) Sleep promotes branch-specific formation of                 waves promote sleep-dependent plasticity and functional
+         dendritic spines after learning. Science 344, 1173-1178            recovery after stroke. J Neurosci 40, 8637-8651
+ 82.     Lemke SM, Ramanathan DS, Darevksy D, Egert D,               100.   Steinvorth S, Levine B and Corkin S (2005) Medial
+         Berke JD and Ganguly K (2021) Coupling between motor               temporal lobe structures are needed to re-experience
+         cortex and striatum increases during sleep over long-              remote autobiographical memories: evidence from HM
+         term skill learning. Elife 10, e64303                              and WR. Neuropsychologia 43, 479-496
+ 83.     Weiss JT and Donlea JM (2021) Roles for sleep in            101.   Barry DN and Maguire EA (2019) Remote memory and
+         neural and behavioral plasticity: reviewing variation in           the hippocampus: a constructive critique. Trends Cogn
+         the consequences of sleep loss. Front Behav Neurosci               Sci 23, 128-142
+         15, 777799                                                  102.   Moscovitch M, Cabeza R, Winocur G and Nadel L
+ 84.     Watson BO, Levenstein D, Greene JP, Gelinas JN and                 (2016) Episodic memory and beyond: the hippocampus
+         Buzsaki G (2016) Network homeostasis and state dyna-               and neocortex in transformation. Annu Rev Psychol 67,
+         mics of neocortical sleep. Neuron 90, 839-852                      105-134
+
+http://bmbreports.org                                                                                                          BMB Reports     435
+    Dynamic processes in sleep-dependent consolidation
+    Jaekyung Kim and Minjeong Park
+
+
+
+
+    103.    Nadel L, Winocur G, Ryan L and Moscovitch M (2007)               ciliation of two opposing models. Behav Brain Sci 23,
+            Systems consolidation and hippocampus: two views.                851-866; discussion 904-1121
+            Debates in Neuroscience 1, 55-66                          109.   Lacaux C, Andrillon T, Bastoul C et al (2021) Sleep
+    104.    Attardo A, Fitzgerald JE and Schnitzer MJ (2015) Imper-          onset is a creative sweet spot. Sci Adv 7, eabj5866
+            manence of dendritic spines in live adult CA1 hip-        110.   Horowitz AH, Esfahany K, Galvez TV, Maes P and
+            pocampus. Nature 523, 592-596                                    Stickgold R (2023) Targeted dream incubation at sleep
+    105.    Ziv Y, Burns LD, Cocker ED et al (2013) Long-term                onset increases post-sleep creative performance. Sci
+            dynamics of CA1 hippocampal place codes. Nat                     Rep 13, 7319
+            Neurosci 16, 264-266                                      111.   Picard-Deland C, Konkoly K, Raider R et al (2023) The
+    106.    Picard-Deland C, Bernardi G, Genzel L, Dresler M and             memory sources of dreams: serial awakenings across
+            Schoch SF (2023) Memory reactivations during sleep: a            sleep stages and time of night. Sleep 46, zsac292
+            neural basis of dream experiences? Trends Cogn Sci 27,    112.   Malinowski JE and Horton CL (2021) Dreams reflect
+            568-582                                                          nocturnal cognitive processes: early-night dreams are
+    107.    Nielsen T (2017) Microdream neurophenomenology.                  more continuous with waking life, and late-night
+            Neurosci Conscious 2017, nix001                                  dreams are more emotional and hyperassociative.
+    108.    Nielsen TA (2000) A review of mentation in REM and               Conscious Cogn 88, 103071
+            NREM sleep: “covert” REM sleep as a possible recon-
+
+
+
+
+436 BMB Reports                                                                                                   http://bmbreports.org
+

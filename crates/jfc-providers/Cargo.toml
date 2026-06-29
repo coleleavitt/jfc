@@ -1,0 +1,50 @@
+[package]
+name = "jfc-providers"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+jfc-anthropic-sdk = { path = "../jfc-anthropic-sdk" }
+jfc-auth = { path = "../jfc-auth" }
+jfc-core = { path = "../jfc-core" }
+jfc-compress = { path = "../jfc-compress" }
+jfc-plugin-sdk = { path = "../jfc-plugin-sdk" }
+jfc-provider = { path = "../jfc-provider" }
+
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+base64 = { workspace = true }
+chrono = { workspace = true }
+dirs = "6"
+futures = { workspace = true }
+fs2 = { workspace = true }
+gcp_auth = "0.12.7"
+hmac = "0.12"
+hex = { workspace = true }
+linkscope = { workspace = true }
+rand = "0.10"
+regex = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_urlencoded = { workspace = true }
+sha2 = "0.10"
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["fs", "sync", "time", "rt", "process"] }
+toml = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }
+urlencoding = { workspace = true }
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+serial_test = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+
+[features]
+default = ["anthropic-oauth-sensitive"]
+anthropic-oauth-sensitive = []
+
+[lints]
+workspace = true

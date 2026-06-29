@@ -1,0 +1,924 @@
+                                                     RESEARCH ARTICLE
+
+                                                     Evolutionary Kuramoto dynamics unravels
+                                                     origins of chimera states in neural populations
+                                                     Thomas Zdyrski      1
+                                                                          *, Scott Pauls1, Feng Fu1,2
+
+                                                     1 Department of Mathematics, Dartmouth College, Hanover, New Hampshire, United States of America,
+                                                     2 Department of Biomedical Data Science, Geisel School of Medicine at Dartmouth, Hanover, New
+                                                     Hampshire, United States of America
+
+                                                     * thomas.zdyrski@dartmouth.edu
+
+
+
+                                                     Abstract
+                                                     Neural synchronization is central to cognition. However, incomplete synchronization
+                                                     often produces chimera states, where coherent and incoherent dynamics coexist.
+                                                     Recent studies have suggested that these chimera states could be important in
+                                                     human cognitive organization. In particular, chimera states have been suggested as
+                                                     a regulator of cognitive integration and regulation with varying quality as humans age.
+                                                     While previous studies have explored such chimera states using networks of coupled
+   OPEN ACCESS                                       oscillators, it remains unclear why neurons commit to communication or how chimera
+Citation: Zdyrski T, Pauls S, Fu F (2026)            states persist. Here, we investigate the coevolution of neuronal phases and commu-
+Evolutionary Kuramoto dynamics unravels              nication strategies on directed, weighted networks where interaction payoffs depend
+origins of chimera states in neural populations.
+PLoS Comput Biol 22(4): e1014214. https://
+                                                     on phase alignment and may be asymmetric due to unilateral communication. The
+doi.org/10.1371/journal.pcbi.1014214                 graph structure enables us to apply a game-theoretic model of Kuramoto-like oscil-
+Editor: Raviraj Pandian, GSSS Institute of           lators to brain connectomes, and the asymmetry captures biochemical differences
+Engineering & Technology for Women, INDIA            between communicative and non-communicative neurons. Combined, these two
+Received: November 11, 2025                          generalizations enable us to apply the computationally-tractable game-theoretic
+Accepted: April 9, 2026                              model of Kuramoto models to realistic brain networks and analyze the role of connec-
+Published: April 30, 2026
+                                                     tome structure on neuron communication. We find that both connection weights and
+                                                     directionality influence the stability of communicative strategies—and, consequently,
+Peer Review History: PLOS recognizes the
+benefits of transparency in the peer review          full synchronization—as well as the strategic nature of neuronal interactions. Applying
+process; therefore, we enable the publication        our framework to the C. elegans connectome, we show that emergent payoff struc-
+of all of the content of peer review and
+                                                     tures, such as the staghunt game, control population dynamics. We demonstrate that
+author responses alongside final, published
+articles. The editorial history of this article is   weighted, directed connectivity in the Caenorhabditis elegans (C. elegans) con-
+available here: https://doi.org/10.1371/journal.     nectome is sufficient to generate robust chimera states modulated by payoff asym-
+pcbi.1014214
+                                                     metries. Our computational results demonstrate a promising neurogame-theoretic
+Copyright: © 2026 Zdyrski et al. This is an
+                                                     perspective, leveraging evolutionary graph theory to shed light on mechanisms of
+open access article distributed under the terms
+of the Creative Commons Attribution License,         neuronal coordination beyond classical synchronization models.
+which permits unrestricted use, distribution,
+and reproduction in any medium, provided the
+original author and source are credited.
+
+
+
+
+PLOS Computational Biology | https://doi.org/10.1371/journal.pcbi.1014214 April 30, 2026                                                           1 / 22
+Data availability statement: The raw and
+processed data for all simulated parameter           Author summary
+ranges is available on Zenodo at https://doi.
+org/10.5281/zenodo.19235754. An interactive          Brain neurons fire together in synchronized patterns, and these synchronization
+webpage for exploring the data set is available      waves are thought to be important for understanding human cognition. Given the
+at https://tzdyrski.github.io/egt-kuramoto/
+                                                     miniscule scale and immense number of neurons, it is challenging to perform ex-
+notebooks/EKT_Plots.html. Additionally,
+all source code is available via GitHub at           perimental, in-vivo studies connecting individual neuron behavior to brain-scale
+https://github.com/TZdyrski/egt-kuramoto/            synchronization patterns. Evolutionary game theory (EGT) is a useful tool for an-
+tree/1.1.1 or Zenodo at https://doi.org/10.5281/     alyzing how the properties of individual players affect the large-scale dynamics.
+zenodo.19582421.
+                                                     In this study, we analyze the 302-neuron brain of the C. elegans nematode using
+Funding: FF received funding through                 EGT by treating the neurons as players and synapse connections as games.
+the Dartmouth Scholarly Innovation &
+                                                     Numerical simulations show that the structure of the C. elegans brain enhances
+Advancement Awards (SIAA). The funders had
+no role in study design, data collection and         brain states known as chimeras. These chimera states display both synchroni-
+analysis, decision to publish, or preparation of     zation and disorder, and they are known to be crucial indicators of brain function.
+the manuscript.                                      Therefore, this model offers a novel framework for studying these chimera states
+Competing interests: The authors have                in other brain systems by connecting small-scale neuron properties to large-
+declared that no competing interests exist.          scale synchronization dynamics.
+
+
+
+                                                   1 Introduction
+                                                   Evolutionary game theory (EGT) is the application of game theory to evolving popula-
+                                                   tions of individuals with behavioral strategies. This tool is useful for studying how local
+                                                   interaction rules yield large-scale patterns such as cooperation [1] and has found use
+                                                   in fields including international politics, ecology, and protein folding [2]. Studies [3–6]
+                                                   have even applied EGT to non-reproducing neurons by viewing neuron plasticity as an
+                                                   evolutionary process where firing patterns change and are “learned” over time. These
+                                                   studies use a neurogame-theoretic approach: players are neurons; strategies are
+                                                   dynamical properties like firing rates [3] or activation/inhibition [4]; and payoffs arise
+                                                   from firing rate stability [3] or emulative/non-emulative neuron tendencies [4].
+                                                       Evolutionary graph theory places evolutionary games on graphs to investigate the
+                                                   role of structure in population evolution. Prior studies have found that structure quali-
+                                                   tatively changes game evolution. For instance, cooperation is enhanced by small-
+                                                   degree nodes [7] or unidirectional edges [8] and suppressed by weighted edges [9].
+                                                   Thus, the study of evolving, structured populations should account for the effects of
+                                                   incompleteness, directedness, and weightedness.
+                                                       Kuramoto networks are groups of coupled oscillators where the coupling strength
+                                                   depends sinusoidally on the oscillators’ phase difference. These networks are popular
+                                                   models for neuron behaviour [10,11] because they exhibit tunable synchronization. Prior
+                                                   studies [12] have modelled synchronization with Kuramoto oscillators using EGT applied
+                                                   to the prisoner’s dilemma game type. Other studies [5] generalized this approach to
+                                                   include dynamically changing game types by introducing an evolutionary Kuramoto (EK)
+                                                   model to show how the relationship between communication benefit and cost influences
+                                                   the emergence of synchronized communication (C) or non-communication (N) regimes.
+                                                   While the application of EGT to neurons is ultimately a mathematical abstraction, it is a
+
+
+
+
+PLOS Computational Biology | https://doi.org/10.1371/journal.pcbi.1014214 April 30, 2026                                                 2 / 22
+useful one [3–6] with potential biophysical underpinnings. For example, the communicative state C represents an active state
+(either bursting or spiking) while N represents its inactive state [6]. Evolution, or strategy-update, then occurs through neuro-
+modulation enhancing or suppressing neural activation [13]. In the evolutionary Kuramoto model, the discrete phase can be
+understood as the true (continuous) phase’s periodic measurement: then, a constant phase represents a periodic firing at the
+measurement frequency while a slowly varying phase represents a frequency mismatch.
+    One intriguing aspect of neuron oscillations is the observation of chimera states [14]. These states exhibit the simulta-
+neous existence of coherent and disordered phases [15]. These chimera states have appeared in a variety of topologies,
+including ring oscillators [15], two-dimensional spatial regions [16], and structured graphs [17]. Chimera states arise when
+a population splits into subcommunities, with some synchronized and others disordered; these subcommunities can be
+grouped by spatial region (for spatial systems) or by connectivity (for graph systems). Previous studies have proposed
+chimera states as a key component of human cognitive organization [18], a facilitator of spiking and bursting phases [19],
+and a regulator between cognitive integration and segregation [20]. Despite the observed importance of these chimera
+states, the factors that give rise to coherent/disordered coexistence remain incompletely characterized.
+    The nematode Caenorhabditis elegans (C. elegans) is a model organism in neuroscience due to its simple brain
+connectome [21] of only 302 neurons. Despite their simplicity, models of the Caenorhabditis elegans (C. elegans) brain
+still display a wide array of complex phenomena including topologically-central rich clubs crucial to motor neurons [22],
+phenomenological connections to control theory [23], and chimera states [24].
+    In this paper, we introduce an asymmetric evolutionary Kuramoto model on graphs and analyze its chimera-like states
+on the Caenorhabditis elegans (C. elegans) connectome. The newly introduced graph structure is necessary for model-
+ing these Kuramoto-like players on structured populations, such as neuron connectomes, and it can qualitatively change
+population dynamics by selectively enhancing or suppressing cooperation [25]. This represents a new extension of the
+neurogame-theoretic framework by combining both Kuramoto-type oscillators for representing neuron phases and graph
+structure for representing connectomes. Furthermore, this payoff asymmetry between communicators (C) and non-
+communicators (N) models the inherent asymmetry of pre- and post-synaptic junctions: if the source neuron is N and the
+destination neuron is C, then the destination neuron’s payoff is modulated by 2α , which represents its receptivity to other,
+non-local chemical neurotransmitters [26]; conversely, if the source neuron is C and the destination neuron is N, then the
+destination neuron’s payoff is modulated by 2(1 – α) , representing its ability to spontaneously fire in absence of upstream
+stimuli [27]. Our results connect individual neuron fitness and non-trivial brain topology to chimera-like brain states. Given
+current technological limitations with direct measurement of in-vivo neuron activity, frameworks like ours create testable
+hypotheses connected to the theory’s assumptions. Our computational model represents a simple yet versatile framework
+to illuminate the influence of neural connectivity on chimera-like brain states beyond classical synchronization models.
+
+2 Results
+2.1 Model
+We extend the EK model in two ways: placing the player network on a directed, weighted graph; and introducing a payoff
+asymmetry. First, we represent a well-mixed population as a complete graph in Fig 1A with players represented by nodes
+and games by edges. We generalize this to directed graphs where game (edge) payoffs only flow to the head players
+(nodes). We can also represent bidirectional games with a pair of edges in both directions, as shown in Fig 1B. For ref-
+erence, the Caenorhabditis elegans (C. elegans) connectome has 38 self-loops, 669 bidirectional edge pairs, and 2,331
+unpaired edges. Finally, we interpret the Caenorhabditis elegans (C. elegans) chemical connectome’s integer-valued edge
+weights as the number of connections between nodes, so these weights scale each payoff.
+   We also generalize the payoff structure to incorporate an asymmetry between communicators and non-communicators.
+We characterized each player (node) by its strategy si—either communicative C or non-communicative N— and its phase
+ϕi —taking one of m = 20 evenly-spaced values between 0 and 2π . When exactly one partner is communicative, the
+
+
+
+PLOS Computational Biology | https://doi.org/10.1371/journal.pcbi.1014214 April 30, 2026                                    3 / 22
+Fig 1. Evolutionary Kuramoto dynamics with weighted neural connectivity. (A) The graph of a well-mixed population with N = 20 players where
+each pair of players is connected by a directed edge in each direction. (B) The connectivity between two sample players, i and j, showing directed,
+weighted edges wij and wji. Each player has a strategy (communicative C or non-communicative N) and phase ϕ = 2πk/m with k ∈ 0, . . . , m – 1 and m the
+number of phases. (C) The payoff matrix shows the reward the row-player (C, ϕi ) receives after playing a game with the column-player (N, ϕj ) assuming
+either player can switch strategy and phase to the other’s.
+
+https://doi.org/10.1371/journal.pcbi.1014214.g001
+
+
+asymmetry α ∈ [0, 1] biases the payoff toward (against) the communicator when α is greater (less) than 1/2, while α = 0.5
+reproduces the symmetric case. Fig 1C shows the payoff matrix for these mixed CN or NC interactions and includes the
+maximum joint benefit B0, maximum mixed benefit β0 , cost c, and sinusoidal Kuramoto coupling f(∆ϕ) = [1 + cos(ϕj – ϕi )]/2 .
+
+2.2 Parameter space
+One of the key aspects of the EK model is that multiple 2 × 2 game types can emerge among the players during the
+population’s evolution. These game types [28] include dilemma (a.k.a. “prisoner’s dilemma”), deadlock (“anti-prisoner’s
+dilemma”), chicken (“hawk-dove” or “snowdrift”), hero (“Bach or Stavinsky” with the lowest two payoffs swapped), har-
+mony (game with strong incentive alignment), or concord (similar to harmony, weaker incentives). See Section 2 of the S1
+Text in S1 Appendix for order graphs depicting the payoff structure of each game type. While CC interactions are always
+double-cooperation games (denoted “cooperation” hereafter for simplicity) and NN interactions are always neutral games,
+mixed (CN or NC) games show a variety of game types, (Fig 2). We can visualize these games by looking at two-
+dimensional slices of the three-dimension phase space characterized by α , β := β0 f(∆ϕ) , and B0. Fig 2A shows a β – B0
+slice of phase space and generalizes Fig 1 of a prior study [5], while Fig 2B shows a β – α slice. Each straight line of white
+dots represent permissible values of the m = 20 phases ∆ϕi across our simulations and highlight which regions of parame-
+ter space are accessible. The table in Fig 2C shows some select transitions as ∆ϕi varies from 0 to π . For instance, when
+B0/c = 1.5—corresponding to the line of white dots in Fig 2A— ∆ϕ = 0 starts in the chicken region and moves left, transi-
+tioning to dilemma and then staghunt. As ∆ϕ increases from π to 2π , this process reverses.
+    These different game types have multiple roles in the subsequent analysis. First, they provide interpretability of the dynam-
+ics in different regions of parameter space. The three-dimensional parameter space depicted in Fig 2 hosts a wide variety of
+dynamics with varying invasion possibilities, fixation times, and stabilities. However, by leveraging existing knowledge of classic
+
+
+
+PLOS Computational Biology | https://doi.org/10.1371/journal.pcbi.1014214 April 30, 2026                                                         4 / 22
+Fig 2. Payoff asymmetry enriches neural interactions well beyond the classic prisoner’s dilemma game type. Region plots illustrate the
+diverse range of game types that neural populations can engage in during evolutionary dynamics. Slices of the three-parameter mixed CN game-
+type phase diagram in the (A) β – B0 plane ( α = 0.5 ) and (B) β – α plane (B0/c = 1.5). For two players with phase difference ∆ϕ , the mixed benefit is
+β = β0 [1 + cos(∆ϕ)]/2 . The legend displays the game type corresponding to each color. The white dots represent the m = 20 potential phase differences
+as well as the restriction (A) B0/c = 1.5 or (B) α ∈ [0, 0.25, 0.5, 0.75, 1] . (C) A table showing key transitions between game types to clarify the reading of
+(A) and (B). The left column describes the fixed parameter, with B0/c corresponding to white dots on (A) and α to white dots on (B). As the phase differ-
+ence ∆ϕ increase from 0 to π , β = β0 f(∆ϕ) decreases and the dots move to the left, tracing the games in the right column.
+
+https://doi.org/10.1371/journal.pcbi.1014214.g002
+
+
+two-player game types, we can understand the features of each region. Second, they allow us to tailor the model for examin-
+ing different interaction classes. Prior studies on neurons frequently use prisoner’s dilemma type games; our model allows for
+targeting the “dilemma” (yellow) region by tuning the parameters B0/c, β0 /c, and α (e.g., the bottom two lines of white dots in Fig
+2B with α = 0 and α = 0.25 ) Alternatively, it might be desirable to analyze the behaviour of game types beyond the prisoner’s
+dilemma, which may exhibit exponentially long fixation times [29] such as chicken, hero, harmony, and battle (the warm-colored
+game types). We see that is possible for our values of B0 and β0 when α = 0.5 or α = 0.75 (white dots intersect the orange
+“hero” and red “chicken” regions in Fig 2B). Therefore, while there is no intrinsic, biological representation of “game types” at the
+biochemical level, they offer a valuable interpretability tool and a useful way to target model outcomes.
+
+2.3 Simulation parameters
+We have now introduced a number of parameters: B0, β0 , c, α , m. In addition, our model uses the usual evolutionary
+game theory parameters: selection strength δ and mutation rate µ (cf., Section 4.3). Therefore, it is helpful to quickly
+review the dependencies between the parameters and their importance. As discussed in Section 4.3, the evolution is gov-
+erned by a Moran process with exponential fitness fi:
+                                                                                                              
+                                                                  B0
+                                                                  c f(0) – 1           2α Bβ00 Bc0 f(∆ϕ) – 1
+                                                    δc
+                                                             2(1 – α) Bβ00 Bc0 f(∆ϕ)               0
+
+
+Thus, we can see that the four combinations B0/c, β0 /B0 , α , and δc serve to define the relative strengths of four combina-
+tions CC, CN, NC, and NN. Therefore, the dynamics are wholly controlled by the parameter combinations B0/c, β0 /B0 , α ,
+and δc , in addition to the aforementioned mutation rate µ and discretization number m.
+
+
+
+PLOS Computational Biology | https://doi.org/10.1371/journal.pcbi.1014214 April 30, 2026                                                                 5 / 22
+    The ratio B0 /c ≈ 2.1 is the critical joint-benefit benefit strength at which the communicative fraction equals 1/2 when
+in the absence of asymmetry(i.e., α = 1/2 ) [5]. Therefore, we follow [5] and choose B0/c = 1.5 slightly less than the critical
+point to slightly bias the system towards non-communicativeness. Likewise, we choose β0 /B0 = 0.95 since we biologi-
+cally expect mixed NC communication to be less rewarding than joint CC communication. Both the mutation rate µ and
+selection strength δ are chosen to be small to allow for analytic approximations (see section 2 of S1 Text in S1 Appenidx).
+While we fix a common set of parameters in our results for simplicity, we also performed a sensitivity analysis in Section
+4.9 to analyze the influence of varying these parameters. The main results (the chimera-like index χ ) are largely insen-
+sitive to changes in most of these parameters. The only sensitive parameter is the selection strength δ , with stronger δ
+increasing the chimera-like effect. However, we retain the smaller δ for analytic tractability. The m = 20 discrete phases
+approximate a continuous phase distribution; Fig 10 depicts a convergence analysis showing that the communicative frac-
+tion has converged already for m = 20, verifying that this is an acceptable approximation.
+    Unless otherwise specified, each of the following simulations use m = 20 phases, selection strength of δ = 0.2 , mutation
+rate of µ = 1 × 10–4 , cost c of 0.1, maximum joint benefit B0 = 0.15, and maximum mixed benefit β0 of 0.95 B0.
+    Most runs use 8 × 106 time steps to ensure that we have sampled sufficiently many mutation periods 1/µ (though
+time series plots show a temporal subset for visual clarity). With µ = 1 × 10–4 , this means we sample approximately 800
+mutations; this high number of mutations allow us to efficiently sample the available parameter space. The plots of com-
+municative fraction fcomm use a longer runtime of 2 × 108 to collect additional statistics, drive down the sample variance, and
+provide tighter error-bounds on the comparison to analytic theory.
+
+2.4 Complete graphs
+First, we will explore the influence of the newly introduced asymmetry on a N = 20-player, well-mixed population. Fig 3A
+compares the frequency of communicative strategies fcomm to the maximum joint benefit B0. The marks represent the
+simulation results and the lines represent the full analytic result (Eq. 10 in S1 Text in S1 Appenidx) for a well-mixed
+population. The B0 step size is 0.04, and the simulations ran for 2 × 108 time steps. The results are averaged over 10
+seeds and the vertical error bars show the standard deviations. In general, fcomm is low for small B0, rises to fcomm = 0.5 at
+some break-even B0, and plateaus to fcomm ≈ 1 for large B0. We can validate our model by comparing our α = 0.5 case
+with a previous study [5] to observe qualitatively similar results, with our break-even B0 ≈ 0.21 corresponding to their
+B0 = 2(N – 1)c/(N – 2) ≈ 0.21 break-even condition. We also see that increasing (decreasing) the asymmetry α dilates
+(stretches) this sigmoid function in the B0 direction. This α -dependence is reasonable, as increasing α corresponds to
+biasing the payoff in a mixed CN interaction towards the communicative partner.
+    While Fig 3A displays the time-averaged system state, it is also useful to investigate the time-dependent variations.
+Figs 3B to 3D depict the frequency of communicative strategies fcomm as scatter plots of time on the left vertical axis for dif-
+ferent values of the asymmetry α . These time-series points are color-coded grey if all players are communicative or black
+if all players are non-communicative; otherwise, the points are colored according to the plurality mixed game type, as
+indicated in the legend. On the right vertical axes, magenta line plots depict the order parameter ρ ∈ [0, 1] given by Eq. 4.
+The order parameter and communicative frequency are shown for a single seed to demonstrate the mutation-
+induced jumps for a single simulation. The mutation rate µ = 1 × 10–4 means that a mutation occurs, on average, every
+1 × 104 time steps; for the 8 × 105 time steps, we therefore expect 80 mutations. These mutations cause the observed dips
+in the order parameter. But we note that there are significantly fewer than 80 dips shown. The quick extinction of mutant
+invaders means that they are often missed when we 80×-decimate the time-series for plotting, only observing ≈ 6 visible
+mutations.
+    Fig 3B shows the time-variation when the system heavily favors non-communicative players with α = 0 . After an
+initial disordered, dilemma-type game (yellow), the system synchronizes in the non-communicative regime (black line at
+fcomm = 0) with only brief, dilemma-type game excursions at t ≈ 2.5 × 105 , 4.5 × 105 . Fig 3C depicts an asymmetry α = 0.75
+
+
+
+PLOS Computational Biology | https://doi.org/10.1371/journal.pcbi.1014214 April 30, 2026                                   6 / 22
+Fig 3. Impact of symmetry breaking on neural synchronization in well-mixed populations. Communication frequency fcomm for the well-mixed topol-
+ogy. (A) Time-averaged fcomm as a function of the maximum joint benefit B0 for different values of the payoff asymmetry α . The lines represent the theory
+predictions, the marks represent the simulation results averaged across 10 seeds, and the vertical error bars denote the standard-deviation across
+the 10 runs. (B)–(D) Scatter plots where the left vertical axes show the instantaneous fcomm as a function of time and are color-coded according to the
+plurality mixed game type as indicated in the legend. The right vertical axes give the order parameter ρ (Eq. 4), in magenta, as a function of time. The
+asymmetry is (B) α = 0 , (C) α = 0.75 , and (D) α = 1 .
+
+https://doi.org/10.1371/journal.pcbi.1014214.g003
+
+
+that moderately encourages communicativeness. The system is synchronized in a communicative state (gray line at
+fcomm = 1) 69% of the time, with unstable excursions to synchronized, non-communicative states (black line at fcomm = 0) and
+disordered, hero (orange) and staghunt (dark blue) game types. This 69% communicative rate is similar to the expected
+75% from Fig 3A (for B0 = 0.15 and α = 0.75 ), with small differences likely due to the short timespan shown in Fig 3C.
+Finally, Fig 3D shows the α = 1 case where communication is heavily incentivized. Like the (B) α = 0 case, the system is
+virtually always synchronized in the communicative regime, with only brief excursions to deadlock (light blue) or staghunt
+(dark blue) games types. We note that all three (B–D) scenarios are virtually always synchronized; the order parameter ρ
+(magenta) is almost always ρ = 1 , with only occasional dips due to mutations.
+
+2.5 C. elegans graphs
+Here, we consider the weighted, directed hermaphroditic Caenorhabditis elegans (C. elegans) chemical connectome [21].
+For reference, Fig 4D shows the N = 300 nodes and the directed edges (we exclude the two unconnected neurons CANL/
+CANR). We treat all Caenorhabditis elegans (C. elegans) neurons identically and do not differentiate between sensory
+neurons, interneurons, and motor neurons. The nodes are colored according to their strategy at a particular time step,
+
+
+
+PLOS Computational Biology | https://doi.org/10.1371/journal.pcbi.1014214 April 30, 2026                                                            7 / 22
+Fig 4. Rise of chimera states in Caenorhabditis elegans (C. elegans) neural network. (A)–(C) Time-averaged fraction of players that are commu-
+nicative as a function of the maximum joint benefit B0. The network topologies are the (A) weighted, directed Caenorhabditis elegans (C. elegans) con-
+nectome, (B) unweighted, directed Caenorhabditis elegans (C. elegans) connectome, and (C) weighted, undirected Caenorhabditis elegans (C. elegans)
+connectome. The results are averaged over 10 seeds and the error bars depict the standard deviations. (D) The network topology for the Caenorhabditis
+
+
+
+
+PLOS Computational Biology | https://doi.org/10.1371/journal.pcbi.1014214 April 30, 2026                                                        8 / 22
+elegans (C. elegans) N = 300 weighted, directed connectome with asymmetry α = 0.75 . The colors represent the 2m = 40 strategies at a particular time
+step; blue colors are communicative, red colors are non-communicative, and shades represent different phases ϕ . (E) Scatter plot with the same axes
+and coloring as Figs 3B to 3D showing the communicative frequency, plurality mixed game-types, and order parameter. (F) A flowchart showing the
+pairwise standard deviation between the various communicative fractions fcomm: “well-mixed” is Fig 3C, “unweighted” is (B), “unundirected” is (C), and “C.
+elegans” is (A).
+
+https://doi.org/10.1371/journal.pcbi.1014214.g004
+
+
+
+with blues representing communicative strategies and reds representing non-communicative ones, and different shades
+corresponding to different phases ϕ . We note the chimera-like character of the large, synchronized group of red nodes
+coexisting with disordered neighboring nodes.
+   Next, to quantify the observations of Fig 4D, Fig 4A shows the fraction of players using communicative strategies fcomm
+averaged across the entire simulation of 2 × 108 time steps as a function of the maximum joint benefit B0 in 0.04 steps
+for the Caenorhabditis elegans (C. elegans) connectome network topologies. All subplots use an asymmetry of α = 0.75
+. Additionally, the B0-dependent plots (A–C) show the average across 10 seeds; error bars represent the standard
+deviation.
+   We note that the behaviour of the (A) Caenorhabditis elegans (C. elegans) case is qualitatively distinct from the
+α = 0.75 well-mixed case in Fig 3A. The communicative fraction fcomm is flatter for B0 ≤ 0.08, has a steep jump to 0.77 at
+B0 = 1.6, and decreases to a horizontal asymptote around 0.60. We can isolate the cause of this deviation from the Fig 3A
+well-mixed behavior by looking at variations to the Fig 4A Caenorhabditis elegans (C. elegans) network topology. First,
+the (B) directed, unweighted connectome is qualitatively similar to the (A) well-mixed case with a monotonic increase
+from low communicativeness for B0 < 0.1 to full communicativeness for B0 ≥ 0.2. This implies that directedness plays only a
+small role in the qualitative shape of the (A) full Caenorhabditis elegans (C. elegans) case. Conversely, the (C) weighted,
+undirected connectome looks similar to the (A) full Caenorhabditis elegans (C. elegans) case, displaying the same plateau
+at fcomm ≈ 0.7 , though the peak around B0 = 0.15 is less pronounced. This similarity implies that the connectome’s edge
+weights cause most of the deviation between the (A) full Caenorhabditis elegans (C. elegans) case and the Fig 3A well-
+mixed case.
+   We can further quantify the relative influence of weightedness and directedness by comparing (A–C) with the Fig
+3C well-mixed case. Fig 4F shows the pairwise standard deviations calculated between the well-mixed, unweighted,
+undirected, and full Caenorhabditis elegans (C. elegans) cases. In particular, we see that the unweighted vs.
+Caenorhabditis elegans (C. elegans) standard deviation is three times larger than the undirected vs. Caenorhabditis
+elegans (C. elegans) standard deviation. Therefore, this implies that the weighted (undirected) edges have three
+times the influence as the directed (unweighted) edges in the full Caenorhabditis elegans (C. elegans) communica-
+tive frequency profile.
+   We can also investigate the time-evolution of the Caenorhabditis elegans (C. elegans) system using the same
+parameters as the Figs 3B to 3D well-mixed case but with the Caenorhabditis elegans (C. elegans) connectome
+graph. Compared to the well-mixed case, the (E) Caenorhabditis elegans (C. elegans) case depicts a far more het-
+erogeneous population. Here, the population never stabilizes to a fully communicative or non-communicative state.
+Instead, its communicative frequency stays between 22% to 47%, and its mean fcomm ≈ 37% is smaller than the
+expected fcomm ≈ 70% from Fig 4A with B0 = 0.15; the discrepancy likely comes from the stochasticity in this small,
+8 × 105 time-step subset. Similarity, the order parameter’s smaller value of 2% to 45% indicates far less synchroniza-
+tion than the well-mixed case. And while the Fig 3C well-mixed setup displays hero, staghunt, and concord plurality
+mixed game-types, the Fig 4E Caenorhabditis elegans (C. elegans) setup only displays hero and staghunt games.
+Finally, the Caenorhabditis elegans (C. elegans) case is less stable to mutations than the Fig 3C well-mixed case:
+instead of stable synchronized states with transient impulses, the Caenorhabditis elegans (C. elegans) case depicts
+disordered states with discontinuous offsets.
+
+
+
+PLOS Computational Biology | https://doi.org/10.1371/journal.pcbi.1014214 April 30, 2026                                                             9 / 22
+2.6 Chimera-like index
+Time-lapse animations of the system’s time evolution show a subset of the nodes exhibiting high synchronicity with others
+remaining disordered: this is characteristic of a chimera state. Animations depicting this phenomena are available as sup-
+porting information (S1 Video, S2 Video, and S3 Video), and an interactive website for exploring the full data set through
+plots and animations is provided in the “Code availability”. In order to quantify this chimera-like effect, we will investigate
+the chimera-like index χ (Eq. 6) and metastability index λ (Eq. 7). As discussed in Section 4.8, the
+chimera-like index measures the coherence difference between communities of players, is equal to the time-averaged
+community variance, and has a theoretical maximum value of M/[4(M – 1)] = 0.3 [17] for our M = 6 communities. Con-
+versely, the metastability index represents how often the system transitions between synchronicity and disorder, is equal
+to the community-average of the temporal variance; it is 0 for communities that are always synchronized or always disor-
+dered, and increases to 0.25 for communities spending equal time fully synchronized and fully disordered. Fig 5 shows
+the (A) chimera-like index χ and (B) metastability index λ as functions of the asymmetry α . These simulations ran with
+
+
+
+
+Fig 5. Characterizing chimera states. (A) The chimera-like index (Eq. 6) and (B) metastability index (Eq. 7) as functions of the asymmetry α for
+the weighted, directed Caenorhabditis elegans (C. elegans) connectome. To calculate the indices, we split the graph into two communities using the
+constant Potts model (cf., Section 4.8). Results were averaged over 10 seeds, and error bars depict the standard deviation. (C)–(D) A snapshot of the
+Caenorhabditis elegans (C. elegans) connectome where blue colors are communicative, red colors are non-communicative, and shades represent differ-
+ent phases ϕ . The snapshots show a particular seed and time step with asymmetry (C) α = 0 or (D) α = 1 .
+
+https://doi.org/10.1371/journal.pcbi.1014214.g005
+
+
+
+
+PLOS Computational Biology | https://doi.org/10.1371/journal.pcbi.1014214 April 30, 2026                                                      10 / 22
+the same parameters as the Figs 4A to 4C Caenorhabditis elegans (C. elegans) time-series data averaged over 10 seeds
+with the error bars depicting the standard deviations.
+    The metastability displayed in Fig 5 is less than 0.03, much smaller than the maximum of 0.25. This implies that the
+system has low metastability and spends most of its time at a nearly constant synchronicity ρm (t) . Furthermore, while the
+metastability is highest (more stability variations) t λ ≈ 0.02 for the α = 0.25, 0.5 cases, the metastability drops for larger
+α , always staying below 0.01. Conversely, the chimera-like index χ indicates a high chimeric quality with values ( χ ≈ 0.1 )
+a third of the theoretical maximum (0.3). Given that we average the chimera-like index over time, the system’s deviation
+from a complete chimera state arises from both imperfect separation of the coherent/disordered populations as well as
+time fluctuations in the chimeric quality.
+    The chimera-like index depicted in Fig 5 is a time-averaged statistical quantity, but the interplay between synchronicity
+and disorder can also be understood as a function of time. In particular, the chimera-like states are characterized by some
+communities with low order parameter ρm (Eq. 5) and some with high order parameter. Therefore, Fig 6 shows the com-
+munity parameter for each of the six communities as a function of time. These are the same six parameters as those used
+in Fig 5 which were calculated using a constant Potts model.
+    Fig 5 clearly depicts the order-parameter variability between the six communities. Communities 1–4 are mostly disor-
+dered, with order parameter ≤0.6, while communities 5 and 6 are very synchronized, with order parameters ≥0.95. This
+bifurcation into ordered and disordered subgroups is a key characteristic of chimera-like states, showing that the
+chimera-like index in Fig 5 is depicting a real separation of community coherence.
+
+2.7 Game types
+Next, we seek to understand the types of games that nodes play during the population’s evolution. In Fig 7, we investigate
+the plurality game type amongst all player interactions at each time step (cf., Section 4.6). Fig 7 shows the fraction of time
+that a given game type is the plurality for different values of the asymmetry α for (A) N = 20 well-mixed, and (B) Caenor-
+habditis elegans (C. elegans) connectome network topologies. The fractions are averaged over 10 seeds. The (A) well-
+mixed case fully-synchronized to all-communicative or all-noncommunicative for over 99.6% of the runtime across every
+asymmetry α , as corroborated by the order parameter ρ ≈ 1 in Figs 3B to 3D. Furthermore, the α -dependence of the
+
+
+
+
+Fig 6. Intra-community variation. The community-dependent order parameter ρm (t) (Eq. 5) as a function of time. These six communities are the same
+as those use in Fig 5 calculated using the constant Potts model (cf., Section 4.8). The asymmetry is α = 0.75 , and the remaining parameters are identi-
+cal to those used in Fig 4.
+
+https://doi.org/10.1371/journal.pcbi.1014214.g006
+
+
+
+
+PLOS Computational Biology | https://doi.org/10.1371/journal.pcbi.1014214 April 30, 2026                                                          11 / 22
+Fig 7. Influence of payoff asymmetry on game types played. The plurality game type amongst all player interactions expressed as a fraction of all
+games played for different values of the asymmetry α . The game types are color-coded according to the legend; additionally, “all-C” and “all-N” repre-
+sent when the population is entirely synchronized to communicativeness or non-communicativeness, respectively. The network topologies are the (A)
+N = 20 well-mixed population and (B) weighted, directed Caenorhabditis elegans (C. elegans) connectome. Similarly, (C), (D) depict the plurality game
+type when only considering mixed game types for the (C) N = 20 well-mixed population and (D) weighted, directed Caenorhabditis elegans (C. elegans)
+connectome. A blue inset below the (C) well-mixed panel shows the magnified lower region. All fractions were averaged across 10 seeds.
+
+https://doi.org/10.1371/journal.pcbi.1014214.g007
+
+
+communicative synchronization (“all-C”) fraction approximates the communicative frequency fcomm in Fig 3A for B0 = 0.15.
+In contrast, the (B) Caenorhabditis elegans (C. elegans) system is never synchronized, but instead is virtually always
+dominated by coordination-type games (when both players are communicative, CC) and neutral-type games (when both
+players are non-communicative, NN).
+    In order to investigate the other game types involved, we can also consider the plurality mixed game type (cf., Section
+4.6). The (C) well-mixed case only changes for the < 1% of the time when unsynchronized. In order to better observe these
+games types, a blue inset below Fig 7C magnifies these small fractions. In contrast, the (D) Caenorhabditis elegans (C.
+elegans) system shows a variety of most-frequent game types that vary based on the asymmetry: dilemma for α = 0, 0.25
+, staghunt for α = 0.5 , hero for α = 0.75 , and deadlock for α = 1 . Additionally, the Caenorhabditis elegans (C. elegans)
+system displays some game-type heterogeneity, with a second game type (staghunt) being the plurality 1% to 18% of the
+time for asymmetries α ≥ 0.5 . Finally, we note that the Caenorhabditis elegans (C. elegans) mixed game distributions are
+
+
+
+PLOS Computational Biology | https://doi.org/10.1371/journal.pcbi.1014214 April 30, 2026                                                          12 / 22
+approximately the same as the disordered (i.e., states other than “all-C” or “all-N”) plurality mixed games in the Fig 7C
+well-mixed setup (cf., blue inset) for each α . Overall, we see that graph structure decreases synchronization and asym-
+metry influences the dominant game types, which, in turn, underpin the formation of chimera states.
+    In addition to the time-averaged plurality game type depicted in Fig 7, we can also look at the fine-grained distribution
+of all games played at a single time step. Fig 8 shows the types of games played as a fraction of all games among all
+3,707 directed edges of the Caenorhabditis elegans (C. elegans) connectome. The snapshot was taken at time t = 4 × 106
+of the simulation. (A) depicts the fraction of each game, including both mixed games (CN interactions) as well as CC
+interactions (coordination-type games) and NN interactions (neutral-type games). (B) shows the same result restricted to
+CN/NC mixed games.
+    The set of all games in Fig 8 shows some interesting differences when compared to the plurality games in Fig 7. First,
+the full set of games in Fig 8A displays a far greater variety of games than the neutral and coordination games depicted in
+the plurality metric Fig 7B. This shows that these mixed games—dilemma, staghunt, chicken, hero, deadlock, and con-
+cord—are present in the population, even if they are never frequent enough to become the plurality. Similarly, when just
+looking at mixed-type games in Fig 8B, we see staghunt games for α ≤ 0.25 and harmony games for α = 1.0 that never
+became a plurality in Fig 7D. For α = 0.5, 0.75 , we see much greater similarity between Fig 8B and Fig 7D, implying each
+game type present becomes the plurality, though not necessarily with temporal frequency equal to its spatial frequency.
+Thus, we see that the rich array of game types accessible to the system in the extended B0 – β0 – α phase space of Fig 2
+is thoroughly explored, even when all of the game types are not necessarily visible in the plurality metric of Fig 7.
+
+3 Discussion
+We can validate our Fig 7C well-mixed time-series results by comparing the α = 0.5 case to previous studies [5]. Their
+weak-selection δ = 0.2 results also show the system spending virtually all of its time in a synchronized state. When not
+synchronized, their system had plurality chicken (denoted “snowdrift” therein) and staghunt (denoted “coordination”, not
+to be confused with the coordination-type game here) games. Indeed, Fig 2A shows that staghunt, dilemma, and chicken
+would be the only game types accessible for α = 0.5 , which is corroborated in our simulations by the inset below Fig 7C.
+
+
+
+
+Fig 8. Game type diversity amongst Caenorhabditis elegans (C. elegans) neurons. The game types at a single time step amongst all player inter-
+actions expressed as a fraction of all games played for different values of the asymmetry α . The game types are color-coded according to the legend;
+additionally, “all-C” and “all-N” represent when the population is entirely synchronized to communicativeness or non-communicativeness, respectively.
+The network topologies is the weighted, directed Caenorhabditis elegans (C. elegans) connectome. (A) depicts the fraction played of each game type,
+including “communicative” games between CC pairings and “neutral” games between NN pairings, while (B) depict the game types when only consider-
+ing mixed game types of CN pairings. The snapshot was taken at time t = 4000000. All fractions were averaged across 10 seeds.
+
+https://doi.org/10.1371/journal.pcbi.1014214.g008
+
+
+
+
+PLOS Computational Biology | https://doi.org/10.1371/journal.pcbi.1014214 April 30, 2026                                                       13 / 22
+    Next, we will discuss the observed chimera states. Another study of the Caenorhabditis elegans (C. elegans) connec-
+tome also found chimera-like states using an entirely non-game-theory tool, modular neural networks [24]. This study
+applied a Hindmarsh-Rose model of ODEs to the Caenorhabditis elegans (C. elegans) connectome with both chemical
+and electrical connections. The authors split the connectome into six communities using a walktrap algorithm and used
+strong, linear electrical connections within communities and weaker, nonlinear chemical connections between commu-
+nities. In contrast, our model uses nonlinear chemical connections between all neurons of the experimentally measured
+chemical connectome [21], but does not include the (distinct) electrical connectome. The authors found a relatively large
+metastability index λ , up to λ = 0.07 for strong inter-community electrical connections. In contrast, our model generated a
+smaller metastability index λ ≤ 0.03 ; this is likely due to our homogenous synapse type between- and within-communities,
+suppressing the heterogeneity necessary for metastability. Furthermore, the authors also observed chimera-like states
+with a maximum chimera-like index of 0.12. The agreement with our chimera-like index of χ ≈ 0.08 to 0.12 for α = 0.5 ,
+is encouraging; the agreement in χ between two very different models of neurons suggests that chimera states these
+chimera states are a robust feature of the Caenorhabditis elegans (C. elegans) connectome independent of the model.
+    Furthermore, our model offers two novel improvements over a Hindmarsh-Rose model: interaction-interpretability and
+computational ease. The interpretation of neuron interactions using classical 2-player game types offers insight into the
+different behaviors displayed in different regions of the parameter space. Additionally, compared to a system of ODEs like
+the Hindmarsh-Rose model, our discrete-strategy and -phase EGT model is less computationally demanding. This compu-
+tational advantage enables wide parameter sweeps (see, e.g., Section 4.9) for determining which parameter combinations
+produce the strongest chimera-like signals. Given the hypothesized role of chimera-like states in cognition [19,20], this
+computational tool could enable correlating experimental statistics of Caenorhabditis elegans (C. elegans) chimera states
+with single-neurons payoffs B0, β0 , etc., improving neuron characterization and enable further in silico studies.
+    Chimera states of networked oscillators exhibit coexisting synchronized and disordered populations, are present in
+brains [18,19], and may be pivotal in human cognition [18]. Prior studies [11] investigated chimera-like brain states in
+Drosophila melanogaster (D. melanogaster) using sinusoidally-coupled Kuramoto oscillators, a frequent model for neuron
+dynamics [10]. However, the small-scale evolutionary factors leading to chimera-like states remains poorly understood.
+In this paper, we extended the evolutionary Kuramoto model to include weighted, structured interaction graphs and an
+asymmetry between the communicator and non-communicator payoffs. The asymmetry represents differences in com-
+municative and non-communicative biochemical processes, and its role in a well-mixed population showed that that
+increasing (decreasing) the asymmetry inhibits (promotes) communicativity. Additionally, our extension of an evolutionary
+Kuramoto model to weighted, directed graphs enabled analysis of realistic brain networks like the Caenorhabditis elegans
+(C. elegans) chemical connectome. Simulations of Caenorhabditis elegans (C. elegans) neurons revealed that the graph’s
+weightedness has a much stronger influence on the communication frequency than the graph’s directedness does. Finally,
+while the well-mixed players have homogeneous populations that occasionally switch between synchronized communica-
+tive and non-communicative states, the Caenorhabditis elegans (C. elegans) population remains far more heterogenous
+with a stable, chimeric mix of disordered game types.
+    One potential limitation of this work is the identical treatment of different neuron types. Potential extensions could
+modulate the B0/c, β0 /c , and α parameters of the different neuron types separately to better account for the specializa-
+tion of these cells. Additionally, future work will focus on applying the EK model to families of generative brain network
+models [30]. The limited number of empirical graphs analyzed in this study hinders the identification of exact relationships
+between the communicative fraction and graph properties such as edge degree, weight, and directionality. However,
+applying the model to parameterized families of graphs could allow for fine-tuning the parameters to extract these rela-
+tions. Additionally, since this study only considers a single species’ connectome, it is unclear if our findings regarding the
+dependence of chimeric activity on graph structure are generalizable. Therefore, it is of interest to investigate this con-
+nection further by applying our EK setup to other model organisms, such as that of Drosophila melanogaster [31]. Our
+
+
+
+PLOS Computational Biology | https://doi.org/10.1371/journal.pcbi.1014214 April 30, 2026                                14 / 22
+result on the importance of edge-weights on suppressing communication will preferentially enhance chimera-like states in
+connectomes with larger edge-weight heterogeneity. On the contrary, the relatively small effect of edge directivity implies
+that connectomes with a large number of bi-directional pairings is likely to have weaker chimera-like states. Finally, the
+observation that stronger selection strength δ enhances the chimera-like index suggests that connectomes with a greater
+proportion of high-degree nodes with have stronger chimera-like states: in our model, stronger selection δ biased higher
+in-degree nodes (since we used total payoff instead of average payoff); thus, connectomes with naturally more high-
+degree nodes would be comparable to our strong-selection δ case with robust chimera-like states.
+   A key takeaway from this study was the importance of edge weight on communicativity; this has important parallels to
+neural computing, where edge weights are a primary driver of functionality. Additionally, the observation of chimeric states
+arising from such simple neurogame-theoretic models implies that the nature of neuron interactions is likely a key com-
+ponent in producing these critical brain states. We demonstrated that introducing weighted, directed connectivity in the
+Caenorhabditis elegans (C. elegans) connectome graph was sufficient to generate robust chimera states modulated by
+payoff asymmetry between communicators and non-communicators. Overall, evolutionary graph theory allowed us to con-
+nect low-level payoff details for individual neurons to high-level phenomena such as chimera-states, and this model could
+serve as a valuable computational framework for clarifying the influence of network structure on neural dynamics.
+
+4 Methods
+4.1 Game setup
+We model the system of evolving, coupled oscillators by discretizing the 2π phase angle into m discrete phases 2πj/m
+for j ∈ 0, . . . , m – 1 . The game’s strategy space is the outer product of the m phases (m = 20 for our simulations) and 2
+communicative choices, communicative C and non-communicative N. For a given pair of phases, ϕi and ϕj , the game is
+specified by the payoff matrix. If one player is communicative and the other is non-communicative (“mixed game”, CN or
+NC), the payoff matrix is
+
+
+
+
+                                                                                               (1)
+
+   if both players are communicative (CC), the matrix is
+
+
+
+
+                                                                                               (2)
+
+and if both are non-communicative (NN), the matrix is
+
+
+
+
+                                                                                                                           (3)
+
+with f(∆ϕ) = [1 + cos(ϕj – ϕi )]/2 (Fig 1C). Here, B0, β0 , α , and c are non-dimensional, fixed parameters defining the game.
+The cost c represents the penalty paid by communicative players, and B0 and β0 are the maximum benefits paid with joint
+CC communicators and mixed CN players, respectively. The phase-dependent function f(∆ϕ) encodes sinusoidal-
+dependence on the phase-mismatch of the standard Kuramoto model (shifted up to ensure it’s always positive).
+Finally, the benefit asymmetry α ∈ [0, 1] breaks the symmetry between the payoff for the communicator and the
+
+
+
+PLOS Computational Biology | https://doi.org/10.1371/journal.pcbi.1014214 April 30, 2026                                 15 / 22
+non-communicator when exactly one player is communicative. We note that the midpoint α = 1/2 corresponds to the sym-
+metric case. Therefore, we have added a factor of 2 to both 2α and 2(1 – α) , ensuring that the α = 1/2 reduces to simply
+β0 f(∆ϕ) , matching previous work [5].
+
+4.2 Population setup
+Given N players, we associate a pair of weighted, directed graphs to the population. On these graphs, the N nodes rep-
+resent players and the weighted, directed edges represent games between players. We implement two, related graphs:
+an “interaction” graph representing from whom a player receives payoffs, and a “reproduction” graph representing to
+whom a player can spread its strategy. For simplicity, our reproduction graphs are identical to the interaction graph with
+a single self-loop added to each dangling node (i.e., each node with no out neighbors); the well-mixed interaction graph
+has no dangling nodes, and the Caenorhabditis elegans (C. elegans) graph has five dangling nodes. These self-loops
+are necessary in the reproduction graph to ensure that each node has positive indegree as required by the Moran pro-
+cess described in the next section. The only effect of adding these self-loops is on the (originally) dangling nodes: now,
+if they are selected for reproduction, they mutate with probability µ and do nothing with probability 1 – µ . This behaviour,
+combined with the sparsity of dangling nodes (2%), implies that the reproduction graph’s self-loops should have negligible
+impact on the overall dynamics.
+
+4.3 Birth-death Moran process
+The population is updated according to a birth-death Moran process with exponential fitness [32]. On each turn, the
+following steps are performed. First, each edge in the interaction graph corresponds to a game between head node j and
+tail node i, the edge’s payoff πij is scaled by the edge weight wij, and the relevant payoff wij πij is awarded to the head node
+i only. Since the Caenorhabditis elegans (C. elegans) edge weights are integers, we can also interpret each edge weight
+as the number of games played between the two nodes. Fig 1B shows an illustration of this process for a single pair of
+interacting players connected by a pair of weighted, directed edges. The total fitness for node i is the exponential of the
+                                                                                            
+product between the selection strength δ and the sum of payoffs to node i, or fi = exp(δ j wij πij ) with the sum over all
+edges inwardly incident to node i. Then, a single focal node is chosen for reproduction with probability proportional to the
+node’s fitness fi. Finally, a node is chosen for replacement amongst the birth node’s out-neighbors with probability propor-
+tional to the reproduction graph’s edge weight. With mutation probability µ , the death node is replaced by a player with a
+uniformly random strategy; otherwise, it is replaced by a player with the same strategy as the birth node. This birth-death
+process is repeated for each turn.
+
+
+4.4 Communication frequency
+We define the frequency of communicative strategies fcomm(t) as the fraction of players employing a communicative strat-
+egy C at a given time step. We also define the time-averaged communicative frequency fcomm by averaging fcomm(t) over the
+entire simulation. For simulation times long compared to the mutation turnover time Tturn ≫ 1/µ , the initial, random distri-
+bution of strategies will be negligible and the time-average will correspond to the long-time limit. In section 2 of the S1 Text
+in S1 Appenidx, we derive an analytic expression (Eq. 10 of S1 Text in S1 Appenidx) for fcomm in the well-mixed case by
+incorporating the benefit asymmetry α .
+
+4.5 Game type nomenclature
+Every edge of the interaction graph defines a game between the two players it connects. Using their relative phase
+difference ∆ϕ , we can calculate the payoff matrix. By comparing the order of each of the four entries, we determine the
+game type using a topological taxonomy [28]. Using this taxonomy, we calculate the ordinal rank of the four entries in the
+
+
+
+PLOS Computational Biology | https://doi.org/10.1371/journal.pcbi.1014214 April 30, 2026                                  16 / 22
+Eq. 1 payoff matrix and assign a unique name (e.g., dilemma, deadlock, chicken, etc.) to each strict, symmetric game
+type. However, Fig 2B shows that some mixed CN games lie on the border between two game types, such as when α = 1
+. The taxonomy [28] classifies these non-strict games according the number and location of ties (“high tie”, “middle tie”,
+“double tie”, etc.). It also defines a convention for choosing one of the neighboring game types to get a binomial nomen-
+clature (e.g., “high harmony”, “mid compromise”, “double coordination”, etc.). We follow the same convention for choos-
+ing a neighboring game but drop the tie-indicator to keep our figure legends simple. Specifically, referring to Fig 2B, the
+α = 1 tie between deadlock and compromise games formally corresponds to “low [dead]lock”, but we label it as deadlock;
+similarly, the tie between assurance and staghunt is “mid [stag]hunt”, but we denote it as staghunt, while the tie between
+harmony and peace is “mid harmony”, simplified to harmony. Finally, the NN game type is always “neutral” while the CC
+game type is always “double cooperation”, which we denote as just “cooperation”.
+
+4.6 Plurality game type
+At each time step, we calculate the game type for each edge of the interaction graph. We determine the game type by
+creating a two-by-two payoff matrix of possibilities where both players have the hypothetical option of switching to the
+other player’s strategy/phase pairing. Using the taxonomy discussed in Section 4.5, we then assign a game type to that
+interaction. We then identify the plurality game type across all player interactions, where each edge’s count is weighted
+by its edge weight. Then, we calculate the frequency of this “plurality game” across all time steps of a given simulation
+to determine the distribution of games commonly played. This “plurality game-type” metric, as depicted in Fig 7A and Fig
+7A, is often dominated by neutral games (between NN players) and coordination games (between CC) players. To isolate
+the other game types involved, we also defined a “plurality mixed game-type” by only counting games between mixed CN
+or NC pairs in the plurality (or labelling the time step as “all-communicative”/“all-noncommunicative”, as necessary). This
+“plurality mixed game-type” shows more variety and is depicted in all of the other figures (Fig 3, Fig 4, Fig 7C and Fig 7C).
+Note that an edge’s game type is dependent on the players’ dynmically-evolving communication strategies (N or C) and
+relative phase ∆ϕ , as well as the fixed game parameters c, B0, β0 , and α . Furthermore, this metric is only sensitive to the
+plurality game and therefore provides no information on the presence/absence of minority game types.
+
+4.7 Order parameter
+Given that the Kuramoto system of coupled oscillators inspired this evolutionary game model, we also define the standard
+Kuramoto order parameter:
+                                                                       
+                                                             N         
+                                                         1            
+                                                     ρ =        eiϕj 
+                                                         N             
+                                                              j=1
+                                                                                                                      (4)
+
+This parameter ranges from zero to one, inclusive, and represents how coherent the population is, with ρ = 1 for fully
+coherent and ρ = 0 fully disordered.
+
+4.8 Chimera-like index and metastability index
+To compare with a previous analysis [24] of chimera-like states Caenorhabditis elegans (C. elegans) models, we define
+a pair of indices related to chimera-like quality and metastability [17]. First, we organize the game’s nodes into M disjoint
+communities. We split the nodes into communities using the constant Potts model with a Leiden algorithm implemented
+via the igraph library [33]. In particular, we used a constant Potts model with resolution 0.1, refinement-randomness
+β = 0.01 , and 2 iterations of the Leiden algorithm. This resulted in M = 6 communities Cm.
+   With these disjoint communities Cm, we then calculate the time-dependent, community-wise order parameter ρm (t) as
+
+
+
+
+PLOS Computational Biology | https://doi.org/10.1371/journal.pcbi.1014214 April 30, 2026                                 17 / 22
+                                                                                      
+                                                                                      
+                                                                           1   iϕj 
+                                                                ρm (t) :=        e 
+                                                                          Nm         
+                                                                              j∈Cm
+                                                                                                                              (5)
+
+across members j of community Cm with size Nm. Then, we define a chimera-like index χ
+
+                                                                      χ = ⟨σchi ⟩T                                            (6)
+
+where
+
+                                                                       M
+                                                                 1 ∑(                    )2
+                                                      σchi :=         ρm (t) – ⟨ρm (t)⟩M
+                                                                M–1
+                                                                      m=1
+
+
+and a metastability index λ
+
+                                                                     λ = ⟨σmet ⟩M                                             (7)
+
+where
+
+                                                                        T
+                                                                 1 ∑(                    )2
+                                                      σmet :=         ρm (t) – ⟨ρm (t)⟩T
+                                                                T–1
+                                                                       t=1
+
+
+across the M communities and T time steps. The chimera-like index measures the difference in coherence between
+communities: complete homogeneity between communities (e.g., all fully synchronized or fully disordered) corresponds
+to χ = 0 , while having M communities with half fully synchronized ( ρm = 1 ) and the other half fully disordered ( ρm = 0 ) for
+all times yields a maximum χ = M/[4(M – 1)] = 3/10 for our M = 6 [17]. Likewise, the metastability index λ measures how
+metastable the system is (i.e., transiting between synchronicity and disorder). A system that is fully synchronized or disor-
+dered gives λ = 0 ; λ is maximized for a system spending equal times synchronized and disordered where the variance of
+the discrete uniform distribution between ρm = 0 and ρm = 1 gives λ = 1/4 = 0.25 .
+
+4.9 Sensitivity analysis
+    The simulations use a set of parameters to explore a particular portion of the system’s parameter space. Fig 9
+extends this analysis to a sensitivity analysis across different rays of the parameter space. Each of the subplots
+depicts the variation in chimera-like index χ when changing a single parameter, shown in the subplot title. The
+values of this parameter are specified in each subplot’s legend, with the value used in the main text depicted by
+a black line, smaller values in blue, and larger values in red. Additionally, each plot is shown as a function of the
+asymmetry α , and vertical error bars depict the standard deviation of the chimera-like index χ across ten seeds.
+The subplots depict the sensitivity of the chimera-like index χ to changes in (A) maximum mixed benefit to maxi-
+mum joint benefit ratio β0 /B0 , (B) maximum joint benefit to cost ratio B0/c, (C) number of phases m, (D) selection
+strength δ , and (E) simulation run time T.
+    We note that the chimera-like index is relatively insensitive to changes in most of the parameters depicted in Fig 9. The
+variations with respect to changing parameter in (A) β0 , (B) B0 and (C) number of phases m are all less than their stan-
+dard deviation, showing they are not statistically significant. This insensitivity to the number of phases m shows that the
+finite-phase approximation of the continuous phase ∆ϕ has converged for the main-text simulations with m = 20. Likewise,
+
+
+
+PLOS Computational Biology | https://doi.org/10.1371/journal.pcbi.1014214 April 30, 2026                                   18 / 22
+Fig 9. Sensitivity analysis. Sensitivity analysis showing how the chimera-like index χ (Eq. 6) varies when the systems parameters are changed. Each
+is plotted as a function of the asymmetry α . The varied parameters are the (A) maximum mixed benefit to maximum joint benefit ratio β0 /B0 , (B) max-
+imum joint benefit to cost ratio B0/c, (C) number of phases m, (D) selection strength δ , and (E) simulation run time T. Each subplots’ legend shows the
+values of the varied parameter; the value used in the main text always corresponds to a black line, with smaller value using blue-colored lines and larger
+values displaying red-colored lines. The vertical error bars depict the standard deviation across ten seeds.
+
+https://doi.org/10.1371/journal.pcbi.1014214.g009
+
+
+
+
+PLOS Computational Biology | https://doi.org/10.1371/journal.pcbi.1014214 April 30, 2026                                                           19 / 22
+variations in the (E) runtime T have overlapping run times for all but α = 0.25 in the longest time T = 8 × 107 case, showing
+that the T = 8 × 106 used in the main text is representative of the asymptotic dynamics where transients have died out.
+   On the contrary, the chimera-like index is very sensitive to the (D) selection strength δ . Interestingly, increasing the
+selection strength further increases the chimera-like index.
+   Furthermore, as an additional check on the applicability of approximating the continuous phase difference ∆ϕ with m
+discrete values, Fig 10 shows the communicative fraction fcomm as a function of the maximum joint benefit B0. The vertical
+error bars depict the standard deviation across ten seeds; their overlap shows that the communicative fraction has also
+converged for these values of m. Therefore, the value of m = 20 used in the main text is a good approximation of the con-
+tinuous phase ∆ϕ .
+
+4.10 Analytic assumptions
+The communicative frequency for the well-mixed population in Fig 3A compared the simulation results to the analytic
+approximation. The full derivation of this analytic result is presented in Eq. 10 in S1 Text in S1 Appenidx, but here we will
+highlight the assumptions made in these approximations. The derivation of fcomm is only directly applicable to complete
+graphs, as used in the well-mixed case. Additionally, we assume a small mutation rate µ ≪ 1 such that the previous
+mutation either fixates or goes extinct before the next mutation occurs. As seen in the time-series plots (B–D) of Fig 3 with
+µ = 1 × 10–4 , the mutations fixate or go extinct almost immediately (less than the plotting sample frequency of 800 time-
+steps), well before the average mutation time of 1/µ = 1 × 104 . Thus, the two main assumptions
+(complete graph and µ ≪ 1 ) of the derivation are satisfied for our choices of setup and parameters.
+
+
+Supporting information
+S1 Appendix. Appendix with game graphs and derivations. Appendix with two-player game order graphs (section 1),
+derivation of well-mixed communicative fraction with symmetry breaking (section 2), analysis of selection strength δ influ-
+ence on fcomm (section 3), and analysis of player strategy vs. phase influence on chimera-like index χ (section 4).
+(PDF)
+
+
+
+
+Fig 10. Sensitivity analysis showing how the communicative fraction fcomm varies when the number of phases m is changed. The legend shows
+the values of m. The vertical error bars depict the standard deviation across ten seeds.
+
+https://doi.org/10.1371/journal.pcbi.1014214.g010
+
+
+
+
+PLOS Computational Biology | https://doi.org/10.1371/journal.pcbi.1014214 April 30, 2026                                           20 / 22
+S1 Video. C. elegans α = 0 time evolution. Time-evolution of Caenorhabditis elegans (C. elegans) player strategies
+using the same color scheme as Fig 4D with B0/c = 1.5, β0 /B0 = 0.95 , c = 0.1, µ = 0.0001 , m = 20, δ = 0.2 , 8 × 106 time
+steps, and α = 0 .
+(MP4)
+
+S2 Video. C. elegans α = 0.75 time evolution. Time-evolution of Caenorhabditis elegans (C. elegans) player strate-
+gies using the same color scheme as Fig 4D with B0/c = 1.5, β0 /B0 = 0.95 , c = 0.1, µ = 0.0001 , m = 20, δ = 0.2 , 8 × 106 time
+steps, and α = 0.75 .
+(MP4)
+
+S3 Video. C. elegans α = 1 time evolution. Time-evolution of Caenorhabditis elegans (C. elegans) player strategies
+using the same color scheme as Fig 4D with B0/c = 1.5, β0 /B0 = 0.95 , c = 0.1, µ = 0.0001 , m = 20, δ = 0.2 , 8 × 106 time
+steps, and α = 1 .
+(MP4)
+
+
+Acknowledgments
+We thank Dan Rockmore and the Neukom Institute for their cluster-computing support.
+
+Author contributions
+Conceptualization: Thomas Zdyrski, Feng Fu.
+Formal analysis: Thomas Zdyrski.
+Funding acquisition: Feng Fu.
+Investigation: Thomas Zdyrski.
+Methodology: Thomas Zdyrski.
+Project administration: Feng Fu.
+Software: Thomas Zdyrski.
+Supervision: Scott Pauls, Feng Fu.
+Validation: Feng Fu.
+Visualization: Thomas Zdyrski.
+Writing – original draft: Thomas Zdyrski.
+Writing – review & editing: Scott Pauls, Feng Fu.
+
+
+References
+1.   Sigmund K, Nowak MA. Evolutionary Game Theory. Curr Biol. 1999 Jul;9(14):R503-5. https://doi.org/10.1016/S0960-9822(99)80321-2
+2.   Traulsen A, Glynatsi NE. The Future of Theoretical Evolutionary Game Theory. Philos Trans R Soc B. 2023;378(1876):20210508. https://doi.
+     org/10.1098/rstb.2021.0508
+3.   Cohen Y, Cohen J. Evolutionary game theory and the evolution of neuron populations, ring rates, and decisionmaking. Nat Prec. 2009. https://doi.
+     org/10.1038/npre.2009.3373.1
+4.   Madeo D, Talarico A, Pascual-Leone A, Mocenni C, Santarnecchi E. An Evolutionary Game Theory Model of Spontaneous Brain Functioning. Sci
+     Rep. 2017;7(1):15978. https://doi.org/10.1038/s41598-017-15865-w PMID: 29167478
+5.   Tripp EA, Fu F, Pauls SD. Evolutionary Kuramoto dynamics. Proc Biol Sci. 2022;289(1986):20220999. https://doi.org/10.1098/rspb.2022.0999 PMID:
+     36350204
+6.   Poggio F, Brofiga M, Vicariis CD, Sanguineti V, Massobrio P. A computational framework combining neuronal dynamics and evolutionary game the-
+     ory for network-level synaptic interactions. J Neural Eng. 2025;22(6):066010. https://doi.org/10.1088/1741-2552/ae1dad
+
+
+
+
+PLOS Computational Biology | https://doi.org/10.1371/journal.pcbi.1014214 April 30, 2026                                                         21 / 22
+ 7.   Ohtsuki H, Hauert C, Lieberman E, Nowak MA. A simple rule for the evolution of cooperation on graphs and social networks. Nature.
+      2006;441(7092):502–5. https://doi.org/10.1038/nature04605 PMID: 16724065
+ 8.   Su Q, Allen B, Plotkin JB. Evolution of cooperation with asymmetric social interactions. Proc Natl Acad Sci U S A. 2022;119(1):e2113468118.
+      https://doi.org/10.1073/pnas.2113468118 PMID: 34983850
+ 9.   Bhaumik J, Masuda N. Constant-selection evolutionary dynamics on weighted networks. Proc R Soc A. 2024;480(2296):20240223. https://doi.
+      org/10.1098/rspa.2024.0223
+10.   Cabral J, Hugues E, Sporns O, Deco G. Role of local network oscillations in resting-state functional connectivity. NeuroImage. 2011;57(1):130–9.
+      https://doi.org/10.1016/j.neuroimage.2011.04.010 PMID: 21511044
+11.   Deng S, Ódor G. Chimera-like States in Neural Networks and Power Systems. Chaos. 2024;34(3):033135. https://doi.org/10.1063/5.0154581
+12.   Antonioni A, Cardillo A. Coevolution of Synchronization and Cooperation in Costly Networked Interactions. Phys Rev Lett. 2017;118(23):238301.
+      https://doi.org/10.1103/PhysRevLett.118.238301 PMID: 28644658
+13.   Fernando C, Goldstein R, Szathmáry E. The neuronal replicator hypothesis. Neural Comput. 2010;22(11):2809–57. https://doi.org/10.1162/
+      NECO_a_00031 PMID: 20804380
+14.   Majhi S, Bera BK, Ghosh D, Perc M. Chimera states in neuronal networks: A review. Phys Life Rev. 2019;28:100–21. https://doi.org/10.1016/j.
+      plrev.2018.09.003 PMID: 30236492
+15.   Abrams DM, Strogatz SH. Chimera states for coupled oscillators. Phys Rev Lett. 2004;93(17):174102. https://doi.org/10.1103/PhysRev-
+      Lett.93.174102 PMID: 15525081
+16.   Shima S, Kuramoto Y. Rotating spiral waves with phase-randomized core in nonlocally coupled oscillators. Phys Rev E Stat Nonlin Soft Matter
+      Phys. 2004;69(3 Pt 2):036213. https://doi.org/10.1103/PhysRevE.69.036213 PMID: 15089398
+17.   Shanahan M. Metastable chimera states in community-structured oscillator networks. Chaos. 2010;20(1):013108. https://doi.
+      org/10.1063/1.3305451 PMID: 20370263
+18.   Bansal K, Garcia JO, Tompson SH, Verstynen T, Vettel JM, Muldoon SF. Cognitive chimera states in human brain networks. Sci Adv.
+      2019;5(4):eaau8535. https://doi.org/10.1126/sciadv.aau8535 PMID: 30949576
+19.   Santos MS, Szezech JD, Borges FS, Iarosz KC, Caldas IL, Batista AM, et al. Chimera-like states in a neuronal network model of the cat brain.
+      Chaos Solit Fractals. 2017;101:86–91. https://doi.org/10.1016/j.chaos.2017.05.028
+20.   Patton A, Davidsen J. Changing cognitive chimera states in human brain networks with age: Variations in cognitive integration and segregation.
+      PLoS Comput Biol. 2025;21(9):e1013093. https://doi.org/10.1371/journal.pcbi.1013093 PMID: 40892961
+21.   Cook SJ, Jarrell TA, Brittin CA, Wang Y, Bloniarz AE, Yakovlev MA, et al. Whole-animal connectomes of both Caenorhabditis elegans sexes.
+      Nature. 2019;571(7763):63–71. https://doi.org/10.1038/s41586-019-1352-7 PMID: 31270481
+22.   Towlson EK, Vértes PE, Ahnert SE, Schafer WR, Bullmore ET. The rich club of the C. elegans neuronal connectome. J Neurosci.
+      2013;33(15):6380–7. https://doi.org/10.1523/JNEUROSCI.3784-12.2013 PMID: 23575836
+23.   Yan G, Vértes PE, Towlson EK, Chew YL, Walker DS, Schafer WR, et al. Network control principles predict neuron function in the Caenorhabditis
+      elegans connectome. Nature. 2017;550(7677):519–23. https://doi.org/10.1038/nature24056 PMID: 29045391
+24.   Hizanidis J, Kouvaris NE, Zamora-López G, Díaz-Guilera A, Antonopoulos CG. Chimera-like States in Modular Neural Networks. Sci Rep.
+      2016;6:19845. https://doi.org/10.1038/srep19845 PMID: 26796971
+25.   Allen B, Nowak MA. Games on Graphs. EMS Surv Math Sci. 2014;1(1):113–51. https://doi.org/10.4171/emss/3
+26.   Mishra A, Saha S, Ghosh D, Osipov GV, Dana SK. Traveling chimera pattern in a neuronal network under local gap junctional and nonlocal synap-
+      tic coupling. Opera Medica Physiol. 2017. https://doi.org/10.20388/OMP2017.001.0043
+27.   Wilson CJ, Groves PM. Spontaneous firing patterns of identified spiny neurons in the rat neostriatum. Brain Res. 1981;220(1):67–80. https://doi.
+      org/10.1016/0006-8993(81)90211-0 PMID: 6168334
+28.   Bruns B. Names for games: locating 2 2 games. Games. 2015;6(4):495–520. https://doi.org/10.3390/g6040495
+29.   Antal T, Scheuring I. Fixation of strategies for an evolutionary game in finite populations. Bull Math Biol. 2006;68(8):1923–44. https://doi.
+      org/10.1007/s11538-006-9061-4 PMID: 17086490
+30.   Betzel RF, Avena-Koenigsberger A, Goñi J, He Y, de Reus MA, Griffa A, et al. Generative models of the human connectome. NeuroImage.
+      2016;124(Pt A):1054–64. https://doi.org/10.1016/j.neuroimage.2015.09.041 PMID: 26427642
+31.   Schlegel P, Yin Y, Bates AS, Dorkenwald S, Eichler K, Brooks P, et al. Whole-brain annotation and multi-connectome cell typing of Drosophila.
+      Nature. 2024;634(8032):139–52. https://doi.org/10.1038/s41586-024-07686-5 PMID: 39358521
+32.   Lieberman E, Hauert C, Nowak MA. Evolutionary Dynamics on Graphs. Nature. 2005;433(7023):312–6. https://doi.org/10.1038/nature03204
+33.   Csardi G, Nepusz T. The igraph software package for complex network research. InterJournal. 2006;Complex Systems:1695.
+
+
+
+
+PLOS Computational Biology | https://doi.org/10.1371/journal.pcbi.1014214 April 30, 2026                                                              22 / 22
+

@@ -1,0 +1,35 @@
+name: CodeAnt CI Scan
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  codeant-scan:
+    name: Run CodeAnt CI scan
+    runs-on: ubuntu-latest
+    env:
+      CODEANT_TOKEN: ${{ secrets.CODEANT_TOKEN }}
+    steps:
+      - name: Skip when CODEANT_TOKEN is not configured
+        if: ${{ env.CODEANT_TOKEN == '' }}
+        run: echo "CODEANT_TOKEN is not configured; skipping CodeAnt scan."
+
+      - name: Checkout code
+        if: ${{ env.CODEANT_TOKEN != '' }}
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+
+      - name: Run CodeAnt CI Scan
+        if: ${{ env.CODEANT_TOKEN != '' }}
+        uses: CodeAnt-AI/codeant-ci-scan-action@82f83c97a923b626244fdbf9b749ae37308eaf9e
+        with:
+          access_token: ${{ secrets.CODEANT_TOKEN }}
+          scanners: all

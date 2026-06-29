@@ -1,0 +1,1144 @@
+                                                                                                                     TYPE Hypothesis and Theory
+                                                                                                                     PUBLISHED 30 January 2026
+                                                                                                                     DOI 10.3389/fpsyg.2026.1704370
+
+
+
+
+                                                Resonant hierarchies: a
+OPEN ACCESS                                     multiscale framework for
+                                                oscillatory dynamics in the brain
+EDITED BY
+Salvatore Campanella,
+Université libre de Bruxelles, Belgium
+
+REVIEWED BY
+Vincent Wens,                                   Adam C. Snyder1,2,3*
+Université libre de Bruxelles, Belgium
+Mihaly Voroslakos,                              1
+                                                 Department of Brain and Cognitive Sciences, University of Rochester, Rochester, NY, United States,
+New York University, United States              2
+                                                 Department of Neuroscience, University of Rochester, Rochester, NY, United States, 3 Center for Visual
+*CORRESPONDENCE
+                                                Science, University of Rochester, Rochester, NY, United States
+Adam C. Snyder
+  adam.snyder@rochester.edu
+
+RECEIVED 12 September 2025                      Oscillatory activity is a hallmark of neural function across spatial and temporal
+REVISED 25 November 2025                        scales, but its origins and computational roles remain only partially understood.
+ACCEPTED 05 January 2026
+                                                Since our earlier caution against treating alpha-band activity as a unitary
+PUBLISHED 30 January 2026
+                                                phenomenon, converging work has highlighted the need to interpret brain
+CITATION
+Snyder AC (2026) Resonant hierarchies: a        rhythms within their anatomical and functional context. Here we provide both
+multiscale framework for oscillatory dynamics   a comprehensive review of this progress and a perspective-style framework,
+in the brain. Front. Psychol. 17:1704370.       the resonant hierarchy, which situates oscillations within a nested scaffold
+doi: 10.3389/fpsyg.2026.1704370
+                                                spanning from dendritic microstructure to macroscale inter-areal coordination.
+COPYRIGHT
+                                                At the cellular level, dendritic branches act as spatially organized ﬁlters
+© 2026 Snyder. This is an open-access article
+distributed under the terms of the Creative     with frequency-selective resonance properties. At larger scales, conduction
+Commons Attribution License (CC BY). The        delays and anatomical layout constrain dominant communication frequencies,
+use, distribution or reproduction in other      aligning structural hierarchy with temporal coordination regimes. We argue
+forums is permitted, provided the original
+author(s) and the copyright owner(s) are        that canonical rhythms (alpha, beta, gamma, etc.) should be understood not
+credited and that the original publication in   as ﬁxed cognitive modules, but as emergent descriptors of these coordination
+this journal is cited, in accordance with       regimes. In contrast to previous multiscale accounts that focus primarily on
+accepted academic practice. No use,
+distribution or reproduction is permitted       laminar microcircuits or network-level eigenmodes, we explicitly link dendritic
+which does not comply with these terms.         resonance, laminar organization, and long-range conduction delays into a single
+                                                cross-scale framework and articulate how they jointly shape latent population
+                                                dynamics. This perspective uniﬁes diverse ﬁndings and generates testable
+                                                predictions: manipulations of dendritic resonance should systematically shift
+                                                network oscillations; disruptions of conduction pathways should alter inter-areal
+                                                alignment; and targeted neuromodulation may work best by nudging latent
+                                                dynamics along resonant dimensions. In integrating review with framework, we
+                                                aim to reposition oscillations as fundamental scaffolds of computation, offering
+                                                a principled basis for future modeling, measurement, and intervention.
+
+                                                KEYWORDS
+
+                                                neural oscillations, dendritic resonance, cortical hierarchy, multiscale dynamics, cross-
+                                                frequency coupling, neural computation
+
+
+
+                                                1 Introduction
+                                                    Oscillations are a ubiquitous feature of neural activity, observed at scales ranging
+                                                from subthreshold membrane potential ﬂuctuations to large-scale ﬁeld potentials
+                                                recorded from the scalp (Buzsáki and Draguhn, 2004; Foxe and Snyder, 2011;
+                                                Johnston et al., 2022; Niedermeyer and da Silva, 2005). For decades, neural oscillations
+                                                have been linked to a variety of cognitive and behavioral processes (Klimesch,
+                                                1999; Ward, 2003; Buzsáki, 2006), leading to an interpretive tradition in which
+                                                speciﬁc frequency bands are associated with speciﬁc functions. Alpha rhythms,
+                                                for example, have often been identiﬁed with sensory suppression during selective
+                                                attention (Foxe and Snyder, 2011), gamma with sensory binding (Tallon-Baudry
+                                                et al., 1999), and theta with episodic memory (Buzsáki, 2002). While such mappings
+
+
+Frontiers in Psychology                                                01                                                               frontiersin.org
+Snyder                                                                                                                    10.3389/fpsyg.2026.1704370
+
+
+
+
+have generated productive hypotheses, they risk oversimplifying                integrate these perspectives into a multiscale resonant hierarchy
+the relationship between oscillatory dynamics and neural                       framework, highlighting reciprocal interactions and plasticity
+computation. By tying frequency bands to ﬁxed cognitive roles,                 mechanisms that couple dynamics across levels and clarifying how
+this view obscures the possibility that shared temporal constraints,           this framework extends prior multiscale models of oscillations. We
+rather than identical computational functions, underlie the                    close by considering experimental and modeling approaches for
+recurrence of a given rhythm across diverse contexts.                          probing these links, articulating testable predictions, and exploring
+    In our earlier work about the role of alpha oscillations                   potential clinical and translational implications. By grounding
+(Foxe and Snyder, 2011), we cautioned that “alpha activity is                  oscillatory phenomena in scale-dependent resonant properties, we
+far from a unitary phenomenon, and discussions of alpha must                   aim to provide a principled account of why particular rhythms
+take into account the anatomical and behavioral context.” Since                emerge in speciﬁc anatomical and functional contexts, and how
+then, converging evidence has reinforced the idea that oscillations            these rhythms might be leveraged in future interventions.
+should be interpreted within their anatomical, physiological, and
+behavioral context (Snyder et al., 2018; Bastos et al., 2015;
+Buzsáki, 2010; Samaha and Romei, 2024). Building on this                       2 Hierarchical brain rhythms and their
+foundation, we propose here a more general framework: resonant                 functional roles
+hierarchies. Rather than assigning each frequency band a ﬁxed
+computational role, this framework situates oscillations within                2.1 Canonical oscillatory bands and
+a nested set of structural and dynamical constraints spanning                  associated functions
+dendritic compartments, microcircuits, and distributed brain
+networks. Within this view, a given rhythm’s most fundamental                      Oscillatory activity in the brain spans a broad range of
+descriptor is the temporal coordination regime it instantiates,                frequencies, and certain bands recur across species, brain regions,
+which may serve multiple functions to the extent they share similar            and behavioral contexts (da Silva, 1991; Buzsáki and Draguhn,
+timing demands.                                                                2004; Siegel et al., 2012). While their precise boundaries vary
+    The resonant hierarchy framework is motivated by two                       somewhat between studies, the most widely recognized bands
+complementary developments. First, advances in multiscale                      (delta, theta, alpha, beta, and gamma) are associated with distinct,
+recording have revealed systematic relationships between spatial               though sometimes overlapping, functional roles.
+scale, anatomical structure, and dominant oscillatory frequencies                  Delta rhythms (∼0.5–4 Hz) dominate during deep non-REM
+(Johnston et al., 2022; Spaak et al., 2012; Buﬀalo et al., 2011).              sleep and low-arousal states (Steriade et al., 1993; Olbrich et al.,
+Second, theoretical and computational work ranging from laminar-               2003). They are thought to provide a global temporal framework for
+speciﬁc communication models to analyses of conduction delays                  neural activity, coordinating widespread cortical and subcortical
+has begun to link these relationships to the ﬂow of information                structures over long timescales (Buzsáki and Draguhn, 2004;
+in the brain (Snyder et al., 2018; Roberts et al., 2013; Buzsáki and           Lakatos et al., 2005). In waking states, delta oscillations can emerge
+Draguhn, 2004). These insights resonate (pardon the pun) with                  during tasks requiring sustained attention under low arousal,
+Buzsáki’s (2006) call to “reverse-engineer” the brain by beginning             potentially reﬂecting large-scale integrative processes that operate
+with its physical constraints, rather than seeking neural correlates of        on slow temporal windows (Harmony, 2013).
+predeﬁned cognitive modules. By aligning oscillatory coordination                  Theta rhythms (∼4–8 Hz) are prominent in hippocampal
+with the anatomical and biophysical hierarchies of the nervous                 and fronto-parietal networks, where they have been linked
+system, we suggest it is possible to recover a set of computational            to attentional orienting, spatial navigation, and the temporal
+primitives that cut across conventional functional categories.                 organization of episodic memory (Buzsáki, 2005; Kahana et al.,
+    The present article is best read as a perspective that integrates          1999; Fiebelkorn et al., 2013; Fiebelkorn and Kastner, 2019).
+these strands of evidence into a common organizing framework.                  Theta oscillations are also implicated in switching the locus of
+Our primary goal is to synthesize existing multiscale work on                  attention or intention, possibly by segmenting processing into
+oscillations, ranging from laminar-speciﬁc models to whole-brain               discrete temporal epochs (Sauseng et al., 2010; Caplan et al.,
+connectivity analyses, into the language of resonant hierarchies               2003). Recent work has highlighted “theta sweeps” as a potential
+that explicitly connects dendritic resonance, mesoscale circuitry,             mechanism for prospective decision-making and future planning in
+and long-range communication. In doing so, we aim to provide                   hippocampo-cortical circuits, in which sequential representations
+a conceptual bridge between cellular and systems-level accounts                of candidate trajectories unfold within each theta cycle (Kay et al.,
+of brain rhythms that is accessible to cognitive scientists while              2020; Vollan et al., 2025). More broadly, theta may support ﬂexible
+remaining grounded in biophysics and anatomy.                                  shifts between external and internal attentional states (Nobre and
+    In the sections that follow, we ﬁrst review the large-scale                Gresch, 2025), and in working memory contexts, theta plays an
+principles governing inter-areal communication, emphasizing how                active role in anticipatory control across spatial scales (Jung et al.,
+anatomical layout, conduction delays, and cortical hierarchy jointly           2025).
+constrain the dominant temporal coordination regimes between                       Alpha rhythms (∼8–13 Hz) are especially prominent in
+areas. We then turn to the microscale, examining how gradients                 occipital and parietal cortices during wakeful rest, but their
+in dendritic channel density, morphology, and active conductances              amplitude is modulated by attention and task demands. A
+create compartment-speciﬁc resonance proﬁles, and how these                    substantial body of evidence supports the view that alpha-band
+properties interact with local microcircuit computations. Next, we             activity functions as a sensory suppression or gating mechanism,
+
+
+
+
+Frontiers in Psychology                                                   02                                                            frontiersin.org
+Snyder                                                                                                                     10.3389/fpsyg.2026.1704370
+
+
+
+
+selectively inhibiting task-irrelevant processing while facilitating              widely studied forms of interaction is cross-frequency coupling, in
+relevant inputs (Foxe and Snyder, 2011; Banerjee et al., 2011;                    which the phase or amplitude of one oscillation systematically
+Snyder and Foxe, 2010; Snyder et al., 2015; Klimesch, 2012).                      covaries with the phase or amplitude of another at a diﬀerent
+Alpha is also frequently observed in cross-frequency coupling with                frequency (Jensen and Colgin, 2007; Canolty and Knight, 2010;
+faster oscillations, particularly gamma, which may enable temporal                Riddle et al., 2021). Classic examples include theta–gamma
+framing of local computations by large-scale inhibitory rhythms                   coupling in the hippocampus (Bragin et al., 1995; Colgin et al.,
+(Fiebelkorn et al., 2018; Spaak et al., 2012; Roux et al., 2013; Bastos           2009) and alpha–gamma coupling in visual cortex (Osipova et al.,
+et al., 2018).                                                                    2008; Spaak et al., 2012). In these cases, slower rhythms appear
+     Beta rhythms (∼13–30 Hz) are often observed in sensorimotor                  to organize the timing or magnitude of faster activity, creating a
+and fronto-parietal networks. They have been linked to the                        temporal framework within which ﬁne-scale computations unfold.
+maintenance of the current sensorimotor or cognitive set, and the                     Two common forms of such coupling are phase–amplitude
+integration of information across modalities (Engel and Fries, 2010;              coupling, where the amplitude of a faster oscillation is modulated
+Spitzer and Haegens, 2017; Haegens et al., 2017). Beta activity often             by the phase of a slower one, and phase–phase coupling, where
+decreases prior to movement initiation and rebounds afterward,                    the relative phase relationship between two oscillations remains
+suggesting a role in both maintaining and resetting network states                consistent over time (Canolty and Knight, 2010; Jensen and Colgin,
+(Pfurtscheller et al., 1996; Salmelin et al., 1995; Kilavik et al., 2013).        2007). These mechanisms can facilitate selective information
+Recent work has shown that rhythmic temporal coordination in                      routing, as the temporal windows in which a fast rhythm is
+the beta band can prevent representational conﬂict during working                 strongest can be aligned with speciﬁc phases of a slower rhythm that
+memory by allocating competing neural representations to distinct                 correspond to heightened excitability or communication readiness
+phases of the cycle (Abdalaziz et al., 2023; Bastos et al., 2018), and            (Fiebelkorn and Kastner, 2019; Roux et al., 2013; Lakatos et al.,
+may also support top-down control and cross-scale coordination                    2005; Axmacher et al., 2010; Bastos et al., 2018).
+(Jung et al., 2025).                                                                  The dependencies among rhythms often form a hierarchy, with
+     Gamma rhythms (30 Hz) are typically localized to relatively                 the slowest oscillations exerting broad, global inﬂuences and faster
+small cortical domains and have been associated with feedforward                  rhythms providing local, high-resolution processing. This nested
+processing, ﬁne-scale sensory encoding, and the precise temporal                  structure of oscillations may reﬂect more than just a biophysical
+coordination of spiking activity. Early work in visual cortex                     constraint; it may represent a natural alignment between the
+suggested a role in feature binding (Tallon-Baudry et al., 1999;                  temporal scales of neural dynamics and the hierarchical structure
+Singer, 1999), while other studies have emphasized gamma’s role                   of brain computations. At the computational level as described
+in enhancing eﬀective connectivity and communication between                      by Marr and Poggio (1977), many brain functions are themselves
+neuronal groups (Fries, 2005). Gamma-band synchronization has                     hierarchically organized: higher-level goals or contexts set the
+been observed in both sensory and association areas during                        conditions for intermediate operations, which in turn guide more
+attention-demanding tasks (Bosman et al., 2012; Gregoriou                         elemental processes. For example, maintaining a task set can
+et al., 2009), and its laminar organization supports preferential                 constrain the sequencing of working memory operations, which in
+involvement in feedforward pathways (Bastos et al., 2015; Spaak                   turn modulates moment-to-moment sensory selection (Figure 1).
+et al., 2012). Recent work has examined how gamma interacts with                  Such hierarchies of function require coordination across multiple
+slower rhythms, such as theta or alpha, to embed high-resolution                  timescales, and the brain’s oscillatory hierarchy may be speciﬁcally
+computations within broader temporal frameworks (Colgin et al.,                   tuned to meet this demand. From this perspective, the alignment
+2009; Fiebelkorn et al., 2018).                                                   of slower, large-scale rhythms with long-horizon computations,
+     These associations are not exclusive, and each frequency band                and faster, local rhythms with ﬁne-grained processing, is not
+can participate in multiple functions. However, their recurring                   coincidental but a natural outcome of a system whose physical and
+association with speciﬁc aspects of perception, cognition, and                    computational architectures are both intrinsically hierarchical.
+action provides a functional scaﬀold for understanding oscillatory
+hierarchies. Although these associations provide a useful scaﬀold
+for interpreting canonical bands, it is important to note that                    3 Spatial embedding and
+some remain debated, and there are studies and reviews that                       communication constraints
+challenge or complicate these functional assignments (e.g., Ray
+and Maunsell, 2010; Merker, 2013). In the framework developed                     3.1 Conduction delay and frequency
+here, these canonical bands are not arbitrary divisions of the                    matching
+spectrum, nor ﬁxed signatures of particular functions, but rather
+reﬂect constraints imposed by structural and dynamical properties                     The spatial arrangement of neural circuitry imposes
+of the nervous system across multiple spatial scales.                             fundamental constraints on the timing of communication
+                                                                                  between brain regions. Axonal conduction velocities vary widely
+                                                                                  depending on ﬁber diameter and myelination (Waxman, 1980),
+                                                                                  but even under optimal conditions, transmission over long
+2.2 Nested and interdependent rhythms                                             distances incurs measurable delays (Swadlow, 2000). For example,
+                                                                                  signals traveling between distant cortical areas may require several
+    Oscillations in diﬀerent frequency bands do not operate in                    milliseconds to complete a round trip (Caminiti et al., 2009; Budd
+isolation. Instead, they interact in structured ways that enable                  and Kisvárday, 2012), whereas local circuit interactions can occur
+coordination across spatial and temporal scales. One of the most                  within fractions of a millisecond (Feldmeyer et al., 1999).
+
+Frontiers in Psychology                                                      03                                                         frontiersin.org
+Snyder                                                                                                                      10.3389/fpsyg.2026.1704370
+
+
+
+
+                                                                                FIGURE 2
+                                                                                The oscillatory frequency of interaction between brain areas tends
+                                                                                to decrease as the distance between brain areas increases. For
+   FIGURE 1                                                                     example, coupling between V1 and V2 in the gamma band (Roberts
+   Computations supporting cognition are intrinsically hierarchical.            et al., 2013, green), fronto-parietal coupling in the alpha band (Palva
+   Maintaining a task set (“make tea”) guides working memory (keeping           and Palva, 2011, yellow), and hippocampal-frontal coupling in the
+   track of the sequence, “boil water, steep tea, add sugar”), which            theta band (Jones and Wilson, 2005, red).
+   prioritizes sensory processing (listening for the kettle whistle).
+
+                                                                             direction, while alpha- or beta-frequency stimulation preferentially
+                                                                             propagated in the feedback direction. These ﬁndings suggest that
+    These delays place limits on the range of oscillation frequencies
+                                                                             cortical networks exhibit direction-selective frequency tuning,
+that can eﬀectively coordinate activity between regions (Petkoski
+                                                                             such that the circuitry involved in feedforward or feedback
+and Jirsa, 2019). High-frequency rhythms, such as gamma, have
+                                                                             communication resonates more eﬀectively to input at the
+short cycle durations and are therefore most compatible with
+                                                                             frequencies it normally carries.
+interactions among nearby neurons and local cortical circuits,
+                                                                                 This direction–frequency mapping is closely linked to the
+where conduction delays are negligible relative to the oscillation
+                                                                             laminar microcircuitry of the cortex. Functionally, information
+period. In contrast, long-range interactions such as those linking
+                                                                             ﬂow between brain areas in the feedforward and feedback
+frontal and parietal cortices require slower rhythms to maintain
+                                                                             directions relies on diﬀerent mixtures of neurons within each brain
+consistent phase relationships, making them better suited to beta,
+                                                                             area (Semedo et al., 2022). Anatomically, feedforward projections
+alpha, or even theta frequency ranges (Figure 2).
+                                                                             typically originate in superﬁcial layers and target layer 4 of
+    This relationship between conduction distance and optimal
+                                                                             recipient areas, while feedback projections arise from deep layers
+communication frequency has been supported by computational
+                                                                             and terminate in superﬁcial layer 1 and deep layer 6 (Felleman
+models and empirical observations. Studies have shown that
+                                                                             and Van Essen, 1991; Markov et al., 2013). Cellular and synaptic
+coherence between distant cortical sites is more pronounced
+                                                                             properties of neurons in these layers may predispose them to
+at lower frequencies, whereas local ﬁeld potentials within a
+                                                                             preferentially engage in distinct frequency bands, thereby creating
+region or across adjacent areas exhibit stronger high-frequency
+                                                                             layer-speciﬁc frequency channels for inter-areal communication
+synchronization (Roberts et al., 2013; Buzsáki and Draguhn, 2004;
+                                                                             (more on this below). Functionally, laminar diﬀerences in
+Myers et al., 2022). In this way, anatomical distance acts as
+                                                                             oscillatory coherence and spike–ﬁeld coupling further support this
+a natural ﬁlter on the frequency channels available for inter-
+                                                                             division of labor across frequency and scale (Senzai et al., 2019).
+areal coordination, embedding spatial constraints directly into the
+                                                                             In this way, the feedforward/feedback dissociation in oscillatory
+temporal architecture of large-scale brain rhythms.
+                                                                             frequency can be viewed as a mesoscale instantiation of the broader
+    An important reﬁnement of the distance–frequency
+                                                                             resonant hierarchy principle, where structural and biophysical
+relationship comes from studies examining the directionality
+                                                                             properties at the cellular and laminar levels shape the temporal
+of inter-areal communication. Feedforward interactions (from
+                                                                             modes of large-scale network interactions.
+areas “lower” in the visual processing hierarchy to areas “higher”
+in that hierarchy) are preferentially mediated by gamma-band
+coherence, whereas feedback interactions from higher to lower
+areas are mediated by alpha- or beta-band coherence (Bastos et al.,          3.2 Structural hierarchy of inter-areal
+2015; Michalareas et al., 2016). Causal manipulations provide                communication
+converging evidence: in laminar electrode array recordings from
+visual areas V1 and V4, van Kerkoerle et al. (2014) demonstrated                 The arrangement of cortical and subcortical areas into a
+that intracortical electrical microstimulation delivered in the              structural hierarchy is often discussed in terms of wiring eﬃciency
+gamma band preferentially propagated in the feedforward                      and developmental constraints (Cherniak et al., 2004; Budd
+
+Frontiers in Psychology                                                 04                                                                  frontiersin.org
+Snyder                                                                                                               10.3389/fpsyg.2026.1704370
+
+
+
+
+and Kisvárday, 2012; Chen et al., 2006; Samu et al., 2014),                 inter-areal conduction delays, but from the resonant properties
+but this architecture may also serve to align each subsystem                of dendrites and somata themselves, providing a local frequency
+with an appropriate temporal regime for its computational role.             scaﬀold that can align with, and be modulated by, the larger-scale
+Functionally specialized regions are embedded in the cortex at              oscillatory architecture.
+varying anatomical distances from one another, positioning them
+to interact preferentially at frequencies suited to the demands of
+their computations.                                                         4 Dendritic resonance as a frequency
+    Sensory hierarchies provide a clear example. Adjacent visual
+                                                                            scaffold
+areas such as V1 and V2, which exchange large volumes of
+information about ﬁne-scale spatial features, are connected by              4.1 Biophysical basis of dendritic
+short, direct pathways and often synchronize in the gamma band              resonance
+(Roberts et al., 2013). These high-frequency interactions support
+rapid, temporally precise encoding and feedforward integration.                  Resonance in neuronal membranes arises from the interplay
+By contrast, association networks such as the fronto-parietal loop          of passive cable properties and active voltage-dependent
+operate over longer conduction distances and are more frequently            conductances that confer frequency-selective responsiveness
+linked by beta- or alpha-band coordination, consistent with their           (Hutcheon and Yarom, 2000; Hutcheon et al., 1996; Hu et al.,
+role in maintaining and updating task sets over hundreds of                 2002). Among the most studied contributors to subthreshold
+milliseconds (Jung et al., 2025; Palva and Palva, 2011; Spitzer and         resonance are the hyperpolarization-activated cation current
+Haegens, 2017; Sehatpour et al., 2008; Phillips et al., 2014). At           (Ih ; Pape, 1996; Magee and Johnston, 1995), the muscarine-
+the largest scale, hippocampal–prefrontal pathways implicated in            sensitive potassium current (IM ; Halliwell and Adams, 1982; Yue
+episodic memory and prospective planning coordinate over theta              and Yaari, 2004; Vera et al., 2017), and low-threshold T-type
+(and to some extent delta) rhythms, enabling the integration of             calcium currents (ICaT ; Hutcheon et al., 1994; Perez-Reyes, 2003;
+information streams across time periods on the order of seconds             Matsumoto-Makidono et al., 2016). These conductances introduce
+(Jones and Wilson, 2005; Colgin, 2011; Fujisawa and Buzsáki, 2011;          nonlinearity and temporal ﬁltering into the membrane response,
+Tang et al., 2021; O’Neill et al., 2013; Domanski et al., 2023).            allowing cell membranes to exhibit a peak resonance at speciﬁc
+    Work on large-scale functional networks and structural                  input frequencies depending on the cell type and compartment
+connectomes provides converging support for these                           (Remme et al., 2009). For example, Ih currents, which activate
+ideas.    Resting-state     fMRI       and   electroencephalography         upon hyperpolarization and carry a mixed Na+ /K+ inward current,
+(EEG)/magnetoencephalography (MEG) studies have shown                       can counteract low-frequency membrane potential deﬂections,
+that functional connectivity patterns can be understood, in                 eﬀectively acting as a high-pass ﬁlter (Pape, 1996; Magee and
+part, as arising from oscillatory dynamics unfolding on a ﬁxed              Johnston, 1995). When combined with membrane capacitance and
+anatomical scaﬀold, with conduction delays and network topology             leak conductances, such currents yield a band-pass ﬁltering eﬀect
+shaping the emergence of band-limited networks (e.g., Deco et al.,          that preferentially transmits (or even ampliﬁes) inputs around
+2011; Cabral et al., 2017; Tewarie et al., 2019). Recent analyses           a preferred frequency while attenuating others (Hutcheon and
+have further highlighted the role of structural eigenmodes in               Yarom, 2000; Hutcheon et al., 1996).
+organizing these networks, suggesting that distinct frequency-                   Importantly, these resonance properties are not ﬁxed. They
+speciﬁc networks may correspond to diﬀerent eigenmodes of                   can be dynamically modulated by neuromodulators such as
+the same underlying structural connectome (Cordier et al.,                  dopamine, which shifts Ih activation (Rosenkranz and Johnston,
+2024). Although fMRI lacks the temporal resolution to resolve               2006), and acetylcholine, which suppresses IM (Delmas and Brown,
+individual oscillatory cycles, its resting-state literature has been        2005), as well as by activity-dependent plasticity. For instance,
+essential in showing that structural connectivity and conduction-           resonance frequency in hippocampal pyramidal neurons can be
+delay constraints shape large-scale network modes, providing a              bidirectionally tuned by experience through long-term regulation
+complementary view to electrophysiological studies. From the                of Ih conductances (Narayanan and Johnston, 2007, 2010). Thus,
+resonant hierarchy perspective, these results underscore how                resonance is not simply a passive feature of neural membranes but a
+macroscale constraints on oscillatory modes interact with local             tunable property that may serve context-dependent computational
+dendritic and microcircuit mechanisms, jointly determining which            roles. In the context of the resonant hierarchy framework we
+temporal coordination regimes are expressed at rest and during              propose here, such intrinsic frequency tuning at the level of
+task performance.                                                           dendrites and somata provides a substrate upon which larger-scale
+    The correspondence between anatomical position, frequency               oscillatory coordination may be scaﬀolded.
+of interaction, and computational role suggests that the spatial
+embedding of functional subsystems reﬂects an optimization in
+which the physical placement of areas in the cortical hierarchy
+naturally constrains them to operate within temporal coordination           4.2 Spatial dependence of resonant
+regimes that match their functional specializations. Such scale-            properties
+speciﬁc constraints need not apply only at the level of whole-
+brain networks. As we turn to the next level of analysis, similar                In many pyramidal neurons, including CA1 hippocampal
+principles emerge within the morphology and conductances of                 cells, the density of hyperpolarization-activated cation channels
+individual neurons. Here, frequency tuning arises not from                  (Ih ) increases with distance from the soma (e.g., Magee, 1998;
+
+
+
+Frontiers in Psychology                                                05                                                         frontiersin.org
+Snyder                                                                                                                         10.3389/fpsyg.2026.1704370
+
+
+
+
+   FIGURE 3
+   Conceptual illustration of measuring dendritic resonance. Dendritic resonance is measured by inputting a linear frequency “chirp” at varying positions
+   along the dendrite, and measuring the resultant voltage at an integration zone, such as the soma (e.g., Narayanan and Johnston, 2007), which is
+   attenuated at some frequencies and preserved/ampliﬁed at others (the “resonant frequency,” inverted triangles). This resonant frequency tends to
+   increase exponentially with distance from the soma, as does the conductance of Ih (purple gradient).
+
+
+
+
+Narayanan and Johnston, 2007). Because Ih activation confers a                   components are attenuated. Conversely, inputs impinging on
+preference for faster membrane potential ﬂuctuations (Hu et al.,                 proximal dendrites or the soma align better with the lower-
+2009), distal compartments tend to resonate at higher frequencies                frequency resonance found in those regions. This gradient means
+than proximal compartments or the somata (Narayanan and                          that inputs targeting diﬀerent compartments will preferentially
+Johnston, 2007) (Figure 3). This pattern arises from the interaction             engage diﬀerent temporal modes.
+between local input impedance, passive cable ﬁltering, and the                       Anatomically, the relationship between projection distance
+spatial distribution of active conductances.                                     and dendritic targeting is more nuanced than previously assumed.
+    Even in the simplest case of a uniform resonant cable,                       Individual corticocortical axons often arborize across multiple
+spatial separation between an input site and the soma produces                   layers, engaging distinct dendritic compartments of their
+a measurable shift in the preferred frequency of the transfer                    postsynaptic targets (Rockland and Virga, 1989). Because dendritic
+impedance, on the order of ten percent over a few hundred                        compartments exhibit frequency-selective resonance properties,
+micrometers as revealed by computational models by Laudanski                     a single presynaptic neuron could diﬀerentially inﬂuence them
+et al. (2014). Those researchers emphasized that this passive                    depending on its ﬁring frequency. In eﬀect, arborization combined
+gradient is only a lower bound. When realistic dendritic features                with dendritic ﬁltering allows one axon to multiplex its output
+are introduced in the models, including branching, nonuniform                    across parallel computational channels within dendrites. It should
+distributions of resonant conductances, and somatic boundary                     also be noted that axonal arbors are not merely passive “splitters”
+conditions, the resonance proﬁle varies much more sharply, often                 of presynaptic activity but hierarchical structures capable of their
+by tens of percent across individual branches in both abstract                   own computations, though a full treatment of this complexity is
+and reconstructed morphologies. In those models, resonant                        beyond the present focus.
+frequencies often occurred in very high ranges (for example,                         Within the apical arbors of layer 3 pyramidal neurons, long-
+above 200 Hz), but the key point is less about the absolute                      range excitatory inputs have been shown to cluster in discrete
+values in the simpliﬁed models than the broader principle that                   domains arranged systematically along the apical axis, with more
+multiple biophysical and geometrical factors contribute to spatial               centrally originating axons innervating progressively more distal
+dependence of dendritic resonance. Importantly, recordings from                  dendritic regions (Petreanu et al., 2009). These ﬁndings suggest that
+biological neurons reveal gradients that fall within canonical                   long-range connections may diﬀerentially recruit proximal versus
+physiological ranges. Narayanan and Johnston (2007), for example,                distal dendritic compartments, each of which exhibits distinct
+reported a shift from roughly 2 Hz at the soma to roughly 12 Hz                  resonance properties. At the macro-scale, long-range interactions
+at distal apical dendrites within approximately 300 micrometers.                 are typically dominated by lower-frequency rhythms, consistent
+Such variation creates a spatially structured temporal ﬁlter that                with conduction delays and the integrative demands of distributed
+can diﬀerentially emphasize distinct components of synaptic                      processing (see above). In this way, dendritic resonance and axonal
+input. Synaptic inputs arriving on distal dendrites are thus more                arborization patterns jointly support multiplexed computation,
+likely to be ampliﬁed when their temporal ﬂuctuations match                      bridging micro-scale dendritic dynamics with the macro-scale
+the local higher-frequency resonance, whereas lower-frequency                    hierarchy of cortical oscillations.
+
+
+
+Frontiers in Psychology                                                     06                                                                frontiersin.org
+Snyder                                                                                                                  10.3389/fpsyg.2026.1704370
+
+
+
+
+    However, dendritic compartments are not passive relays for               may further enable coordinated computation across dendritic
+single-source input (e.g., either local or long-range). Instead, they        compartments. For example, a proximal branch resonating in
+can perform frequency-selective integration across convergent                the theta range could modulate the gain or timing of inputs to
+streams, with harmonic relationships and cross-frequency nesting             a distal branch tuned to gamma frequencies, eﬀectively nesting
+enabling slower rhythms to modulate the excitability of locally              fast feature detection within a slower integrative cycle (Figure 4).
+driven fast activity. Consistent with this idea, distal apical tufts         Such cross-frequency coupling can allow temporally distinct
+in layer 1 are positioned to integrate both local high-frequency             processes (e.g., local coincidence detection and broader contextual
+inputs and slower long-range feedback, supporting their role as              integration) to remain phase-aligned, preserving the computational
+convergence sites for distributed computations (Cauller, 1995).              beneﬁts of both. In this way, the dendritic tree can support
+                                                                             multiplexed operations in which nested oscillatory interactions
+                                                                             coordinate diverse computations across spatially and biophysically
+                                                                             distinct compartments.
+4.3 Computational implications of                                                These capabilities parallel the principles of hierarchical cortical
+dendritic structure                                                          processing: local, frequency-speciﬁc processing at the periphery
+                                                                             feeding into broader, integrative decision nodes nearer the soma.
+    The dendritic arbor is an active computational substrate                 In this view, the neuron is not a single summing point but a
+whose structure and conductances shape the neuron’s information              structured network in its own right, capable of context-dependent
+processing capabilities. Local mechanisms such as shunting                   gating, temporal ﬁltering, and selective ampliﬁcation. Each of these
+inhibition can selectively attenuate or veto the impact of nearby            processes can interact with and contribute to the organization of
+inputs. Early theoretical work proposed that this synaptic veto              network-level oscillations.
+could underlie selective computations such as orientation tuning
+in cortex (Koch and Poggio, 1985). Empirically, intracellular
+recordings in visual cortex conﬁrmed that visual input evokes                5 Resonant hierarchies: a multiscale
+strong, transient shunting inhibition, directly demonstrating its            synthesis
+capacity to sculpt local input integration (Borg-Graham et al.,
+1998). More recent modeling and experimental analyses have                   5.1 Alignment across scales
+shown how dendritic geometry and inhibitory placement govern
+the eﬃcacy of shunting, clarifying the principles by which such                   A central premise of the resonant hierarchy framework is
+inhibition shapes synaptic integration in dendrites (Gidon and               that oscillatory coordination is organized along parallel structural
+Segev, 2012). By increasing local membrane conductance, these                hierarchies spanning multiple spatial scales (summarized in
+inhibitory synapses reduce input resistance and shorten the                  Table 1). Related multiscale proposals have emphasized how
+electrotonic space constant, limiting the spread of voltage changes          resonance can arise and interact across levels, from intrinsic
+and thereby modulating the inﬂuence of other inputs within                   membrane currents to recurrent microcircuits and structured
+the same branch. Active processes such as N-methyl-D-aspartate               long-range networks (e.g., Stark et al., 2013, 2022). Stark and
+(NMDA) spikes (Schiller et al., 2000), calcium spikes (Larkum et al.,        colleagues provide a detailed mechanistic account of how resonant
+1999; Gidon et al., 2020), backpropagating action potentials (Stuart         motifs may be generated, inherited, or independently instantiated
+et al., 1997), and other forms of dendritic electrogenesis (reviewed         at diﬀerent scales, and how these motifs contribute to band-
+in London and Häusser, 2005) can locally amplify coincident                  limited interactions within cortical hierarchies. Here we adopt
+inputs, creating branch-speciﬁc nonlinearities that function as              a complementary perspective. Rather than focusing on the
+conditional gates or coincidence detectors.                                  mechanistic routes by which resonance emerges within particular
+    The hierarchical branching of dendrites is reﬂected in the               circuits, we treat dendritic resonance, laminar architecture, long-
+etymology of dendrite, derived from the Greek dendron, meaning               range conduction delays, and latent population dynamics as parallel
+“tree,” which is arguably the quintessential hierarchical structure.         tiers within a uniﬁed scaﬀold, and ask how constraints at these
+This branching pattern naturally supports a layered form of                  levels jointly align the temporal coordination regimes that organize
+integration. Sub-branches can process inputs semi-independently,             computation across scales. This diﬀerence in emphasis means that
+performing local computations before passing their results toward            the resonant hierarchy framework is less a model of a particular
+higher-order branch points (e.g., Mel, 1994; Poirazi and Mel, 2001;          circuit and more a cross-scale organizing principle intended to
+Polsky et al., 2004; Losonczy and Magee, 2006). These intermediate           guide both mechanistic modeling and experimental design.
+nodes then integrate information from multiple sub-branches                       At the microscale, dendritic resonance properties impose
+before relaying it toward the soma. This structural hierarchy                frequency preferences on synaptic inputs, shaping which temporal
+enables the neuron to implement multi-stage transformations:                 patterns are most likely to inﬂuence somatic integration. At the
+distal branches may act as feature detectors for speciﬁc input               mesoscale, local columns and laminar circuits exhibit intermediate-
+patterns, while more proximal regions integrate these features in            scale resonances, arising from recurrent connectivity and layer-
+the context of broader synaptic activity.                                    speciﬁc conductances. At the macroscale, inter-areal coordination
+    Because local computations are shaped by the branch’s                    is constrained by conduction delays, axonal pathways, and
+resonant properties, diﬀerent parts of the dendritic tree may                anatomical layout, producing systematic relationships between
+be tuned to detect and integrate inputs with distinct temporal               spatial separation and dominant communication frequencies. This
+signatures, providing a natural division of labor across frequencies.        multi-scale view reframes the interpretation of canonical frequency
+Harmonic relationships between these locally preferred frequencies           bands: rather than assigning alpha (or any other oscillatory band)
+
+Frontiers in Psychology                                                 07                                                            frontiersin.org
+Snyder                                                                                                                             10.3389/fpsyg.2026.1704370
+
+
+
+
+                                                                                        its anatomical layout, conduction delays, and resonant properties)
+                                                                                        and reverse-engineer the computational primitives it naturally
+                                                                                        supports. The resonant hierarchy framework follows this latter
+                                                                                        approach, rooting large-scale functional diversity in a shared set of
+                                                                                        scale-dependent dynamical motifs, rather than mapping rhythms
+                                                                                        one-to-one onto high-level cognitive constructs.
+                                                                                             This alignment across scales suggests that the brain’s oscillatory
+                                                                                        architecture is not an incidental byproduct of neural activity but an
+                                                                                        evolved, multi-level organizational principle, reﬂecting constraints
+                                                                                        imposed by both neural biophysics and the intrinsic structure of
+                                                                                        computation itself. Frequency preferences originating at the level
+                                                                                        of dendritic compartments can propagate upward, inﬂuencing the
+                                                                                        collective dynamics of microcircuits, cortical areas, and whole-
+                                                                                        brain networks. Conversely, the global oscillatory environment can
+                                                                                        modulate, entrain, or adapt the resonance properties of its cellular
+                                                                                        and subcellular components.
+   FIGURE 4
+   Conceptual illustration of potential phase-amplitude coupling
+   mechanism in an idealized hierarchical dendrite. Inputs are ﬁltered
+   based on the resonance phenomena at different dendritic                              5.2 Reciprocal interactions and plasticity
+   compartments. The effect of input at more distal locations (higher
+   frequencies) is modulated by the phase of input at more proximal
+   compartments (lower frequencies), due to mechanisms such as                              Oscillatory dynamics are not only shaped by the structural
+   shunting inhibition.                                                                 and resonant properties of their neural substrates; they also act
+                                                                                        back upon those substrates to modify their future responsiveness.
+                                                                                        Top-down rhythms can modulate dendritic integration through
+TABLE 1 Summary of conceptual parallels of oscillatory resonance across
+scales spanning subcellular computation in dendrites, to large-scale                    multiple mechanisms, including activity-dependent synaptic
+networks, to computational functions.                                                   plasticity (Huerta and Lisman, 1995; Buzsáki and Draguhn, 2004),
+                                                                                        changes in intrinsic excitability via conductances such as Ih and
+ Frequency Function(s)                 Dendrites            Large-scale                 IM (Hutcheon and Yarom, 2000; Narayanan and Johnston, 2010),
+ band                                                       networks
+                                                                                        neuromodulator-driven shifts in channel properties (Marder,
+ δ (1–4 Hz)       Arousal/slow         Proximal/somatic     Global                      2012; Dembrow et al., 2010), and even ephaptic coupling between
+                  integration; sleep   integration; long    coordination; high
+                  homeostasis          windows              delay tolerance             neighboring elements (Anastassiou et al., 2011; Fröhlich and
+                                                                                        McCormick, 2010).
+ θ (4–8 Hz)       Sequencing;          Mid-apical           Hippocampal–
+                  navigation;          coupling; θ–γ        PFC           loops;
+                                                                                            For example, prolonged entrainment of a dendritic
+                  working memory       nesting              cross-areal timing          compartment at a particular frequency can upregulate or
+                  control                                                               downregulate ion channel densities, altering its resonance proﬁle
+ α (8–14 Hz)      Gating/selection;    Compartment-         Feedback-                   and thereby biasing future sensitivity toward the entrained
+                  sensory              speciﬁc              dominant                    frequency band (e.g., Fan et al., 2005; Remy and Spruston,
+                  suppression          resonance; gain      channels;
+                                       control              mesoscale
+                                                                                        2007; Narayanan and Johnston, 2010, 2007; Zhang and Linden,
+                                                            coherence                   2003). Similarly, neuromodulatory inputs such as cholinergic or
+                                                                                        noradrenergic projections can rapidly change time constants and
+ β (15–30 Hz)     Set-maintenance;     Dendrite–soma        Long-range
+                  pre-movement         coupling for         control;                    gain control parameters, transiently reshaping resonance without
+                  decrease; rebound    top-down “set”       fronto-parietal             requiring structural change (e.g., Robinson and Siegelbaum, 2003;
+                                                            loops
+                                                                                        Biel et al., 2009).
+ γ (>30 Hz)       Feature binding;     Distal/apical tuft   Feedforward                     These bidirectional inﬂuences likely create a feedback loop
+                  local                engagement; fast     precision;
+                                                                                        in which macroscopic rhythms both emerge from and reshape
+                  computation;         resonance            short-range
+                  assemblies                                routing                     their generating microcircuits. When large-scale network activity
+                                                                                        exhibits consistent temporal patterns—such as sustained theta
+                                                                                        in hippocampal-prefrontal loops (e.g., Colgin, 2011) or alpha in
+a ﬁxed role derived from a particular behavioral paradigm, we                           visual-parietal networks (Foxe and Snyder, 2011)—these patterns
+propose that an oscillation’s most fundamental descriptor is the                        can leave enduring “traces” in the form of synaptic weight
+temporal coordination regime it embodies. In this view, a given                         adjustments, changes in dendritic ion channel expression, and
+frequency band may participate in diverse functions, provided                           reorganization of local microcircuit connectivity. Over time, these
+those functions share common temporal constraints. This shift                           traces alter the baseline resonance properties of the contributing
+echoes a broader conceptual reorientation articulated by Buzsáki                        neurons, increasing the likelihood that the same large-scale pattern
+(2006), who noted that neuroscience inherited from psychology                           will reoccur. This dynamic is akin to stigmergy in collective
+a set of predeﬁned cognitive “modules” (e.g., attention, working                        systems, where actions taken by the group leave modiﬁcations in
+memory) and sought neural correlates for each. An alternative, he                       the environment that bias future behavior in a self-reinforcing
+suggested, is to begin with the brain as a physical system (with                        manner (Bonabeau et al., 1999).
+
+Frontiers in Psychology                                                            08                                                            frontiersin.org
+Snyder                                                                                                                                          10.3389/fpsyg.2026.1704370
+
+
+
+
+    In the resonant hierarchy framework, such stigmergic loops                 to remain dynamically coupled to the most relevant dimensions
+provide a mechanism for the co-adaptation of oscillatory dynamics              of the global cortical state. Crucially, invoking low-dimensional
+and structural architecture across scales. Local dendritic tuning              latent dynamics and the Johnson–Lindenstrauss lemma is not
+shapes the emergence of mesoscale and macroscale rhythms,                      meant to render dendritic structure incidental. Access to latent
+while those rhythms, in turn, serve as a sculpting force,                      structure is only the ﬁrst step. The geometry, resonance gradients,
+reinforcing structural motifs and conductance proﬁles that                     and nonlinear mechanisms of dendrites determine how diﬀerent
+support their propagation. This reciprocal interplay reﬂects a                 components of that latent state are weighted, gated, combined,
+system in which temporal coordination regimes and anatomical                   or suppressed, and thus shape the neuron’s computational role.
+specializations are co-constructed over developmental, learning,               Two neurons may each receive projections of the same underlying
+and evolutionary timescales.                                                   population dynamics, yet their intrinsic structure determines which
+                                                                               interactions are ampliﬁed, which are vetoed, and which nonlinear
+                                                                               events are engaged. Dendrites therefore do not merely sample
+                                                                               latent dynamics; they impose structure on how those dynamics are
+5.3 Dimensionality, sampling, and access                                       interpreted and transmitted, linking global population activity to
+to global state                                                                local computation in a scale-consistent way.
+
+     Large-scale neural population activity often evolves on a
+manifold whose intrinsic dimensionality is far lower than the
+number of constituent neurons (e.g., Gao and Ganguli, 2015;
+                                                                                  BOX 1 The Johnson–Lindenstrauss lemma
+Stringer et al., 2019). If this low-dimensionality assumption holds,
+then results such as the Johnson–Lindenstrauss lemma (Johnson                        The Johnson–Lindenstrauss (JL) lemma (Johnson and Lindenstrauss, 1984)
+and Lindenstrauss, 1984; Vempala, 2005; Box 1) imply that a                       is a fundamental result in high-dimensional geometry that formalizes the
+                                                                                  intuition that the structure of a set of points can be preserved under projection
+relatively small number of projections into the activity space                    into a much lower-dimensional space.
+can preserve the essential geometry of the global state. While
+dendritic integration is neither perfectly linear nor composed of
+truly random projections, each neuron receives thousands of inputs                5.3.1 Statement (informal)
+from a diverse set of presynaptic partners, spanning both local                      Given a set of n points (x1 , ..., xn ) in a high-dimensional space, there exists
+and long-range sources. This diversity, combined with the ﬁltering                a linear mapping into a space of dimension
+properties of dendrites, makes it plausible that the membrane                                                                              
+                                                                                                                                    log n
+potential of a single neuron can embed a substantial amount of                                                         m=O
+                                                                                                                                      ε2
+information about the overall network state, even if each neuron
+accesses only a particular, biased projection of that state. In the               such that the pairwise distances between points are preserved to within a
+context of resonant hierarchies, this observation has important                   factor of (1 ± ε):
+
+implications. Because dendritic resonance varies spatially along the
+                                                                                                  (1 − ε)xi − xj 2 ≤ f(xi ) − f(xj )2 ≤ (1 + ε)xi − xj 2 ,
+arbor, diﬀerent compartments preferentially transmit inputs within
+distinct frequency bands and from distinct mixtures of presynaptic                for all i, j.
+partners. Large-scale oscillations, in turn, often carry functionally
+distinct streams of information in diﬀerent bands, such as gamma
+for feedforward sensory signals and beta for top-down control.                    5.3.2 Intuition
+A neuron’s structured frequency ﬁltering can therefore act as a                     Even in a very high-dimensional space, a set of points with limited
+targeted sampler of the global latent state, selectively amplifying               complexity (ﬁnite n) can be faithfully embedded into a much lower-
+inputs that are temporally aligned with its local resonances and                  dimensional space without signiﬁcant distortion of geometry. The projection
+                                                                                  can be chosen at random, and with high probability it will satisfy the distance-
+connectivity proﬁle. Proximal and distal branches, and even
+                                                                                  preservation property.
+diﬀerent arbors on the same neuron, will in general sample diﬀerent
+aspects of that latent state; taken together, these complementary
+perspectives can tile the manifold of population activity without any
+                                                                                  5.3.3 Relevance to neuroscience
+single branch needing to carry a complete description. In this way,                  If large-scale neural population activity is well described by a low-
+each neuron may act as a compressed “window” onto the brain’s                     dimensional latent trajectory, then the synaptic drive arriving at a dendritic
+latent activity, analogous to how a small portion of a hologram                   branch can be viewed as a biased projection of that trajectory. Even a partial
+still contains a recognizable image of the entire scene (in contrast              projection can preserve meaningful structure when the underlying dynamics
+                                                                                  are relatively low-dimensional. In neurons, the form of this projection is
+to the strictly local information carried by a pixel). The reciprocal             shaped by two factors: (i) the diversity of presynaptic partners converging
+nature of this relationship is central. The aspects of the global state           onto the branch and (ii) the branch’s frequency-selective resonance proﬁle,
+that are accessible to a neuron depend on its dendritic resonances                which emphasizes particular temporal components of the global population
+                                                                                  state. Dendritic integration mechanisms further transform these inputs,
+and input sampling; conversely, the large-scale network can bias
+                                                                                  determining which dimensions of the latent trajectory ultimately inﬂuence
+access to particular state dimensions by modulating the timing and                output. In this way, the spatial and temporal properties of resonant dendrites
+frequency content of its projections. Through synaptic plasticity                 support both selective access to, and structured transformation of, global
+and activity-dependent tuning of intrinsic conductances, these two                brain dynamics.
+
+levels can become aligned over time, enabling local computations
+
+
+
+Frontiers in Psychology                                                   09                                                                                 frontiersin.org
+Snyder                                                                                                                10.3389/fpsyg.2026.1704370
+
+
+
+
+6 Implications and future directions                                        primarily applied within single-scale datasets, its architecture and
+                                                                            inference strategy could be adapted to test whether incorporating
+6.1 Multiscale recording approaches                                         cross-scale constraints yields more accurate or interpretable
+                                                                            latent representations.
+    Testing the resonant hierarchy framework will require                       Moving beyond conventional analyses of ﬁeld potentials, these
+measurement strategies that can bridge spatial scales, from                 approaches can reveal whether distinct oscillatory components
+dendritic compartments to whole-brain networks. Simultaneous                observed at diﬀerent scales reﬂect projections of a shared
+intracranial population recordings and noninvasive measures such            low-dimensional latent process. For example, a latent variable
+as scalp EEG or MEG oﬀer a powerful means of linking local                  evolving on a particular manifold might manifest as gamma-band
+ﬁeld potentials, spiking activity, and global oscillatory patterns          ﬂuctuations in local microcircuits, beta-band coherence between
+within the same behavioral context. By examining how microscale             nearby cortical areas, and alpha-band coordination between distant
+events, such as bursts of gamma in a speciﬁc cortical column, align         networks, all reﬂecting a single underlying dynamical mode
+with or diverge from macroscale rhythms, these approaches can               constrained by the system’s resonant hierarchy.
+directly assess the degree of cross-scale alignment predicted by                To evaluate the plausibility of the framework, resonant
+the framework.                                                              hierarchy models should be quantitatively compared to simpler
+    Cortical layer-resolved recordings can further test how                 alternatives that lack explicit cross-scale structure. Model
+resonance properties vary with the source of input (e.g.,                   comparison metrics, such as predictive log-likelihood, explained
+feedforward vs. feedback) and with task context. Such                       variance, or out-of-sample decoding accuracy, can test whether
+measurements could test the hypothesis that frequency preferences           incorporating scale-speciﬁc resonance improves predictions of
+observed at the laminar level are rooted in the resonance                   neural activity and behavior. In addition, perturbation-in-the-
+proﬁles of nearby dendrites, and that these preferences shift               model experiments, such as selectively altering the resonance
+in predictable ways as behavioral demands change. Coupling                  properties of a particular scale, can generate falsiﬁable predictions
+laminar recordings with causal manipulations such as optogenetic            for empirical validation.
+or electrical stimulation tuned to speciﬁc frequencies could                    By integrating multiscale recordings with latent dynamical
+probe the directionality and frequency selectivity of inter-areal           modeling, future work can move toward a uniﬁed, computationally
+communication channels.                                                     grounded account of how oscillatory coordination across the brain’s
+    At the ﬁnest scale, intracellular patch-clamp recordings or             structural hierarchy supports ﬂexible cognition.
+subcellular imaging techniques (e.g., voltage-sensitive dye or
+genetically encoded voltage indicators) could be used to measure
+resonance directly at the synaptic and dendritic level. These
+experiments would enable precise quantiﬁcation of how frequency             6.3 Stimulation as latent-state perturbation
+tuning varies along the dendritic arbor, how it is modulated
+by neuromodulatory state, and how it adapts with experience                     In the resonant hierarchy framework, external stimulation is
+or plasticity-inducing protocols. Such data could provide critical          best understood not as a means of imposing ﬁxed activity patterns,
+ground truth for connecting cellular-level mechanisms to the                but as a way of biasing the brain’s intrinsic latent dynamics
+mesoscale and macroscale oscillatory phenomena observed in vivo.            toward particular regions of its state space. Transcranial electrical
+    By integrating these approaches, future work can move beyond            stimulation (tES), transcranial magnetic stimulation (TMS), deep
+correlational descriptions to causal, mechanistic tests of how              brain stimulation (DBS), and other neuromodulatory approaches
+oscillatory coordination emerges from, and shapes, the multiscale           interact with ongoing network activity rather than replacing it; their
+architecture of the brain.                                                  eﬀects depend on the phase, amplitude, and spectral content of the
+                                                                            endogenous oscillations they encounter.
+                                                                                Recasting stimulation in this way shifts the experimental goal
+                                                                            from matching a stimulation waveform to a hypothesized “optimal”
+6.2 Modeling latent dynamics across scales                                  frequency, to targeting the resonant scaﬀolds that constrain and
+                                                                            shape multiscale coordination. By aligning stimulation parameters
+    A key test of the resonant hierarchy framework is whether it            with these scaﬀolds (whether deﬁned by dendritic resonance,
+can account for neural population activity more parsimoniously              laminar connectivity, or large-scale conduction delays) it may
+or accurately than models that ignore cross-scale structure. Recent         be possible to preferentially inﬂuence the oscillatory modes that
+advances in machine learning provide new tools for this purpose,            mediate a desired computation. From this standpoint, DBS can
+particularly deep generative models such as variational auto-               be viewed as targeting resonant motifs in deep nuclei and their
+encoders (VAEs) and related latent-variable approaches. When                cortical partners, with clinical eﬃcacy arising not simply from
+applied to multiscale data, such as simultaneously recorded                 local suppression or excitation but from restoring or reshaping
+intracranial population spiking and scalp EEG, these methods                multiscale coordination regimes that have become pathologically
+could infer a set of latent neural trajectories that jointly explain        disordered (e.g., Thevathasan et al., 2020).
+activity across recording modalities and spatial resolutions.                   Intracranial recordings during stimulation provide a direct
+A particularly inﬂuential example is Latent Factor Analysis                 window into these interactions, allowing researchers to characterize
+via Dynamical Systems (LFADS) (Pandarinath et al., 2018),                   how applied ﬁelds modulate the geometry of latent neural
+which uses recurrent neural networks to infer smooth latent                 trajectories. For example, closed-loop tES timed to the phase of
+dynamics from population spiking. Although LFADS has been                   a target oscillation can selectively amplify or suppress speciﬁc
+
+Frontiers in Psychology                                                10                                                           frontiersin.org
+Snyder                                                                                                                      10.3389/fpsyg.2026.1704370
+
+
+
+
+dimensions of neural state space, producing eﬀects that propagate
+from the cellular to the network level in a scale-consistent manner.
+Such observations can reﬁne biophysical models of how stimulation
+perturbs population activity, helping to disentangle the relative
+contributions of direct neuronal polarization, synaptic modulation,
+and network resonance.
+    Ultimately, precision neuromodulation may emerge not from
+stimulating speciﬁc neurons or anatomical loci, but from targeting
+the structural and dynamical features that anchor the brain’s
+resonant hierarchy. By doing so, stimulation can nudge the system
+into functional regimes that support desired behaviors or cognitive
+states, oﬀering a principled route toward individualized, state-
+dependent interventions.
+
+
+
+6.4 Testable predictions and clinical
+implications
+
+     The resonant hierarchy framework generates a set of concrete,
+falsiﬁable predictions that can guide both basic and translational               FIGURE 5
+
+research. First, manipulations that alter dendritic resonance                    In the resonant hierarchy framework, neural oscillations unite
+                                                                                 hierarchies across all levels of brain function, from the hierarchy
+properties should systematically shift the spectral proﬁle of                    intrinsic to cognitive computations, to large-scale networks
+population activity. For example, pharmacological modulation of                  spanning the brain, to microscale structure of individual neurons.
+Ih currents, IM channels, or other conductances with known
+frequency-selective eﬀects is predicted to bias the dominant
+oscillatory modes expressed locally and in connected networks.
+Such manipulations could be applied in vitro, in vivo, or in                  2012), selectively dampening the corresponding resonant scaﬀold
+computational models to test the causal link between microscale               may prove more eﬀective than broad-spectrum suppression.
+resonance and macroscale coordination.                                            By grounding predictions in biophysical and anatomical
+     Second, disruptions to the structural substrates of the hierarchy        constraints, the resonant hierarchy framework oﬀers a roadmap
+are expected to impair the nesting and alignment of oscillations              for empirical validation and a principled basis for clinical
+across scales. Neurodegenerative diseases, demyelination, or                  translation. Its multiscale scope allows hypotheses to be
+developmental disorders that alter axonal conduction delays may               tested at the molecular, synaptic, circuit, and systems levels,
+shift the optimal frequency bands for inter-areal communication,              enabling convergent evidence to accumulate across methods
+degrading temporal coordination. Similarly, pathologies aﬀecting              and species.
+dendritic arborization, such as reduced apical branching in
+schizophrenia, may constrain the range of resonant modes available
+for local computation, producing measurable alterations in cross-             7 Conclusion
+frequency coupling or laminar-speciﬁc coherence (e.g., Glantz and
+Lewis, 2000; Rosoklija et al., 2000).                                             The framework of resonant hierarchies advanced here proposes
+     Third, this framework suggests novel diagnostic and                      that oscillatory coordination in the brain is organized along nested
+therapeutic avenues for disorders characterized by dyscoordination            structural scales, from the compartmental resonance of dendrites
+of brain rhythms, including schizophrenia, autism spectrum                    to the temporal regimes that shape inter-areal communication
+disorder, and epilepsy (e.g., Uhlhaas and Singer, 2010; Simon                 (Figure 5). In this view, canonical frequency bands are not tied
+and Wallace, 2016; Jiruska et al., 2013). This view aligns with the           to ﬁxed cognitive functions, but instead deﬁne coordination
+broader notion of “oscillopathy” articulated by Llinás et al. (1999),         regimes whose participation in behavior depends on anatomical
+in which disrupted rhythms are treated as a core substrate of                 placement, conduction constraints, and the resonance properties
+diverse neurological and psychiatric syndromes.                               of the underlying microcircuitry. This scale-bridging organization
+     Because the resonant hierarchy links cellular, circuit, and              is not incidental: frequency preferences originating at the level of
+network dynamics, oscillatory biomarkers can be interpreted                   ion channel distributions and dendritic morphology can propagate
+in mechanistic terms, informing interventions targeted at the                 upward to inﬂuence the temporal structure of columns, cortical
+level most likely to restore functional alignment. For example,               areas, and distributed networks, while global oscillatory states
+neuromodulatory treatments (whether pharmacological, electrical,              feed back to tune and reshape the resonance properties of their
+or sensory) could be tuned to preferentially engage resonant modes            cellular substrates.
+that are underexpressed or to suppress pathological modes that                    By shifting emphasis from one-to-one mappings between
+dominate. In epilepsy, where hypersynchrony often emerges within              rhythms and cognitive “modules” toward a dynamical systems
+a restricted frequency range (Jiruska et al., 2013; Jeﬀerys et al.,           perspective grounded in biophysics and anatomy, the resonant
+
+
+
+Frontiers in Psychology                                                  11                                                                 frontiersin.org
+Snyder                                                                                                                                                10.3389/fpsyg.2026.1704370
+
+
+
+
+hierarchy framework unites previously disparate observations                                   Acknowledgments
+under a common set of principles. It accommodates the diversity
+of oscillatory functions reported in the literature (e.g., apparent                                This work was made possible by the broader scientiﬁc
+multiple roles of alpha activity) by recasting them as instances                               community’s investment in fundamental neuroscience and by
+of shared temporal coordination regimes expressed in diﬀerent                                  ongoing commitments to responsible research with animal
+structural contexts. This perspective also naturally generates                                 subjects. We acknowledge the importance of sustained funding for
+testable predictions, linking changes in dendritic conductances,                               basic research in advancing understanding of brain function.
+arborization, or axonal conduction to measurable shifts in
+network dynamics.
+    Future work at the intersection of multiscale recording,                                   Conﬂict of interest
+generative modeling, and targeted stimulation will be essential
+to test these predictions and to reﬁne the mapping between                                         The author(s) declared that this work was conducted in the
+resonance properties and functional coordination. If validated,                                absence of any commercial or ﬁnancial relationships that could be
+the resonant hierarchy framework oﬀers a principled path                                       construed as a potential conﬂict of interest.
+toward interventions that restore or optimize coordination across                                  The author AS declared that they were an editorial board
+scales, whether in neurological disease or in the service of                                   member of Frontiers, at the time of submission. This had no impact
+enhancing cognitive performance. In embracing this multiscale                                  on the peer review process and the ﬁnal decision.
+view, we move toward an account of brain rhythms not as
+byproducts of neural activity, but as fundamental scaﬀolds upon
+which the computational architecture of the nervous system                                     Generative AI statement
+is built.
+                                                                                                   The author(s) declared that generative AI was used in the
+                                                                                               creation of this manuscript. ChatGPT version 5 was used to
+Data availability statement                                                                    improve grammar and organizational clarity. All content was
+                                                                                               checked for accuracy by the author.
+    The original contributions presented in the study are included                                 Any alternative text (alt text) provided alongside ﬁgures
+in the article/supplementary material, further inquiries can be                                in this article has been generated by Frontiers with the
+directed to the corresponding author.                                                          support of artiﬁcial intelligence and reasonable eﬀorts have
+                                                                                               been made to ensure accuracy, including review by the
+                                                                                               authors wherever possible. If you identify any issues, please
+Author contributions                                                                           contact us.
+
+   AS: Conceptualization, Funding acquisition, Visualization,
+Writing – original draft, Writing – review & editing.                                          Publisher’s note
+                                                                                                   All claims expressed in this article are solely those of the
+Funding                                                                                        authors and do not necessarily represent those of their aﬃliated
+                                                                                               organizations, or those of the publisher, the editors and the
+    The author(s) declared that ﬁnancial support was received for                              reviewers. Any product that may be evaluated in this article, or
+this work and/or its publication. AS was supported by the NIH                                  claim that may be made by its manufacturer, is not guaranteed or
+grant R34NS143690.                                                                             endorsed by the publisher.
+
+
+
+
+References
+   Abdalaziz, M., Redding, Z. V., and Fiebelkorn, I. C. (2023). Rhythmic temporal              maintenance and control of working memory. Proc. Nat. Acad. Sci. 115, 1117–1122.
+coordination of neural activity prevents representational conﬂict during working               doi: 10.1073/pnas.1710323115
+memory. Curr. Biol. 33, 1855–1863.e3. doi: 10.1016/j.cub.2023.03.088
+                                                                                                   Bastos, A. M., Vezoli, J., Bosman, C. A., Schoﬀelen, J.-M., Oostenveld, R., Dowdall, J.
+    Anastassiou, C. A., Perin, R., Markram, H., and Koch, C. (2011). Ephaptic coupling         R., et al. (2015). Visual areas exert feedforward and feedback inﬂuences through distinct
+of cortical neurons. Nat. Neurosci. 14, 217–223. doi: 10.1038/nn.2727                          frequency channels. Neuron 85, 390–401. doi: 10.1016/j.neuron.2014.12.018
+   Axmacher, N., Henseler, M. M., Jensen, O., Weinreich, I., Elger, C. E., and Fell, J.           Biel, M., Wahl-Schott, C., Michalakis, S., and Zong, X. (2009). Hyperpolarization-
+(2010). Cross-frequency coupling supports multi-item working memory in the human               activated cation channels: from genes to function. Physiol. Rev. 89, 847–885.
+hippocampus. Proc. Nat. Acad. Sci. 107, 3228–3233. doi: 10.1073/pnas.0911531107                doi: 10.1152/physrev.00029.2008
+   Banerjee, S., Snyder, A. C., Molholm, S., and Foxe, J. J. (2011). Oscillatory alpha-           Bonabeau, E., Dorigo, M., and Theraulaz, G. (1999). Swarm Intelligence:
+band mechanisms and the deployment of spatial attention to anticipated auditory                From Natural to Artiﬁcial Systems. Oxford: Oxford University Press.
+and visual target locations: supramodal or sensory-speciﬁc control mechanisms? J.              doi: 10.1093/oso/9780195131581.001.0001
+Neurosci. 31, 9923–9932. doi: 10.1523/JNEUROSCI.4660-10.2011
+                                                                                                  Borg-Graham, L. J., Monier, C., and Frégnac, Y. (1998). Visual input evokes
+   Bastos, A. M., Loonis, R., Kornblith, S., Lundqvist, M., and Miller, E.                     transient and strong shunting inhibition in visual cortical neurons. Nature 393,
+K. (2018). Laminar recordings in frontal cortex suggest distinct layers for                    369–373. doi: 10.1038/30735
+
+
+
+
+Frontiers in Psychology                                                                   12                                                                            frontiersin.org
+Snyder                                                                                                                                                  10.3389/fpsyg.2026.1704370
+
+
+
+
+    Bosman, C. A., Schoﬀelen, J.-M., Brunet, N., Oostenveld, R., Bastos, A.                         Feldmeyer, D., Egger, V., Lübke, J., and Sakmann, B. (1999). Reliable
+M., Womelsdorf, T., et al. (2012). Attentional stimulus selection through                        synaptic connections between pairs of excitatory layer 4 neurones within a
+selective synchronization between monkey visual areas. Neuron 75, 875–888.                       single ‘barrel’ of developing rat somatosensory cortex. J. Physiol. 521, 169–190.
+doi: 10.1016/j.neuron.2012.06.037                                                                doi: 10.1111/j.1469-7793.1999.00169.x
+   Bragin, A., Jando, G., Nadasdy, Z., Hetke, J., Wise, K., and Buzsaki, G. (1995).                 Felleman, D. J., and Van Essen, D. C. (1991). Distributed hierarchical
+Gamma (40–100 Hz) oscillation in the hippocampus of the behaving rat. J. Neurosci.               processing in the primate cerebral cortex. Cerebral Cortex 1, 1–47. doi: 10.1093/
+15, 47–60. doi: 10.1523/JNEUROSCI.15-01-00047.1995                                               cercor/1.1.1
+   Budd, J. M. L., and Kisvárday, Z. F. (2012). Communication and wiring                           Fiebelkorn, I. C., and Kastner, S. (2019). A rhythmic theory of attention. Trends
+in the cortical connectome. Front. Neuroanat. 6:42. doi: 10.3389/fnana.2012.                     Cogn. Sci. 23, 87–101. doi: 10.1016/j.tics.2018.11.009
+00042
+                                                                                                    Fiebelkorn, I. C., Pinsk, M. A., and Kastner, S. (2018). A dynamic interplay
+   Buﬀalo, E. A., Fries, P., Landman, R., Buschman, T. J., and Desimone, R. (2011).              within the frontoparietal network underlies rhythmic spatial attention. Neuron 99,
+Laminar diﬀerences in gamma and alpha coherence in the ventral stream. Proc. Nat.                842–853.e8. doi: 10.1016/j.neuron.2018.07.038
+Acad. Sci. 108, 11262–11267. doi: 10.1073/pnas.1011284108
+                                                                                                    Fiebelkorn, I. C., Saalmann, Y. B., and Kastner, S. (2013). Rhythmic sampling within
+   Buzsáki, G. (2002). Theta oscillations in the hippocampus. Neuron 33, 325–340.                and between objects despite sustained attention at a cued location. Curr. Biol. 23,
+doi: 10.1016/S0896-6273(02)00586-X                                                               2553–2558. doi: 10.1016/j.cub.2013.10.063
+   Buzsáki, G. (2005). Theta rhythm of navigation: link between path integration                    Foxe, J. J., and Snyder, A. C. (2011). The role of alpha-band brain oscillations as
+and landmark navigation, episodic and semantic memory. Hippocampus 15, 827–840.                  a sensory suppression mechanism during selective attention. Front. Psychol. 2:154.
+doi: 10.1002/hipo.20113                                                                          doi: 10.3389/fpsyg.2011.00154
+   Buzsáki, G. (2006). Rhythms of the Brain. Oxford: Oxford University Press.                       Fries, P. (2005). A mechanism for cognitive dynamics: neuronal
+doi: 10.1093/acprof:oso/9780195301069.001.0001                                                   communication through neuronal coherence. Trends Cogn. Sci. 9, 474–480.
+                                                                                                 doi: 10.1016/j.tics.2005.08.011
+  Buzsáki, G. (2010). Neural syntax: cell assemblies, synapsembles, and readers.
+Neuron 68, 362–385. doi: 10.1016/j.neuron.2010.09.023                                               Fröhlich, F., and McCormick, D. A. (2010). Endogenous electric ﬁelds may
+                                                                                                 guide neocortical network activity. Neuron 67, 129–143. doi: 10.1016/j.neuron.2010.
+   Buzsáki, G., and Draguhn, A. (2004). Neuronal oscillations in cortical networks.
+                                                                                                 06.005
+Science 304, 1926–1929. doi: 10.1126/science.1099745
+   Cabral, J., Vidaurre, D., Marques, P., Magalhães, R., Silva Moreira, P., Soares, J.              Fujisawa, S., and Buzsáki, G. (2011). A 4 Hz oscillation adaptively
+M., et al. (2017). Functional connectivity dynamically evolves on multiple time-scales           synchronizes prefrontal, VTA, and hippocampal activities. Neuron 72, 153–165.
+over a static structural connectome: models and mechanisms. Neuroimage 160, 84–96.               doi: 10.1016/j.neuron.2011.08.018
+doi: 10.1016/j.neuroimage.2017.03.045                                                               Gao, P., and Ganguli, S. (2015). On simplicity and complexity in the brave
+   Caminiti, R., Ghaziri, H., Galuske, R., Hof, P. R., and Innocenti, G. M. (2009).              new world of large-scale neuroscience. Curr. Opin. Neurobiol. 32, 148–155.
+Evolution ampliﬁed processing with temporally dispersed slow neuronal connectivity               doi: 10.1016/j.conb.2015.04.003
+in primates. Proc. Nat. Acad. Sci. 106, 19551–19556. doi: 10.1073/pnas.0907655106                   Gidon, A., and Segev, I. (2012). Principles governing the operation of synaptic
+   Canolty, R. T., and Knight, R. T. (2010). The functional role of cross-frequency              inhibition in dendrites. Neuron 75, 330–341. doi: 10.1016/j.neuron.2012.05.015
+coupling. Trends Cogn. Sci. 14, 506–515. doi: 10.1016/j.tics.2010.09.001                             Gidon, A., Zolnik, T. A., Fidzinski, P., Bolduan, F., Papoutsi, A., Poirazi, P., et
+   Caplan, J. B., Madsen, J. R., Schulze-Bonhage, A., Aschenbrenner-Scheibe,                     al. (2020). Dendritic action potentials and computation in human layer 2/3 cortical
+R., Newman, E. L., and Kahana, M. J. (2003). Human θ oscillations related                        neurons. Science 367, 83–87. doi: 10.1126/science.aax6239
+to sensorimotor integration and spatial learning. J. Neurosci. 23, 4726–4736.
+                                                                                                    Glantz, L. A., and Lewis, D. A. (2000). Decreased dendritic spine density on
+doi: 10.1523/JNEUROSCI.23-11-04726.2003
+                                                                                                 prefrontal cortical pyramidal neurons in schizophrenia. Arch. Gen. Psychiatry 57:65.
+  Cauller, L. (1995). Layer I of primary sensory neocortex: where top-down converges             doi: 10.1001/archpsyc.57.1.65
+upon bottom-up. Behav. Brain Res. 71, 163–170. doi: 10.1016/0166-4328(95)00032-1
+                                                                                                    Gregoriou, G. G., Gotts, S. J., Zhou, H., and Desimone, R. (2009). High-frequency,
+   Chen, B. L., Hall, D. H., and Chklovskii, D. B. (2006). Wiring optimization                   long-range coupling between prefrontal and visual cortex during attention. Science 324,
+can relate neuronal structure and function. Proc. Nat. Acad. Sci. 103, 4723–4728.                1207–1210. doi: 10.1126/science.1171402
+doi: 10.1073/pnas.0506806103
+                                                                                                    Haegens, S., Vergara, J., Rossi-Pool, R., Lemus, L., and Romo, R. (2017). Beta
+   Cherniak, C., Mokhtarzada, Z., Rodriguez-Esteban, R., and Changizi, K. (2004).                oscillations reﬂect supramodal information during perceptual judgment. Proc. Nat.
+Global optimization of cerebral cortex layout. Proc. Nat. Acad. Sci. 101, 1081–1086.             Acad. Sci. 114, 13810–13815. doi: 10.1073/pnas.1714633115
+doi: 10.1073/pnas.0305212101
+                                                                                                    Halliwell, J. V., and Adams, P. R. (1982). Voltage-clamp analysis of
+  Colgin, L. L. (2011). Oscillations and hippocampal–prefrontal synchrony. Curr.                 muscarinic excitation in hippocampal neurons. Brain Res. 250, 71–92.
+Opin. Neurobiol. 21, 467–474. doi: 10.1016/j.conb.2011.04.006                                    doi: 10.1016/0006-8993(82)90954-4
+   Colgin, L. L., Denninger, T., Fyhn, M., Hafting, T., Bonnevie, T., Jensen, O.,                   Harmony, T. (2013). The functional signiﬁcance of delta oscillations in cognitive
+et al. (2009). Frequency of gamma oscillations routes ﬂow of information in the                  processing. Front. Integr. Neurosci. 7:83. doi: 10.3389/fnint.2013.00083
+hippocampus. Nature 462, 353–357. doi: 10.1038/nature08573
+                                                                                                    Hu, H., Vervaeke, K., Graham, L. J., and Storm, J. F. (2009). Complementary
+   Cordier, A., Mary, A., Vander Ghinst, M., Goldman, S., De Tiège, X., and                      theta resonance ﬁltering by two spatially segregated mechanisms in
+Wens, V. (2024). The dissociative role of bursting and non-bursting neural activity              CA1 hippocampal pyramidal neurons. J. Neurosci. 29, 14472–14483.
+in the oscillatory nature of functional brain networks. Imag. Neurosci. 2:231.                   doi: 10.1523/JNEUROSCI.0187-09.2009
+doi: 10.1162/imag_a_00231
+                                                                                                    Hu, H., Vervaeke, K., and Storm, J. F. (2002). Two forms of electrical
+   da Silva, F. L. (1991). Neural mechanisms underlying brain waves: from                        resonance at theta frequencies, generated by M-current, h-current and persistent
+neural membranes to networks. Electroencephalogr. Clin. Neurophysiol. 79, 81–93.                 Na+ current in rat hippocampal pyramidal cells. J. Physiol. 545, 783–805.
+doi: 10.1016/0013-4694(91)90044-5                                                                doi: 10.1113/jphysiol.2002.029249
+   Deco, G., Jirsa, V. K., and McIntosh, A. R. (2011). Emerging concepts for                        Huerta, P. T., and Lisman, J. E. (1995). Bidirectional synaptic plasticity induced by a
+the dynamical organization of resting-state activity. Nat. Rev. Neurosci. 12, 43–56.             single burst during cholinergic theta oscillation in CA1 in vitro. Neuron 15, 1053–1063.
+doi: 10.1038/nrn2961                                                                             doi: 10.1016/0896-6273(95)90094-2
+   Delmas, P., and Brown, D. A. (2005). Pathways modulating neural KCNQ/M (Kv7)                     Hutcheon, B., Miura, R. M., and Puil, E. (1996). Models of subthreshold
+potassium channels. Nat. Rev. Neurosci. 6, 850–862. doi: 10.1038/nrn1785                         membrane resonance in neocortical neurons. J. Neurophysiol. 76, 698–714.
+                                                                                                 doi: 10.1152/jn.1996.76.2.698
+   Dembrow, N. C., Chitwood, R. A., and Johnston, D. (2010). Projection-speciﬁc
+neuromodulation of medial prefrontal cortex neurons. J. Neurosci. 30, 16922–16937.                  Hutcheon, B., Miura, R. M., Yarom, Y., and Puil, E. (1994). Low-threshold calcium
+doi: 10.1523/JNEUROSCI.3644-10.2010                                                              current and resonance in thalamic neurons: a model of frequency preference. J.
+                                                                                                 Neurophysiol. 71, 583–594. doi: 10.1152/jn.1994.71.2.583
+    Domanski, A. P., Kucewicz, M. T., Russo, E., Tricklebank, M. D., Robinson, E.
+S., Durstewitz, D., et al. (2023). Distinct hippocampal-prefrontal neural assemblies                Hutcheon, B., and Yarom, Y. (2000). Resonance, oscillation and the
+coordinate memory encoding, maintenance, and recall. Curr. Biol. 33, 1220–1236.e4.               intrinsic frequency preferences of neurons. Trends Neurosci. 23, 216–222.
+doi: 10.1016/j.cub.2023.02.029                                                                   doi: 10.1016/S0166-2236(00)01547-2
+  Engel, A. K., and Fries, P. (2010). Beta-band oscillations — signalling the status quo?           Jeﬀerys, J. G., Menendez de la Prida, L., Wendling, F., Bragin, A., Avoli, M.,
+Curr. Opin. Neurobiol. 20, 156–165. doi: 10.1016/j.conb.2010.02.015                              Timofeev, I., et al. (2012). Mechanisms of physiological and epileptic HFO generation.
+                                                                                                 Prog. Neurobiol. 98, 250–264. doi: 10.1016/j.pneurobio.2012.02.005
+   Fan, Y., Fricker, D., Brager, D. H., Chen, X., Lu, H.-C., Chitwood, R. A., et al.
+(2005). Activity-dependent decrease of excitability in rat hippocampal neurons through              Jensen, O., and Colgin, L. L. (2007). Cross-frequency coupling between neuronal
+increases in I_h. Nat. Neurosci. 8, 1542–1551. doi: 10.1038/nn1568                               oscillations. Trends Cogn. Sci. 11, 267–269. doi: 10.1016/j.tics.2007.05.003
+
+
+
+
+Frontiers in Psychology                                                                     13                                                                           frontiersin.org
+Snyder                                                                                                                                                    10.3389/fpsyg.2026.1704370
+
+
+
+
+   Jiruska, P., de Curtis, M., Jeﬀerys, J. G. R., Schevon, C. A., Schiﬀ, S. J., and                 feedforward inﬂuences among human visual cortical areas. Neuron 89, 384–397.
+Schindler, K. (2013). Synchronization and desynchronization in epilepsy: controversies              doi: 10.1016/j.neuron.2015.12.018
+and hypotheses. J. Physiol. 591, 787–797. doi: 10.1113/jphysiol.2012.239590
+                                                                                                       Myers, J. C., Smith, E. H., Leszczynski, M., O’Sullivan, J., Yates, M. J.,
+   Johnson, W. B., and Lindenstrauss, J. (1984). Extensions of Lipschitz mappings into              McKhann, G., et al. (2022). The spatial reach of neuronal coherence and
+a Hilbert space. Contemp. Mathem. 26, 189–206. doi: 10.1090/conm/026/737400                         spike-ﬁeld coupling across the human neocortex. J. Neurosci 42, 6285–6294.
+                                                                                                    doi: 10.1523/JNEUROSCI.0050-22.2022
+   Johnston, R., Snyder, A. C., Schibler, R. S., and Smith, M. A. (2022). EEG signals
+index a global signature of arousal embedded in neuronal population recordings.                        Narayanan, R., and Johnston, D. (2007). Long-term potentiation in rat hippocampal
+eNeuro 9:ENEURO.0012–22.2022. doi: 10.1523/ENEURO.0012-22.2022                                      neurons is accompanied by spatially widespread changes in intrinsic oscillatory
+                                                                                                    dynamics and excitability. Neuron 56, 1061–1075. doi: 10.1016/j.neuron.2007.10.033
+   Jones, M. W., and Wilson, M. A. (2005). Theta rhythms coordinate
+hippocampal–prefrontal interactions in a spatial memory task. PLoS Biol. 3:e402.                        Narayanan, R., and Johnston, D. (2010). The h current is a candidate mechanism
+doi: 10.1371/journal.pbio.0030402                                                                   for regulating the sliding modiﬁcation threshold in a BCM-like synaptic learning rule.
+                                                                                                    J. Neurophysiol. 104, 1020–1033. doi: 10.1152/jn.01129.2009
+   Jung, D. Y., Sahoo, B. C., and Snyder, A. C. (2025). Distractor anticipation during
+working memory is associated with theta and beta oscillations across spatial scales.                   Niedermeyer, E., and da Silva, F. L. (2005). Electroencephalography: Basic Principles,
+Front. Integr. Neurosci. 19:1553521. doi: 10.3389/fnint.2025.1553521                                Clinical Applications, and Related Fields. Philadelphia, PA: Lippincott Williams Wilkins.
+  Kahana, M. J., Sekuler, R., Caplan, J. B., Kirschen, M., and Madsen, J. R. (1999).                   Nobre, A. C., and Gresch, D. (2025). How the brain shifts between external and
+Human theta oscillations exhibit task dependence during virtual maze navigation.                    internal attention. Neuron 113, 2382–2398. doi: 10.1016/j.neuron.2025.06.013
+Nature 399, 781–784. doi: 10.1038/21645
+                                                                                                      Olbrich, E., Achermann, P., and Meier, P. (2003). Dynamics of human sleep EEG.
+    Kay, K., Chung, J. E., Sosa, M., Schölvinck, M. L., Kahana, M. J., Wilson, M. A., et            Neurocomputing 52–54, 857–862. doi: 10.1016/S0925-2312(02)00816-0
+al. (2020). Constant sub-second cycling between representations of possible futures in
+                                                                                                       O’Neill, P.-K., Gordon, J. A., and Sigurdsson, T. (2013). Theta oscillations in the
+the hippocampus. Cell 180, 552–567.e25. doi: 10.1016/j.cell.2020.01.014
+                                                                                                    medial prefrontal cortex are modulated by spatial working memory and synchronize
+   Kilavik, B. E., Zaepﬀel, M., Brovelli, A., MacKay, W. A., and Riehle, A. (2013). The             with the hippocampus through its ventral subregion. J. Neurosci. 33, 14211–14224.
+ups and downs of beta oscillations in sensorimotor cortex. Exp. Neurol. 245, 15–26.                 doi: 10.1523/JNEUROSCI.2378-13.2013
+doi: 10.1016/j.expneurol.2012.09.014
+                                                                                                       Osipova, D., Hermes, D., and Jensen, O. (2008). Gamma power is phase-locked to
+   Klimesch, W. (1999). EEG alpha and theta oscillations reﬂect cognitive and                       posterior alpha activity. PLoS ONE 3:e3990. doi: 10.1371/journal.pone.0003990
+memory performance: a review and analysis. Brain Res. Rev. 29, 169–195.
+                                                                                                       Palva, S., and Palva, J. M. (2011). Functional roles of alpha-band phase
+doi: 10.1016/S0165-0173(98)00056-3
+                                                                                                    synchronization in local and large-scale cortical networks. Front. Psychol. 2:204.
+   Klimesch, W. (2012). Alpha-band oscillations, attention, and controlled access to                doi: 10.3389/fpsyg.2011.00204
+stored information. Trends Cogn. Sci. 16, 606–617. doi: 10.1016/j.tics.2012.10.007
+                                                                                                       Pandarinath, C., O’Shea, D. J., Collins, J., Jozefowicz, R., Stavisky, S. D., Kao, J.
+   Koch, C., and Poggio, T. (1985). “The synaptic veto mechanism: Does it underlie                  C., et al. (2018). Inferring single-trial neural population dynamics using sequential
+direction and orientation selectivity in the visual cortex,” in Models of the Visual Cortex,        auto-encoders. Nat. Methods 15, 805–815. doi: 10.1038/s41592-018-0109-9
+eds. D. Rose, and V. G. Dobson (Wiley), 408–419.
+                                                                                                       Pape, H.-C. (1996). Queer current and pacemaker: The hyperpolarization-
+   Lakatos, P., Shah, A. S., Knuth, K. H., Ulbert, I., Karmos, G., and Schroeder,                   activated cation current in neurons. Annu. Rev. Physiol. 58, 299–327.
+C. E. (2005). An oscillatory hierarchy controlling neuronal excitability and                        doi: 10.1146/annurev.ph.58.030196.001503
+stimulus processing in the auditory cortex. J. Neurophysiol. 94, 1904–1911.
+                                                                                                       Perez-Reyes, E. (2003). Molecular physiology of low-voltage-activated T-type
+doi: 10.1152/jn.00263.2005
+                                                                                                    calcium channels. Physiol. Rev. 83, 117–161. doi: 10.1152/physrev.00018.2002
+   Larkum, M. E., Zhu, J. J., and Sakmann, B. (1999). A new cellular mechanism
+                                                                                                       Petkoski, S., and Jirsa, V. K. (2019). Transmission time delays organize
+for coupling inputs arriving at diﬀerent cortical layers. Nature 398, 338–341.
+                                                                                                    the brain network synchronization. Philosop. Trans. R. Soc. A 377:20180132.
+doi: 10.1038/18686
+                                                                                                    doi: 10.1098/rsta.2018.0132
+   Laudanski, J., Torben-Nielsen, B., Segev, I., and Shamma, S. (2014). Spatially
+                                                                                                       Petreanu, L., Mao, T., Sternson, S. M., and Svoboda, K. (2009). The subcellular
+distributed dendritic resonance selectively ﬁlters synaptic input. PLoS Comput. Biol.
+                                                                                                    organization of neocortical excitatory connections. Nature 457, 1142–1145.
+10:e1003775. doi: 10.1371/journal.pcbi.1003775
+                                                                                                    doi: 10.1038/nature07709
+   Llinás, R. R., Ribary, U., Jeanmonod, D., Kronberg, E., and Mitra, P.
+                                                                                                       Pfurtscheller, G., Stancak Jr, A., and Neuper, C. (1996). Post-movement beta
+P. (1999). Thalamocortical dysrhythmia: A neurological and neuropsychiatric
+                                                                                                    synchronization. A correlate of an idling motor area? Electroencephalogr. Clin.
+syndrome characterized by magnetoencephalography. Proc. Natl. Acad. Sci. USA. 96,
+                                                                                                    Neurophysiol. 98, 281–293. doi: 10.1016/0013-4694(95)00258-8
+15222–15227. doi: 10.1073/pnas.96.26.15222
+                                                                                                       Phillips, J. M., Vinck, M., Everling, S., and Womelsdorf, T. (2014). A long-range
+   London, M., and Häusser, M. (2005). Dendritic computation. Annu. Rev. Neurosci.
+                                                                                                    fronto-parietal 5-to 10-Hz network predicts “top-down” controlled guidance in a
+28, 503–532. doi: 10.1146/annurev.neuro.28.061604.135703
+                                                                                                    task-switch paradigm. Cerebral Cortex 24, 1996–2008. doi: 10.1093/cercor/bht050
+   Losonczy, A., and Magee, J. C. (2006). Integrative properties of radial
+oblique dendrites in hippocampal CA1 pyramidal neurons. Neuron 50, 291–307.                            Poirazi, P., and Mel, B. W. (2001). Impact of active dendrites and structural
+doi: 10.1016/j.neuron.2006.03.016                                                                   plasticity on the memory capacity of neural tissue. Neuron 29, 779–796.
+                                                                                                    doi: 10.1016/S0896-6273(01)00252-5
+   Magee, J. C. (1998). Dendritic hyperpolarization-activated currents modify the
+integrative properties of hippocampal ca1 pyramidal neurons. J. Neurosci 18,                           Polsky, A., Mel, B. W., and Schiller, J. (2004). Computational subunits in thin
+7613–7624. doi: 10.1523/JNEUROSCI.18-19-07613.1998                                                  dendrites of pyramidal cells. Nat. Neurosci. 7, 621–627. doi: 10.1038/nn1253
+   Magee, J. C., and Johnston, D. (1995). Characterization of single voltage–gated Na+                 Ray, S., and Maunsell, J. H. R. (2010). Diﬀerences in gamma frequencies
+and Ca2+ channels in apical dendrites of rat CA1 pyramidal neurons. J. Physiol. 487,                across visual cortex restrict their possible use in computation. Neuron 67, 885–896.
+67–90. doi: 10.1113/jphysiol.1995.sp020862                                                          doi: 10.1016/j.neuron.2010.08.004
+   Marder, E. (2012). Neuromodulation of neuronal circuits: back to the future. Neuron                 Remme, M. W., Lengyel, M., and Gutkin, B. S. (2009). The role of ongoing
+76, 1–11. doi: 10.1016/j.neuron.2012.09.010                                                         dendritic oscillations in single-neuron dynamics. PLoS Comput. Biol. 5:e1000493.
+                                                                                                    doi: 10.1371/journal.pcbi.1000493
+    Markov, N. T., Vezoli, J., Chameau, P., Falchier, A., Quilodran, R., Huissoud, C.,
+et al. (2013). Anatomy of hierarchy: feedforward and feedback pathways in macaque                      Remy, S., and Spruston, N. (2007). Dendritic spikes induce single-burst long-term
+visual cortex. J. Compar. Neurol. 522, 225–259. doi: 10.1002/cne.23458                              potentiation. Proc. Nat. Acad. Sci. 104, 17192–17197. doi: 10.1073/pnas.0707919104
+  Marr, D., and Poggio, T. (1977). From understanding computation to                                   Riddle, J., McFerren, A., and Frohlich, F. (2021). Causal role of cross-frequency
+understanding neural circuitry. Neurosci. Res. Program Bull. 15, 470–488.                           coupling in distinct components of cognitive control. Prog. Neurobiol. 202:102033.
+                                                                                                    doi: 10.1016/j.pneurobio.2021.102033
+   Matsumoto-Makidono, Y., Nakayama, H., Yamasaki, M., Miyazaki, T., Kobayashi,
+K., Watanabe, M., et al. (2016). Ionic basis for membrane potential resonance in                       Roberts, M. J., Lowet, E., Brunet, N. M., Ter Wal, M., Tiesinga, P., Fries, P., et al.
+neurons of the inferior olive. Cell Rep. 16, 994–1004. doi: 10.1016/j.celrep.2016.06.053            (2013). Robust gamma coherence between macaque V1 and V2 by dynamic frequency
+                                                                                                    matching. Neuron 78, 523–536. doi: 10.1016/j.neuron.2013.03.003
+   Mel, B. W. (1994). Information processing in dendritic trees. Neural Comput. 6,
+1031–1085. doi: 10.1162/neco.1994.6.6.1031                                                             Robinson, R. B., and Siegelbaum, S. A. (2003). Hyperpolarization-activated cation
+                                                                                                    currents: From molecules to physiological function. Annu. Rev. Physiol. 65, 453–480.
+   Merker, B. (2013). Cortical gamma oscillations: the functional key is                            doi: 10.1146/annurev.physiol.65.092101.142734
+activation, not synchronization. Neurosci. Biobehav. Rev. 37, 401–417.
+doi: 10.1016/j.neubiorev.2013.01.013                                                                   Rockland, K. S., and Virga, A. (1989). Terminal arbors of individual “feedback”
+                                                                                                    axons projecting from area V2 to V1 in the macaque monkey: a study
+   Michalareas, G., Vezoli, J., van Pelt, S., Schoﬀelen, J.-M., Kennedy, H.,                        using immunohistochemistry of anterogradely transported phaseolus vulgaris-
+and Fries, P. (2016). Alpha-beta and gamma rhythms subserve feedback and                            leucoagglutinin. J. Compar. Neurol. 285, 54–72. doi: 10.1002/cne.902850106
+
+
+
+
+Frontiers in Psychology                                                                        14                                                                          frontiersin.org
+Snyder                                                                                                                                                 10.3389/fpsyg.2026.1704370
+
+
+
+
+   Rosenkranz, J. A., and Johnston, D. (2006). Dopaminergic regulation of neuronal                   Stark, E., Eichler, R., Roux, L., Fujisawa, S., Rotstein, H. G., and Buzsáki, G.
+excitability through modulation of I_h in layer V entorhinal cortex. J. Neurosci. 26,             (2013). Inhibition-induced theta resonance in cortical circuits. Neuron 80, 1263–1276.
+3229–3244. doi: 10.1523/JNEUROSCI.4333-05.2006                                                    doi: 10.1016/j.neuron.2013.09.033
+   Rosoklija, G., Toomayan, G., Ellis, S. P., Keilp, J., Mann, J. J., Latov, N., et al.              Stark, E., Levi, A., and Rotstein, H. G. (2022). Network resonance can be
+(2000). Structural abnormalities of subicular dendrites in subjects with schizophrenia            generated independently at distinct levels of neuronal organization. PLoS Comput. Biol.
+and mood disorders. Arch. Gen. Psychiatry 57:349. doi: 10.1001/archpsyc.57.                       18:e1010364. doi: 10.1371/journal.pcbi.1010364
+4.349
+                                                                                                     Steriade, M., Contreras, D., Curro Dossi, R., and Nunez, A. (1993). The slow (<
+   Roux, F., Wibral, M., Singer, W., Aru, J., and Uhlhaas, P. J. (2013).                          1 Hz) oscillation in reticular thalamic and thalamocortical neurons: scenario of sleep
+The phase of thalamic alpha activity modulates cortical gamma-band activity:                      rhythm generation in interacting thalamic and neocortical networks. J. Neurosci 13,
+evidence from resting-state MEG recordings. J. Neurosci. 33, 17827–17835.                         3284–3299. doi: 10.1523/JNEUROSCI.13-08-03284.1993
+doi: 10.1523/JNEUROSCI.5778-12.2013
+                                                                                                     Stringer, C., Pachitariu, M., Steinmetz, N., Carandini, M., and Harris, K. D. (2019).
+    Salmelin, R., Hámáaláinen, M., Kajola, M., and Hari, R. (1995). Functional                    High-dimensional geometry of population responses in visual cortex. Nature 571,
+segregation of movement-related rhythmic activity in the human brain. Neuroimage                  361–365. doi: 10.1038/s41586-019-1346-5
+2, 237–243. doi: 10.1006/nimg.1995.1031
+                                                                                                     Stuart, G., Schiller, J., and Sakmann, B. (1997). Action potential initiation
+   Samaha, J., and Romei, V. (2024). Alpha-band brain dynamics and temporal                       and propagation in rat neocortical pyramidal neurons. J. Physiol. 505, 617–632.
+processing: an introduction to the special focus. J. Cogn. Neurosci. 36, 567–571.                 doi: 10.1111/j.1469-7793.1997.617ba.x
+doi: 10.1162/jocn_a_02105
+                                                                                                     Swadlow, H. A. (2000). “Information ﬂow along neocortical axons,” in Time and the
+   Samu, D., Seth, A. K., and Nowotny, T. (2014). Inﬂuence of wiring cost on the large-           Brain (CRC Press), 166–196. doi: 10.1201/9781482284102-11
+scale architecture of human cortical connectivity. PLoS Comput. Biol. 10:e1003557.
+                                                                                                     Tallon-Baudry, C., Kreiter, A., and Bertrand, O. (1999). Sustained and transient
+doi: 10.1371/journal.pcbi.1003557
+                                                                                                  oscillatory responses in the gamma and beta bands in a visual short-term
+   Sauseng, P., Griesmayr, B., Freunberger, R., and Klimesch, W. (2010).                          memory task in humans. Vis. Neurosci. 16, 449–459. doi: 10.1017/S0952523899
+Control mechanisms in working memory: a possible function of EEG theta                            163065
+oscillations. Neurosci. Biobehav. Rev. 34, 1015–1022. doi: 10.1016/j.neubiorev.2009.
+                                                                                                     Tang, W., Shin, J. D., and Jadhav, S. P. (2021). Multiple time-scales of
+12.006
+                                                                                                  decision-making in the hippocampus and prefrontal cortex. Elife 10:e66227.
+   Schiller, J., Major, G., Koester, H. J., and Schiller, Y. (2000). NMDA spikes in               doi: 10.7554/eLife.66227
+basal dendrites of cortical pyramidal neurons. Nature 404, 285–289. doi: 10.1038/350
+                                                                                                     Tewarie, P., Abeysuriya, R., Byrne, Á., O’Neill, G. C., Sotiropoulos, S. N., Brookes,
+05094
+                                                                                                  M. J., et al. (2019). How do spatially distinct frequency speciﬁc MEG networks emerge
+    Sehatpour, P., Molholm, S., Schwartz, T. H., Mahoney, J. R., Mehta, A. D., Javitt, D.         from one underlying structural connectome? The role of the structural eigenmodes.
+C., et al. (2008). A human intracranial study of long-range oscillatory coherence across          Neuroimage 186, 211–220. doi: 10.1016/j.neuroimage.2018.10.079
+a frontal–occipital–hippocampal brain network during visual object processing. Proc.
+                                                                                                     Thevathasan, W., Sinclair, N. C., Bulluss, K. J., and McDermott, H. J.
+Nat. Acad. Sci. 105, 4399–4404. doi: 10.1073/pnas.0708418105
+                                                                                                  (2020). Tailoring subthalamic nucleus deep brain stimulation for Parkinson’s
+   Semedo, J. D., Jasper, A. I., Zandvakili, A., Krishna, A., Aschner, A., Machens,               disease using evoked resonant neural activity. Front. Hum. Neurosci. 14:71.
+C. K., et al. (2022). Feedforward and feedback interactions between visual                        doi: 10.3389/fnhum.2020.00071
+cortical areas use diﬀerent population activity patterns. Nat. Commun. 13:1099.
+                                                                                                     Uhlhaas, P. J., and Singer, W. (2010). Abnormal neural oscillations and
+doi: 10.1038/s41467-022-28552-w
+                                                                                                  synchrony in schizophrenia. Nat. Rev. Neurosci. 11, 100–113. doi: 10.1038/
+   Senzai, Y., Fernandez-Ruiz, A., and Buzsáki, G. (2019). Layer-speciﬁc physiological            nrn2774
+features and interlaminar interactions in the primary visual cortex of the mouse.
+                                                                                                     van Kerkoerle, T., Self, M. W., Dagnino, B., Gariel-Mathis, M.-A., Poort, J., van
+Neuron 101, 500–513.e5. doi: 10.1016/j.neuron.2018.12.009
+                                                                                                  der Togt, C., et al. (2014). Alpha and gamma oscillations characterize feedback
+   Siegel, M., Donner, T. H., and Engel, A. K. (2012). Spectral ﬁngerprints of large-scale        and feedforward processing in monkey visual cortex. Proc. Nat. Acad. Sci. 111,
+neuronal interactions. Nat. Rev. Neurosci. 13, 121–134. doi: 10.1038/nrn3137                      14332–14341. doi: 10.1073/pnas.1402773111
+   Simon, D. M., and Wallace, M. T. (2016). Dysfunction of sensory                                   Vempala, S. (2005). The Random Projection Method. DIMACS Series
+oscillations in autism spectrum disorder. Neurosci. Biobehav. Rev. 68, 848–861.                   in Discrete Mathematics and Theoretical Computer Science. doi: 10.1090/
+doi: 10.1016/j.neubiorev.2016.07.016                                                              dimacs/065
+    Singer, W. (1999). Neuronal synchrony: a versatile code for the deﬁnition of                     Vera, J., Alcayaga, J., and Sanhueza, M. (2017). Competition between persistent
+relations? Neuron 24, 49–65. doi: 10.1016/S0896-6273(00)80821-1                                   Na+ and muscarine-sensitive K+ currents shapes perithreshold resonance and spike
+                                                                                                  tuning in CA1 pyramidal neurons. Front. Cell. Neurosci. 11:61. doi: 10.3389/fncel.2017.
+   Snyder, A. C., and Foxe, J. J. (2010). Anticipatory attentional suppression of visual
+                                                                                                  00061
+features indexed by oscillatory alpha-band power increases:a high-density electrical
+mapping study. J. Neurosci. 30, 4024–4032. doi: 10.1523/JNEUROSCI.5684-09.2010                        Vollan, A. Z., Gardner, R. J., Moser, M.-B., and Moser, E. I. (2025). Left-right-
+                                                                                                  alternating theta sweeps in entorhinal-hippocampal maps of space. Nature 639,
+   Snyder, A. C., Issar, D., and Smith, M. A. (2018). What does scalp
+                                                                                                  995–1005. doi: 10.1038/s41586-024-08527-1
+electroencephalogram coherence tell us about long–range cortical networks? Eur. J.
+Neurosci. 48, 2466–2481. doi: 10.1111/ejn.13840                                                      Ward, L. M. (2003). Synchronous neural oscillations and cognitive processes.
+                                                                                                  Trends Cogn. Sci. 7, 553–559. doi: 10.1016/j.tics.2003.10.012
+   Snyder, A. C., Morais, M. J., Willis, C. M., and Smith, M. A. (2015). Global
+network inﬂuences on local functional connectivity. Nat. Neurosci. 18, 736–743.                      Waxman, S. G. (1980). Determinants of conduction velocity in myelinated nerve
+doi: 10.1038/nn.3979                                                                              ﬁbers. Muscle Nerve 3, 141–150. doi: 10.1002/mus.880030207
+   Spaak, E., Bonnefond, M., Maier, A., Leopold, D. A., and Jensen, O. (2012). Layer-                Yue, C., and Yaari, Y. (2004). KCNQ/M channels control spike afterdepolarization
+speciﬁc entrainment of gamma-band neural activity by the alpha rhythm in monkey                   and burst generation in hippocampal neurons. J. Neurosci. 24, 4614–4624.
+visual cortex. Curr. Biol. 22, 2313–2318. doi: 10.1016/j.cub.2012.10.020                          doi: 10.1523/JNEUROSCI.0765-04.2004
+   Spitzer, B., and Haegens, S. (2017). Beyond the status quo: A role for beta                       Zhang, W., and Linden, D. J. (2003). The other side of the engram: experience-
+oscillations in endogenous content (re)activation. eNeuro 4:ENEURO.0170–17.2017.                  driven changes in neuronal intrinsic excitability. Nat. Rev. Neurosci. 4, 885–900.
+doi: 10.1523/ENEURO.0170-17.2017                                                                  doi: 10.1038/nrn1248
+
+
+
+
+Frontiers in Psychology                                                                      15                                                                          frontiersin.org
+

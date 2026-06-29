@@ -1,0 +1,533 @@
+                  www.nature.com/emm
+
+
+
+
+                  REVIEW ARTICLE                         OPEN
+
+                  Role of the hippocampus in systems consolidation of remote
+                  fear memory
+                                                                        ✉
+                  Hyunmin Park1,2 and Bong-Kiun Kaang1,2,3
+
+                  © The Author(s) 2026
+
+
+
+                     For decades, the processing and retrieval of memories over weeks or even years have been crucial and fundamental subjects in
+                     neuroscience. The hippocampus is essential for episodic memory, including associative fear memory. During remote fear memory
+                     formation, the hippocampus serves as an original source of fear memory and distributes memory contents to various brain regions,
+                     including the neocortex. Remote memory has a unique feature in terms of the cooperation between distributed regions to restore
+                     the original memory trace. Although the hippocampus has traditionally been considered crucial for recent memory processing,
+                     several studies have demonstrated that it is also directly involved in remote memory processing. This raises the crucial question:
+                     how does the hippocampus transfer the memory trace and at the same time retain recent memory properties? In this Review, we
+                     summarize various systems consolidation theories and compare the time-dependent changes in the hippocampus and neocortex.
+                     Subsequently, we address the role of the hippocampus and the molecular factors involved in remote memory processing,
+
+1234567890();,:
+                     emphasizing the long-term engagement of the hippocampus. Finally, we aim to investigate memory transfer from the
+                     hippocampus to the cortical areas during systems consolidation and examine how this process contributes to fear memory
+                     generalization.
+
+                     Experimental & Molecular Medicine (2026) 58:1010–1016; https://doi.org/10.1038/s12276-026-01680-9
+
+
+
+
+                  INTRODUCTION                                                                           MAIN
+                  The hippocampus is well known as a critical region for the                             Systems consolidation theories
+                  formation and retrieval of episodic memories, including fear                           Memory consolidation is the stabilization process through which a
+                  memories. For decades, small populations of neurons known as                           newly formed memory is converted into a solid and enduring
+                  engram neurons have been identiﬁed as key mediators of                                 form. Memory consolidation includes synaptic consolidation and
+                  memory storage and retrieval1–3. The neocortex is essential for                        systems consolidation, which differ in mechanisms and temporal
+                  remote memory storage4. Rodent studies have shown that                                 dynamics. Synaptic consolidation involves molecular and struc-
+                  hippocampal engram cells are reactivated during recent                                 tural changes at individual synapses and neurons10,11, whereas
+                  memory recall, whereas neocortical engram cells are reactivated                        systems consolidation is a process of memory storage reorganiza-
+                  during remote memory recall3,5,6. This temporal reorganization                         tion throughout the distributed regions for long-term retention12.
+                  between brain regions is considered to underlie remote                                 Various theories have sought to explain when and how the
+                  memory formation, referred to as systems consolidation7.                               hippocampus interacts with cortical regions for remote memory
+                  However, accumulating evidence supports the idea that the                              formation, based on lesion studies and activity patterns in each
+                  hippocampus plays an active role in remote memory proces-                              region (Fig. 1).
+                  sing. For instance, hippocampal lesion after learning impairs                             The standard consolidation theory (SCT) represents a classical
+                  remote memory formation8, and inhibition of hippocampal                                view of systems consolidation, in which memories are initially
+                  subregions disrupts remote memory recall9. These ﬁndings                               stored in the hippocampus and then transferred to the neocortex,
+                  challenge the classical concept of systems consolidation and                           forming a solid state of memory7,13,14. In the SCT, the hippocam-
+                  raise the question of how and when the hippocampus transfers                           pus is regarded as a temporary memory system, whereas cortical
+                  information to the cortical regions. In this Review, we discuss                        regions are a storage for the permanent form of memory15. For
+                  the development of systems consolidation theories and recent                           instance, Rempel-Clower et al. reported that patients with bilateral
+                  studies that support sustained hippocampal involvement in                              hippocampal damage exhibited temporally graded retrograde
+                  remote memory. In addition, we elaborate on the hippocampus-                           and pronounced anterograde types of amnesia16. Likewise,
+                  to-cortex circuits involved in this process and their implication                      patients with damage to the medial temporal lobe showed intact
+                  for fear memory generalization.                                                        distant past and future memories, emphasizing the discrete roles
+
+
+
+                  1
+                   Learning and Memory Group, Center for Memory and Glioscience, Institute for Basic Science, Daejeon, Republic of Korea. 2Interdisciplinary Program in Neuroscience, Seoul
+                  National University, Seoul, Republic of Korea. 3Department of Biological Sciences, Korea Advanced Institute of Science and Technology, Daejeon, Republic of Korea.
+                  ✉email: kaang@snu.ac.kr
+
+                  Received: 12 August 2025 Revised: 18 December 2025 Accepted: 6 January 2026
+                  Published online: 13 April 2026
+                                                                       H. Park and B.-K. Kaang
+                                                                                                                                              1011
+                                                                       Hippocampus for remote fear memory
+                                                                       During systems consolidation, memory is gradually processed in
+                                                                       distributed brain regions and becomes less dependent on the
+                                                                       hippocampus12,22. Multiple studies have suggested that the
+                                                                       hippocampus contributes to memory formation and subsequent
+                                                                       reorganization in a temporally limited manner. For instance,
+                                                                       hippocampal lesions more than 7 days after contextual fear
+                                                                       conditioning did not result in impaired behavior in rats,
+                                                                       suggesting a dissociation between the hippocampus integrity
+                                                                       and memory retention23,24.
+                                                                          However, accumulating evidence indicates that the hippocam-
+                                                                       pus also plays a role in the formation and retrieval of remote fear
+                                                                       memories. Lesion studies have shown that damage in the
+                                                                       hippocampus impairs both short-term and long-term memories
+                                                                       in rats25,26. At the subregional level, optogenetic engram
+                                                                       reactivation in the dentate gyrus (DG) induces freezing behavior
+                                                                       in infant mice27, and optogenetic manipulation of DG engram
+                                                                       neurons affects 2-week memory retrieval5,28. Similarly, using CA3-
+Fig. 1 Systems consolidation theories focusing on the interaction      TeTx mice, disruption of CA3 during memory acquisition blocks
+between the hippocampus and neocortex. Top: SCT postulates that        the consolidation of fear memory and intrinsic oscillation within
+recent memory is dependent on the hippocampus, whereas remote          the hippocampus, leading to impairment of remote memory8. By
+memory becomes independent of it but instead acquires depen-           contrast, optogenetic inhibition of the CA1 impairs very remote
+dence on the neocortex over time. Middle: MTT shows the
+interdependence of the hippocampus and neocortex at a remote
+                                                                       memory persisting more than 6 months9. Collectively, these
+time point, with new hippocampal ensemble being recruited during       studies suggest that distinct hippocampal subregions are essential
+remote retrieval. Bottom: IT represents the continuous interplay       for remote memory formation. The hippocampus is actively
+between the hippocampus and neocortex by maintaining coactivity        engaged in remote memory recall. Several studies have demon-
+between activated populations in both regions.                         strated that the hippocampus is reactivated during remote
+                                                                       retrieval, indicating that it can store information and engage in
+                                                                       memory retrieval for up to 14 days after learning29,30. A functional
+of the hippocampus and cortex in memory storage based on               connectome study further revealed that, whereas the absolute
+temporal dynamics17.                                                   hippocampal activity decreases over time, the connectivity of the
+   Although the SCT accounts for the retention of remote memory        hippocampus with other brain regions is strengthened, which is
+following lesions in the hippocampus, accumulating evidence            associated with remote memory31. In addition, hippocampal
+indicates that hippocampal damage also disrupts remote memory          oscillatory coupling is important for remote memory recall. For
+accuracy. In this regard, Nadel and Moscovitch argued that the SCT     memories older than 7 days, anterior cingulate cortex (ACC) theta
+inadequately addresses this remote memory inaccuracy following         oscillation modulates the CA1 gamma activity, exhibiting phase-
+lesions and subsequently proposed the multiple trace theory (MTT)15.   locked activity that is related to context information32,33.
+According to the MTT, the hippocampus remains involved in detailed     Furthermore, during the recall of 4-week remote memory, the
+information, whereas the neocortex supports generalized remote         coupling of amygdala gamma oscillation and hippocampal theta
+memories, highlighting that continued interaction between these        oscillation becomes more synchronized and reﬁned, even as the
+regions plays a crucial role in remote memory retrieval18. Building    overall activity became weaker34. Together, these ﬁndings high-
+upon this MTT, trace transformation theory has been proposed to        light that hippocampal engram cells retain the original memory
+further account for the relationship between hippocampal lesions       trace and modulate signals to cortical regions for remote memory
+and retrograde amnesia. According to trace transformation theory,      retrieval and systems consolidation.
+the hippocampus and distributed cortical regions encode distinct          Memory traces can be reactivated and become hippocampus
+aspects of memory and engage in dynamic, bidirectional interactions    dependent again, a process referred to as systems reconsolidation.
+throughout memory formation and retrieval19.                           During systems reconsolidation, inhibition of protein synthesis in
+   An intermediate explanation, the indexing theory (IT), is a         the hippocampus using anisomycin disrupts the reconsolidation
+modiﬁed version of MTT that adapts the SCT framework.                  of memory older than 4 weeks35,36. During systems reconsolida-
+Although remote memories are consolidated within cortical              tion, the reactivated hippocampal trace is thought to provide a
+networks, a small population of hippocampal neurons retains an         scaffold for integrating new information37. For example, rats with
+index that enables the retrieval of these distributed neocortical      hippocampus lesions showed higher freezing in a generalized
+patterns20. Although the SCT conceptualizes the hippocampus            context, even when the reminder triggered reconsolidation of
+and neocortex as functionally distinct storage systems, the IT         speciﬁc fear memory, indicating that the hippocampus is essential
+suggests that integrated neocortical activity patterns recon-          for remote memory reconsolidation38. Recent ﬁndings further
+struct the original memory trace via the hippocampal index             demonstrated that the hippocampus recruits new engram cells
+during remote retrieval. Supporting this explanation, O’Reilly         through new proteins synthesis and restabilizes updated memory
+and Rudy demonstrated that the hippocampus-associated                  representation via interaction with the amygdala39. In addition to
+entorhinal cortex could be the main cortical interface, suggest-       the dorsal hippocampus, ventral hippocampal CA1 also interacts
+ing that the entorhinal cortex forms hippocampus-modulated             with basolateral amygdala and plays a crucial role in remote
+activity patterns. The ﬁndings support the IT in that the              reconsolidation40. Collectively, these studies suggest that the
+hippocampus plays a pivotal role in the retrieval of remote fear       hippocampus is important for remote reconsolidation through
+memory through its dynamic interaction with cortical regions           interacting with the amygdala.
+encoding consolidated memory traces21. Collectively, these
+theories highlight the continuing involvement of the hippo-            Associated molecules in the hippocampus for remote memory
+campus in remote memories and that the hippocampus and                 Although the molecular mechanisms underlying recent memory
+neocortex are interdependent during remote memory formation            encoding in the hippocampus, such as the calcium-calmodulin-
+and retrieval.                                                         dependent kinase II pathway41, are well established, relatively few
+
+Experimental & Molecular Medicine (2026) 58:1010 – 1016
+                                                     H. Park and B.-K. Kaang
+1012
+                                                                               30 min after memory acquisition, histone variant H2A.Z binding
+                                                                               around the transcription start site becomes altered, which
+                                                                               consequently affects the expression of immediate-early genes
+                                                                               (IEGs). Depletion of H2A.Z in the CA1 region enhanced both 1-day
+                                                                               and 2-week fear memory, which was accompanied by changes in
+                                                                               IEG expression patterns48. Moreover, blocking of H2A.Z through
+                                                                               Tip60 inhibition improves 7-day fear memory49. These studies
+                                                                               suggest that histone H2A.Z modiﬁcation might regulate both
+                                                                               recent and remote memories, with distinct modiﬁcation patterns
+                                                                               contributing to each memory phase. Furthermore, overexpression
+                                                                               of the DNA methyltransferase Dnmt3a2 in the hippocampus
+                                                                               enhanced the activation of the ACC neurons, and inhibition of
+                                                                               these neurons impaired 2-week memory, suggesting that DNA
+                                                                               methylation within the hippocampus inﬂuences cortical activity
+                                                                               involved in remote memory maintanance50. Collectively, these
+                                                                               ﬁndings suggest that epigenetic modiﬁcation may inﬂuence the
+                                                                               hippocampal structural plasticity, enabling a subset of engram
+                                                                               neurons to retain the original memory trace.
+       Fig. 2 Remote memory-associated molecules in the hippocampus.
+       In the nucleus, the transcription factor pCREB supports the             Hippocampus to cortex for systems consolidation
+       maintenance of remote memory after memory acquisition. In               Interaction between the hippocampus and other brain regions is a
+       addition, histone modiﬁcations such as histone acetylation and          fundamental process of systems consolidation that underlies
+       methylation facilitate systems consolidation and improve remote
+       fear memory. ERK5 and EphrineB2 support structural changes after        remote memory formation. Regarding fear memory, the hippo-
+       memory formation and Ca2+ permeable AMPARs are crucial for              campus primarily interacts with the neocortex, amygdala and
+       sustaining remote memories in the hippocampus. P, phosphoryla-          thalamus. This section focuses on the interaction between the
+       tion; me, methylation.                                                  hippocampus and neocortex during systems consolidation.
+
+                                                                               Hippocampus to mPFC. The medial prefrontal cortex (mPFC)
+       studies have investigated the molecular substrates that contribute      plays a central role in encoding and retrieval of remote
+       to remote memory formation. However, recent studies have                memory51–53. Lesions in the mPFC impair remote fear retrieval
+       begun to identify molecular substrates related to signaling             in rats24 and activity within this region increases during remote,
+       pathways, structural plasticity and epigenetic modiﬁcations             but not extinguished, fear memory retrieval6,54. During remote
+       associated with remote memory formation (Fig. 2).                       memory formation, the hippocampus transfers the memory trace
+          One extensively studied molecule is cAMP response element-           to the mPFC. Based on the c-Fos activity, network connectivity
+       binding protein (CREB), which is a transcription factor essential for   analyses suggested that hippocampal activity correlates with
+       long-term potentiation. Following fear retrieval after 50 days in       mPFC activity during remote memory retrieval54. Consistent with
+       rats, phosphorylated CREB (pCREB) levels increase in the                this ﬁnding, functional ultrasound imaging has demonstrated that
+       hippocampus, correlating with the freezing ratio, suggesting that       the hippocampus is functionally connected to the prelimbic
+       the CREB pathway contributes not only to the formation of recent        cortex, indicating that this connectivity correlates with the
+       memory but also to the maintenance of remote memory42. In               behavioral expression of fear55.
+       addition, corticotropin-releasing hormone receptor 1 (CRHR1) in            Anatomically, the hippocampus directly projects axons to the
+       the limbic system is involved in the consolidation of remote fear       mPFC56, and this circuit is crucial for remote memory expression57.
+       memories, modulating hippocampal protein expression. Speciﬁ-            Through the modulation of this pathway, hippocampal activity
+       cally, limbic CRHR1 facilitates remote memory consolidation by          inﬂuences mPFC function, thereby contributing to systems
+       promoting the expression and stabilization of the GluR1-                consolidation. For instance, lesions in the mPFC and hippocampus
+       containing AMPA receptors in the DG. Twenty-eight days after            induced impaired fear memory in rats58. Within the ventral
+       learning, treatment of CRHR1 antagonist induced the decreased           CA1–mPFC circuit, hippocampal neurons projecting to the mPFC
+       GluR1 expression in the DG, which is closely correlated with            are preferentially activated during context exposure and are
+       changes in remote freezing behavior1. These studies suggest that        thought to modulate the transfer of the fear memory trace57,59.
+       the signaling pathways that are involved in recent memory               Taken together, these ﬁndings indicate that the interaction
+       encoding may also be involved in remote memory processes.               between the hippocampus and mPFC is a key candidate for
+          Furthermore, structural plasticity within the hippocampus is         systems consolidation, which progressively transfers memory from
+       associated with remote memory formation43. EphrinB2, a mole-            the hippocampus to the mPFC over time.
+       cule that regulates spinogenesis, is upregulated shortly after
+       learning. EphrinB2 is increased in CA1 shortly after learning, and      Hippocampus to ACC. As in the case of interactions with the
+       this might affect the cortical engram formation, impairing the ACC      mPFC, hippocampal activity modulates the ACC function to
+       synaptogenesis for remote memory formation44. Similarly, extra-         support remote memory formation. During remote memory
+       cellular signal-regulated kinase 5 (ERK5), essential for adult          retrieval, the ACC plays a dominant role but remains on the
+       neurogenesis, is involved in both hippocampal neurogenesis              hippocampal input for at least 21 days60,61. Several studies have
+       and memory formation45. Conditional ERK5 knockout after                 suggested that hippocampal engram neurons alter their activity
+       memory acquisition disrupted remote but not short-term or               levels and projections to the ACC. Speciﬁcally, following memory
+       recent memory formation. Furthermore, ERK5 knockout before              formation, the number of CA1 axons projecting to the ACC
+       memory acquisition, as well as 1 and even 5 weeks after                 increases over time as memories mature43. In addition, astrocytes
+       acquisition, impaired remote fear memory, indicating that ERK5          within CA1 contribute to remote memory formation62 and
+       is critically involved in both memory formation and long-term           facilitate axonal recruitment toward the ACC63, suggesting the
+       maintenance of memory46. In addition to signaling and structural        possibility that hippocampal astrocytes might facilitate the
+       mechanisms, epigenetic modiﬁcations have emerged as essential           recruitment of ACC-projecting CA1 neurons, thereby contributing
+       regulators of remote memory in the hippocampus47. For instance,         to remote memory formation. Consistently, hippocampal lesions
+
+                                                                                             Experimental & Molecular Medicine (2026) 58:1010 – 1016
+                                                                          H. Park and B.-K. Kaang
+                                                                                                                                                  1013
+attenuate ACC spinogenesis following remote memory consolida-             actively involved in fear memory retrieval61,85. Under the systems
+tion, supporting an interdependent role of the hippocampus and            consolidation and transformation hypothesis, contextual informa-
+ACC during systems consolidation44,64.                                    tion becomes less precise over time as memory becomes
+   Furthermore, interactions between the hippocampus and ACC              increasingly independent of the hippocampus.
+are regulated by oscillation coupling during sleep. ACC activity is          In particular, IEG expression levels in the hippocampus are
+mediated by CA1 activity, which may represent an underlying               reduced in the generalized context, suggesting that decreased
+mechanism of memory transfer65. Ripple–spindle coupling during            discrimination is associated with reduced hippocampal activity86.
+sleep is enhanced after learning, and the disruption of this              In parallel, the ventral hippocampus has been implicated in the
+coupling hinders both recent and remote fear memory66. Notably,           modulation of fear generalization at remote time points. The
+the DG engram neurons, which regulate CA3 pattern separation,             chemogenetic inhibition of the ventral hippocampus reduces
+enhance the reactivation of ACC engram neurons during 2-week              freezing in a novel context, in cooperation with the ACC, which
+memory retrieval67. These ﬁndings highlight the time- and                 assumes a more prominent role in memory retrieval in the
+hippocampal activity-dependent recruitment of the ACC during              consolidated state30,87. Collectively, these ﬁndings suggest that
+systems consolidation.                                                    fear generalization is a consequence of the distribution of memory
+                                                                          traces during systems consolidation. This distribution process
+Hippocampus to RSC. The retrosplenial cortex (RSC) serves as a            involves dynamic interactions between the hippocampus and
+hub for sensory integration and spatial memory. RSC is increas-           various cortical regions, including the ACC. This implies that its
+ingly regarded as a crucial region for fear memory formation and          role at remote time points may differ from its well-known function
+retrieval2,68. RSC engages in remote memory processing in a               in recent memory encoding, which involves participation in
+manner different from that of other cortical regions. Although the        memory state after the distribution and transformation of
+inactivation of CA1 attenuated the fear memory, the reactivation          memory.
+of RSC alone was sufﬁcient to retrieve fear memory which is
+independent of hippocampal representation69. Nevertheless, RSC
+activity can be reinforced by the hippocampal engram cells,               DISCUSSION
+thereby contributing to remote memory consolidation70,71.                 In this Review, we discussed the role of the hippocampus in
+   The RSC is involved not only in recent72,73 but also in remote         remote memory formation, its interaction with other cortical
+fear memory74. Optogenetic activation of the RSC reproduced               regions, and the association between generalized fear memory
+features of remote memory, such as enhanced neocortical                   and systems consolidation. The hippocampus is not merely a
+connections and reduced hippocampal dependence75. These                   temporal region involved in recent memory processing but also
+studies suggest that RSC functions as a mediator for remote               serves as a critical output hub, transferring memory traces via
+memory formation, facilitating the distribution of memory traces          engram neurons to other brain regions. During systems con-
+processed within the hippocampus. Supporting this hypothesis,             solidation, the hippocampus primarily interacts with various
+the inhibition of the hippocampus-to-RSC circuit during memory            cortical regions to establish and stabilize remote fear memories.
+acquisition impaired remote memory formation70,76. The dorsal             Notably, the hippocampus continues to actively engage in fear
+CA1–RSC circuit is crucial for cortical engram maturation. Ablation       retrieval for more than 2 weeks, indicating that the hippocampus
+of engram neurons in either CA1 or RSC disrupts remote memory             preserves the original memory representation over extended
+formation and impairs mPFC engram maturation, suggesting that             periods alongside its cortical representation. Memory traces are
+the CA1–RSC pathway conveys critical memory content required              distributed in various cortical regions, which may result in the loss
+for systems consolidation77. Furthermore, the theta band in the           of precision and generalized fear memories. However, extended
+RSC showed increased coherence with CA1 local ﬁeld potentials             involvement of the hippocampus in remote memory retrieval
+during context exposure and fear retrieval72, and this oscillatory        remains controversial. Although earlier studies reported that the
+coordination might support systems consolidation78. In addition,          hippocampus did not show higher activity during remote
+an increase in the hippocampus-to-RSC interaction during phasic           retrieval6, more recent studies have demonstrated the higher
+rapid eye movement sleep is associated with memory retention79.           hippocampal activity and persistent reactivation of hippocampal
+These studies have shown that the hippocampus orchestrates RSC            engram neurons during remote memory retrieval29,43. However,
+activity both directly and indirectly, which is essential for the long-   there are relatively few mechanistic studies in which hippocampal
+term stabilization and retrieval of fear memories.                        activity is documented to modulate interactions with other brain
+                                                                          regions during systems consolidation. In addition, the time points
+Fear generalization in the hippocampus                                    classiﬁed as ‘remote’ vary substantially across studies, which may
+Fear generalization refers to the phenomenon in which condi-              contribute to confusion regarding the hippocampal contribution
+tioned fear responses are expressed not only in the original              to systems consolidation at recent, intermediate and remote
+conditioned context but also in novel or similar contexts80. This         stages.
+generalization can be adaptive, enhancing survival by promoting              Focusing on hippocampal activity, hippocampal engram
+caution in uncertain environments, but excessive generalization           neurons may alter the transfer of the memory trace to the cortex,
+has been implicated in anxiety disorders such as post-traumatic           in a way such that dependence on the hippocampus during
+stress disorder in humans81. The generalization of fear memories is       systems consolidation becomes lower, but the properties of the
+considered to be the result of the distribution of memory traces          original memory trace are retained. Further research is needed to
+from the hippocampus to cortical regions during systems                   elucidate how information is transferred from the hippocampus to
+consolidation, rather than restriction to the intrahippocampal            various cortical regions and how these interactions contribute to
+circuits82.                                                               memory precision and generalization. In addition to interregional
+   During the initial stages of memory formation, the hippocam-           coordination, hippocampal engram neurons may alter their
+pus plays a central role in encoding precise contextual information       features during systems consolidation via the underlying mole-
+through pattern separation. Impairment of this pattern separation         cular mechanisms, thereby reducing the dependency of the
+increases fear generalization within 10 days, highlighting that           original memory trace on the hippocampus over time. Finally, it
+distinct engram patterns in the hippocampus are key modulators            may be crucial to investigate the coordinating activity in various
+of precise fear memory28,83,84. As memory undergoes systems               brain regions via the hippocampus. Several studies have
+consolidation, memory dependence on the hippocampus is                    suggested that many brain regions, such as the amygdala and
+reduced, whereas the cortical regions become progressively                thalamus, are involved in systems consolidation88,89. Future
+
+Experimental & Molecular Medicine (2026) 58:1010 – 1016
+                                                                   H. Park and B.-K. Kaang
+1014
+       studies need to address how the hippocampus modulates and                                   20. Teyler, T. J. & Rudy, J. W. The hippocampal indexing theory and episodic memory:
+       integrates information transfer across the distributed multiple                                 updating the index. Hippocampus 17, 1158–1169 (2007).
+       regions and how this mechanism of transfer occurs, in relation to                           21. Rudy, J. W. & O’Reilly, R. C. Conjunctive representations, the hippocampus, and
+       neuronal activity coupling between the hippocampus and various                                  contextual fear conditioning. Cogn. Affect. Behav. Neurosci. 1, 66–82 (2001).
+                                                                                                   22. Squire, L. R., Genzel, L., Wixted, J. T. & Morris, R. G. Memory consolidation. Cold
+       brain regions.
+                                                                                                       Spring Harb. Perspect. Biol. 7, a021766 (2015).
+          In terms of synaptic plasticity, connectivity among engram                               23. Kim, J. J. & Fanselow, M. S. Modality-speciﬁc retrograde amnesia of fear. Science
+       neurons is essential for memory formation and maintenance in                                    256, 675–677 (1992).
+       the hippocampus and amygdala, which reﬂects memory                                          24. Quinn, J. J., Ma, Q. D., Tinsley, M. R., Koch, C. & Fanselow, M. S. Inverse temporal
+       states90,91. Moreover, synaptonuclear signaling, which refers to                                contributions of the dorsal hippocampus and medial prefrontal cortex to the
+       retrograde signaling from activated synapse to the nucleus, plays                               expression of long-term fear memories. Learn. Mem. 15, 368–372 (2008).
+       a critical role in synaptic potentiation92,93 and induction of gene                         25. Lehmann, H., Lacanilao, S. & Sutherland, R. J. Complete or partial hippocampal
+       expression in the nucleus94,95. In the context of remote memory,                                damage produces equivalent retrograde amnesia for remote contextual fear
+       mechanistic studies have predominantly focused on the cellular                                  memories. Eur. J. Neurosci. 25, 1278–1286 (2007).
+                                                                                                   26. Sutherland, R. J., O’Brien, J. & Lehmann, H. Absence of systems consolidation of
+       and circuit-level modiﬁcations, whereas how individual synapses
+                                                                                                       fear memories after dorsal, ventral, or complete hippocampal damage. Hippo-
+       linking the hippocampus with downstream postsynaptic regions                                    campus 18, 710–718 (2008).
+       are persistently modiﬁed over time remains poorly understood.                               27. Guskjolen, A. et al. Recovery of “lost” infant memories in mice. Curr. Biol. 28,
+       Future studies that address synaptic mechanism underlying                                       2283–2290 (2018).
+       remote memory will be essential to elucidate how remote                                     28. Denny, C. A. et al. Hippocampal memory traces are differentially modulated by
+       memories are encoded and maintained through long-lasting                                        experience, time, and adult neurogenesis. Neuron 83, 189–201 (2014).
+       synaptic modiﬁcation.                                                                       29. Tayler, K. K., Tanaka, K. Z., Reijmers, L. G. & Wiltgen, B. J. Reactivation of neural
+                                                                                                       ensembles during the retrieval of recent and remote memory. Curr. Biol. 23,
+                                                                                                       99–106 (2013).
+       REFERENCES                                                                                  30. Cullen, P. K., Gilman, T. L., Winiecki, P., Riccio, D. C. & Jasnow, A. M. Activity of the
+                                                                                                       anterior cingulate cortex and ventral hippocampus underlie increases in con-
+        1. Thoeringer, C. K. et al. Consolidation of remote fear memories involves
+                                                                                                       textual fear generalization. Neurobiol. Learn. Mem. 124, 19–27 (2015).
+           corticotropin-releasing hormone (CRH) receptor type 1-mediated enhancement
+                                                                                                   31. Wheeler, A. L. et al. Identiﬁcation of a functional connectome for long-term fear
+           of AMPA receptor GluR1 signaling in the dentate gyrus. Neuropsychopharma-
+                                                                                                       memory in mice. PLoS Comput. Biol. 9, e1002853 (2013).
+           cology 37, 787–796 (2012).
+                                                                                                   32. Wirt, R. A. & Hyman, J. M. ACC theta improves hippocampal contextual processing
+        2. Katche, C., Dorman, G., Slipczuk, L., Cammarota, M. & Medina, J. H. Functional
+                                                                                                       during remote recall. Cell Rep. 27, 2313–2327 (2019).
+           integrity of the retrosplenial cortex is essential for rapid consolidation and recall
+                                                                                                   33. Makino, Y., Polygalov, D., Bolaños, F., Benucci, A. & McHugh, T. J. Physiological
+           of fear memory. Learn. Mem. 20, 170–173 (2013).
+                                                                                                       signature of memory age in the prefrontal-hippocampal circuit. Cell Rep. 29,
+        3. Josselyn, S. A. & Tonegawa, S. Memory engrams: recalling the past and imagining
+                                                                                                       3835–3846 (2019).
+           the future. Science 367, eaaw4325 (2020).
+                                                                                                   34. Makino, Y., Wang, Y. & McHugh, T. J. Multi-regional control of amygdalar
+        4. Bontempi, B., Laurent-Demir, C., Destrade, C. & Jaffard, R. Time-dependent reor-
+                                                                                                       dynamics reliably reﬂects fear memory age. Nat. Commun. 15, 10283 (2024).
+           ganization of brain circuitry underlying long-term memory storage. Nature 400,
+                                                                                                   35. Debiec, J., LeDoux, J. E. & Nader, K. Cellular and systems reconsolidation in the
+           671–675 (1999).
+                                                                                                       hippocampus. Neuron 36, 527–538 (2002).
+        5. Kitamura, T. et al. Engrams and circuits crucial for systems consolidation of a
+                                                                                                   36. Ishikawa, R., Fukushima, H., Frankland, P. W. & Kida, S. Hippocampal neurogenesis
+           memory. Science 356, 73–78 (2017).
+                                                                                                       enhancers promote forgetting of remote fear memory after hippocampal reac-
+        6. Frankland, P. W., Bontempi, B., Talton, L. E., Kaczmarek, L. & Silva, A. J. The
+                                                                                                       tivation by retrieval. eLife 5, e17464 (2016).
+           involvement of the anterior cingulate cortex in remote contextual fear memory.
+                                                                                                   37. Myers, K. M. & Davis, M. Systems-level reconsolidation: reengagement of the
+           Science 304, 881–883 (2004).
+                                                                                                       hippocampus with memory reactivation. Neuron 36, 340–343 (2002).
+        7. Frankland, P. W. & Bontempi, B. The organization of recent and remote memories.
+                                                                                                   38. Winocur, G., Frankland, P. W., Sekeres, M., Fogel, S. & Moscovitch, M. Changes in
+           Nat. Rev. Neurosci. 6, 119–130 (2005).
+                                                                                                       context-speciﬁcity during memory reconsolidation: selective effects of hippo-
+        8. Nakashiba, T., Buhl, D. L., McHugh, T. J. & Tonegawa, S. Hippocampal CA3 output
+                                                                                                       campal lesions. Learn. Mem. 16, 722–729 (2009).
+           is crucial for ripple-associated reactivation and consolidation of memory. Neuron
+                                                                                                   39. Lei, B. et al. Reconstructing a new hippocampal engram for systems reconsoli-
+           62, 781–787 (2009).
+                                                                                                       dation and remote memory updating. Neuron 113, 471–485 (2025).
+        9. Atucha, E., Ku, S.-P., Lippert, M. T. & Sauvage, M. M. Recalling gist memory
+                                                                                                   40. Guo, D. et al. A ventral hippocampus-basolateral amygdala circuit regulates the
+           depends on CA1 hippocampal neurons for lifetime retention and CA3 neurons
+                                                                                                       unconditioned stimulus retrieval-induced reconsolidation of remote fear mem-
+           for memory precision. Cell Rep. 42, 113317 (2023).
+                                                                                                       ory. J. Adv. Res. https://doi.org/10.1016/j.jare.2025.10.015 (2025).
+       10. Bailey, C. H., Bartsch, D. & Kandel, E. R. Toward a molecular deﬁnition of long-term
+                                                                                                   41. Park, H. & Kaang, B.-K. Memory allocation at the neuronal and synaptic levels.
+           memory storage. Proc. Natl Acad. Sci. USA 93, 13445–13452 (1996).
+                                                                                                       BMB Rep. 57, 176 (2024).
+       11. Choi, J.-H. et al. Interregional synaptic maps among engram cells underlie
+                                                                                                   42. Nunes, F. et al. Increased hippocampal CREB phosphorylation after retrieval of
+           memory formation. Science 360, 430–435 (2018).
+                                                                                                       remote contextual fear memories in Carioca high-conditioned freezing rats.
+       12. Wiltgen, B. J. & Tanaka, K. Z. Systems consolidation and the content of memory.
+                                                                                                       Neurobiol. Learn. Mem. 205, 107828 (2023).
+           Neurobiol. Learn. Mem. 106, 365–371 (2013).
+                                                                                                   43. Refaeli, R., Kreisel, T., Groysman, M., Adamsky, A. & Goshen, I. Engram stability and
+       13. McClelland, J. L., McNaughton, B. L. & O’Reilly, R. C. Why there are complementary
+                                                                                                       maturation during systems consolidation. Curr. Biol. 33, 3942–3950 (2023).
+           learning systems in the hippocampus and neocortex: insights from the successes
+                                                                                                   44. Abate, G., Colazingari, S., Accoto, A., Conversi, D. & Bevilacqua, A. Dendritic spine
+           and failures of connectionist models of learning and memory. Psychol. Rev. 102,
+                                                                                                       density and EphrinB2 levels of hippocampal and anterior cingulate cortex neu-
+           419 (1995).
+                                                                                                       rons increase sequentially during formation of recent and remote fear memory in
+       14. Squire, L. R. & Alvarez, P. Retrograde amnesia and memory consolidation: a
+                                                                                                       the mouse. Behav. Brain Res. 344, 120–131 (2018).
+           neurobiological perspective. Curr. Opin. Neurobiol. 5, 169–177 (1995).
+                                                                                                   45. Pan, Y.-W. et al. Inducible and conditional deletion of extracellular signal-
+       15. Nadel, L. & Moscovitch, M. Memory consolidation, retrograde amnesia and the
+                                                                                                       regulated kinase 5 disrupts adult hippocampal neurogenesis. J. Biol. Chem. 287,
+           hippocampal complex. Curr. Opin. Neurobiol. 7, 217–227 (1997).
+                                                                                                       23306–23317 (2012).
+       16. Rempel-Clower, N. L., Zola, S. M., Squire, L. R. & Amaral, D. G. Three cases of
+                                                                                                   46. Pan, Y.-W., Storm, D. R. & Xia, Z. The maintenance of established remote con-
+           enduring memory impairment after bilateral damage limited to the hippocampal
+                                                                                                       textual fear memory requires ERK5 MAP kinase and ongoing adult neurogenesis
+           formation. J. Neurosci. 16, 5233–5255 (1996).
+                                                                                                       in the hippocampus. PLoS ONE 7, e50455 (2012).
+       17. Dede, A. J., Wixted, J. T., Hopkins, R. O. & Squire, L. R. Autobiographical memory,
+                                                                                                   47. Kim, S. & Kaang, B.-K. Epigenetic regulation and chromatin remodeling in learning
+           future imagining, and the medial temporal lobe. Proc. Natl Acad. Sci. USA 113,
+                                                                                                       and memory. Exp. Mol. Med. 49, e281–e281 (2017).
+           13474–13479 (2016).
+                                                                                                   48. Zovkic, I. B., Paulukaitis, B. S., Day, J. J., Etikala, D. M. & Sweatt, J. D. Histone H2A. Z
+       18. Bayley, P. J., Gold, J. J., Hopkins, R. O. & Squire, L. R. The neuroanatomy of remote
+                                                                                                       subunit exchange controls consolidation of recent and remote memory. Nature
+           memory. Neuron 46, 799–810 (2005).
+                                                                                                       515, 582–586 (2014).
+       19. Sekeres, M. J., Winocur, G. & Moscovitch, M. The hippocampus and related
+                                                                                                   49. Narkaj, K. et al. Blocking H2A. Z incorporation via Tip60 inhibition promotes
+           neocortical structures in memory transformation. Neurosci. Lett. 680, 39–53
+                                                                                                       systems consolidation of fear memory in mice. eNeuro 5, e0378–18.2018 (2018).
+           (2018).
+
+
+                                                                                                                       Experimental & Molecular Medicine (2026) 58:1010 – 1016
+                                                                                                  H. Park and B.-K. Kaang
+                                                                                                                                                                                            1015
+50. Kupke, J., Loizou, S., Bengtson, C. P., Sticht, C. & Oliveira, A. M. Hippocampal DNA          76. Yamawaki, N., Corcoran, K. A., Guedea, A. L., Shepherd, G. M. & Radulovic, J.
+    methylation promotes contextual fear memory persistence by facilitating sys-                      Differential contributions of glutamatergic hippocampal→ retrosplenial cortical
+    tems consolidation and cortical engram stabilization. Biol. Psychiatry. 98, 394–403               projections to the formation and persistence of context memories. Cereb. Cortex
+    (2025).                                                                                           29, 2728–2736 (2019).
+51. Dixsaut, L. & Graeff, J. The medial prefrontal cortex and fear memory: dynamics,              77. Lee, J.-H., Kim, W. B., Park, E. H. & Cho, J.-H. Neocortical synaptic engrams for
+    connectivity, and engrams. Int. J. Mol. Sci. 22, 12113 (2021).                                    remote contextual memories. Nat. Neurosci. 26, 259–273 (2023).
+52. Ruggiero, R. N. et al. Neuromodulation of hippocampal-prefrontal cortical                     78. Opalka, A. N., Huang, W. -q, Liu, J., Liang, H. & Wang, D. V. Hippocampal ripple
+    synaptic plasticity and functional connectivity: implications for neuropsychiatric                coordinates retrosplenial inhibitory neurons during slow-wave sleep. Cell Rep. 30,
+    disorders. Front. Cell. Neurosci. 15, 732360 (2021).                                              432–441 (2020).
+53. Sung, Y. & Kaang, B.-K. The three musketeers in the medial prefrontal cortex:                 79. de Almeida-Filho, D. G. et al. Hippocampus–retrosplenial cortex interaction is
+    subregion-speciﬁc structural and functional plasticity underlying fear memory                     increased during phasic REM and contributes to memory consolidation. Sci. Rep.
+    stages. Exp. Neurobiol. 31, 221 (2022).                                                           11, 13078 (2021).
+54. Silva, B. A., Burns, A. M. & Gräff, J. A cFos activation map of remote fear memory            80. Asok, A., Kandel, E. R. & Rayman, J. B. The neurobiology of fear generalization.
+    attenuation. Psychopharmacology 236, 369–381 (2019).                                              Front. Behav. Neurosci. 12, 329 (2019).
+55. Grohs-Metz, G., Smausz, R., Gigg, J., Boeckers, T. & Hengerer, B. Functional                  81. Kaczkurkin, A. N. et al. Neural substrates of overgeneralized conditioned fear in
+    ultrasound imaging of recent and remote memory recall in the associative fear                     PTSD. Am. J. Psychiatry 174, 125–134 (2017).
+    neural network in mice. Behav. Brain Res. 428, 113862 (2022).                                 82. Biedenkapp, J. C. & Rudy, J. W. Context preexposure prevents forgetting of a con-
+56. Liu, X. & Carter, A. G. Ventral hippocampal inputs preferentially drive corticocortical           textual fear memory: implication for regional changes in brain activation patterns
+    neurons in the infralimbic prefrontal cortex. J. Neurosci. 38, 7351–7363 (2018).                  associated with recent and remote memory tests. Learn. Mem. 14, 200–203 (2007).
+57. Kim, W. B. & Cho, J.-H. Synaptic targeting of double-projecting ventral CA1 hip-              83. Yokoyama, M. & Matsuo, N. Loss of ensemble segregation in dentate gyrus, but
+    pocampal neurons to the medial prefrontal cortex and basal amygdala. J. Neu-                      not in somatosensory cortex, during contextual fear memory generalization.
+    rosci. 37, 4868–4882 (2017).                                                                      Front. Behav. Neurosci. 10, 218 (2016).
+58. Beeman, C. L., Bauer, P. S., Pierson, J. L. & Quinn, J. J. Hippocampus and medial             84. Zhu, H. et al. Chemogenetic inactivation of ventral hippocampal glutamatergic
+    prefrontal cortex contributions to trace and contextual fear memory expression                    neurons disrupts consolidation of contextual fear memory. Neuropsycho-
+    over time. Learn. Mem. 20, 336–343 (2013).                                                        pharmacology 39, 1880–1892 (2014).
+59. Zheng, C. & Zhang, T. Synaptic plasticity-related neural oscillations on                      85. Jasnow, A. M., Lynch III, J. F., Gilman, T. L. & Riccio, D. C. Perspectives on fear
+    hippocampus–prefrontal cortex pathway in depression. Neuroscience 292,                            generalization and its implications for emotional disorders. J. Neurosci. Res. 95,
+    170–180 (2015).                                                                                   821–835 (2017).
+60. Haubrich, J. et al. Novel learning accelerates systems consolidation of a con-                86. Goshen, I. et al. Dynamics of retrieval strategies for remote memories. Cell 147,
+    textual fear memory. Hippocampus 26, 924–932 (2016).                                              678–689 (2011).
+61. Pedraza, L. K., Sierra, R. O., Crestani, A. P., Quillfeldt, J. A. & de Oliveira Alvares, L.   87. Ortiz, S. et al. Anterior cingulate cortex and ventral hippocampal inputs to the
+    Sequential learning during contextual fear conditioning guides the rate of sys-                   basolateral amygdala selectively control generalized fear. J. Neurosci. 39,
+    tems consolidation: Implications for consolidation of multiple memory traces.                     6526–6539 (2019).
+    Hippocampus 27, 518–528 (2017).                                                               88. Tomé, D. F., Sadeh, S. & Clopath, C. Coordinated hippocampal–thalamic–cortical
+62. Kol, A. et al. Astrocytes contribute to remote memory formation by modulating                     communication crucial for engram dynamics underneath systems consolidation.
+    hippocampal–cortical communication during learning. Nat. Neurosci. 23,                            Nat. Commun. 13, 840 (2022).
+    1229–1239 (2020).                                                                             89. Terranova, J. I., Yokose, J., Osanai, H., Ogawa, S. K. & Kitamura, T. Systems con-
+63. Refaeli, R., Kreisel, T., Yaish, T. R., Groysman, M. & Goshen, I. Astrocytes control              solidation induces multiple memory engrams for a ﬂexible recall strategy in
+    recent and remote memory strength by affecting the recruitment of the CA1→                        observational fear memory in male mice. Nat. Commun. 14, 3976 (2023).
+    ACC projection to engrams. Cell Rep. 43, 113943 (2024).                                       90. Lee, C. et al. Hippocampal engram networks for fear memory recruit new
+64. Restivo, L., Vetere, G., Bontempi, B. & Ammassari-Teule, M. The formation of                      synapses and modify pre-existing synapses in vivo. Curr. Biol. 33, 507–516 (2023).
+    recent and remote memory is associated with time-dependent formation of                       91. Choi, D. I. et al. Synaptic correlates of associative fear memory in the lateral
+    dendritic spines in the hippocampus and anterior cingulate cortex. J. Neurosci.                   amygdala. Neuron 109, 2717–2726 (2021).
+    29, 8206–8214 (2009).                                                                         92. Lee, S.-H. et al. Nuclear translocation of CAM-associated protein activates tran-
+65. Wang, D. V. & Ikemoto, S. Coordinated interaction between hippocampal sharp-wave                  scription for long-term facilitation in aplysia. Cell 129, 801–812 (2007).
+    ripples and anterior cingulate unit activity. J. Neurosci. 36, 10663–10672 (2016).            93. Thompson, K. R. et al. Synapse to nucleus signaling during long-term synaptic
+66. Xia, F. et al. Parvalbumin-positive interneurons mediate neocortical-hippocampal                  plasticity: a role for the classical active nuclear import pathway. Neuron 44,
+    interactions that are necessary for memory consolidation. eLife 6, e27868 (2017).                 997–1009 (2004).
+67. Guo, N. et al. Dentate granule cell recruitment of feedforward inhibition governs             94. Herbst, W. A. & Martin, K. C. Regulated transport of signaling proteins from
+    engram maintenance and remote memory generalization. Nat. Med. 24, 438–449                        synapse to nucleus. Curr. Opin. Neurobiol. 45, 78–84 (2017).
+    (2018).                                                                                       95. Zent, K. H. & Dell’Acqua, M. L. Synapse-to-nucleus ERK→ CREB transcriptional
+68. Kwapis, J. L., Jarome, T. J., Lee, J. L. & Helmstetter, F. J. The retrosplenial cortex is         signaling requires dendrite-to-soma Ca2+ propagation mediated by L-type
+    involved in the formation of memory for context and trace fear conditioning.                      voltage–gated Ca2+ channels. J. Neurosci. 45, e1216242024 (2025).
+    Neurobiol. Learn. Mem. 123, 110–116 (2015).
+69. Cowansage, K. K. et al. Direct reactivation of a coherent neocortical memory of
+    context. Neuron 84, 432–441 (2014).
+70. Tanaka, K. Z. et al. Cortical representations are reinstated by the hippocampus
+                                                                                                  ACKNOWLEDGEMENTS
+                                                                                                  This work was supported by the Institute for Basic Science (IBS-R001-D3).
+    during memory retrieval. Neuron 84, 347–354 (2014).
+71. Kubik, S., Miyashita, T., Kubik-Zahorodna, A. & Guzowski, J. F. Loss of activity-
+    dependent Arc gene expression in the retrosplenial cortex after hippocampal
+    inactivation: interaction in a higher-order memory circuit. Neurobiol. Learn. Mem.            COMPETING INTERESTS
+    97, 124–131 (2012).                                                                           The authors declare no competing interests.
+72. Corcoran, K. A., Frick, B. J., Radulovic, J. & Kay, L. M. Analysis of coherent activity
+    between retrosplenial cortex, hippocampus, thalamus, and anterior cingulate
+    cortex during retrieval of recent and remote context fear memory. Neurobiol.                  ADDITIONAL INFORMATION
+    Learn. Mem. 127, 93–101 (2016).
+                                                                                                  Correspondence and requests for materials should be addressed to
+73. Pan, T.-T. et al. Retrosplenial cortex effects contextual fear formation relying on
+                                                                                                  Bong-Kiun Kaang.
+    dysgranular constituent in rats. Front. Neurosci. 16, 886858 (2022).
+74. Corcoran, K. A. et al. NMDA receptors in retrosplenial cortex are necessary for
+                                                                                                  Reprints and permission information is available at http://www.nature.com/
+    retrieval of recent and remote context fear memory. J. Neurosci. 31, 11655–11659
+                                                                                                  reprints
+    (2011).
+75. de Sousa, A. F. et al. Optogenetic reactivation of memory ensembles in the
+                                                                                                  Publisher’s note Springer Nature remains neutral with regard to jurisdictional claims
+    retrosplenial cortex induces systems consolidation. Proc. Natl Acad. Sci. USA 116,
+                                                                                                  in published maps and institutional afﬁliations.
+    8576–8581 (2019).
+
+
+
+
+Experimental & Molecular Medicine (2026) 58:1010 – 1016
+                                                                    H. Park and B.-K. Kaang
+1016
+                          Open Access This article is licensed under a Creative Commons
+                          Attribution 4.0 International License, which permits use, sharing,
+       adaptation, distribution and reproduction in any medium or format, as long as you give
+       appropriate credit to the original author(s) and the source, provide a link to the Creative
+       Commons licence, and indicate if changes were made. The images or other third party
+       material in this article are included in the article’s Creative Commons licence, unless
+       indicated otherwise in a credit line to the material. If material is not included in the
+       article’s Creative Commons licence and your intended use is not permitted by statutory
+       regulation or exceeds the permitted use, you will need to obtain permission directly
+       from the copyright holder. To view a copy of this licence, visit http://
+       creativecommons.org/licenses/by/4.0/.
+
+
+       © The Author(s) 2026
+
+
+
+
+                                                                                                     Experimental & Molecular Medicine (2026) 58:1010 – 1016
+

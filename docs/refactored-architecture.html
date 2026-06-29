@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>JFC Refactored Architecture — Proposed Cleanup</title>
+<style>
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface-2: #1c2128;
+  --border: #30363d;
+  --text: #c9d1d9;
+  --text-muted: #8b949e;
+  --accent: #58a6ff;
+  --green: #238636;
+  --purple: #8957e5;
+  --orange: #f0883e;
+  --red: #da3633;
+  --pink: #bf4b8a;
+  --yellow: #d29922;
+  --cyan: #3fb950;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding: 32px;
+  line-height: 1.6;
+}
+h1 { text-align: center; font-weight: 500; color: var(--accent); margin-bottom: 8px; }
+.subtitle { text-align: center; color: var(--text-muted); font-size: 14px; margin-bottom: 32px; }
+.container { max-width: 1200px; margin: 0 auto; }
+.section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 24px;
+  margin-bottom: 24px;
+}
+.section-title {
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.columns { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+@media (max-width: 800px) { .columns { grid-template-columns: 1fr; } }
+.bad { background: rgba(218, 54, 51, 0.1); border-left: 3px solid var(--red); padding: 12px 16px; margin: 8px 0; border-radius: 0 6px 6px 0; }
+.good { background: rgba(35, 134, 54, 0.1); border-left: 3px solid var(--green); padding: 12px 16px; margin: 8px 0; border-radius: 0 6px 6px 0; }
+.bad-title { color: var(--red); font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+.good-title { color: var(--green); font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+.redundant { color: var(--text-muted); font-size: 13px; }
+code {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 12px;
+  background: var(--bg);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+pre {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 12px;
+  background: var(--bg);
+  padding: 16px;
+  border-radius: 6px;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  margin: 12px 0;
+}
+svg { display: block; max-width: 100%; margin: 16px auto; }
+.node rect { stroke-width: 2; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2)); }
+.node text { font-size: 11px; font-weight: 500; fill: #fff; }
+.unified rect { fill: var(--purple); stroke: #a371f7; }
+.core rect { fill: var(--green); stroke: #2ea043; }
+.storage { fill: var(--text-muted); stroke: #8b949e; }
+.edge { fill: none; stroke: #30363d; stroke-width: 1.5; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 12px; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+th { color: var(--text-muted); font-weight: 500; font-size: 11px; text-transform: uppercase; }
+td:first-child { font-family: 'SF Mono', Consolas, monospace; color: var(--accent); font-size: 12px; }
+.strike { text-decoration: line-through; color: var(--red); }
+.arrow { color: var(--green); margin: 0 8px; }
+</style>
+</head>
+<body>
+<h1>JFC Refactored Architecture</h1>
+<p class="subtitle">What's redundant, what to unify, and the clean target state</p>
+
+<div class="container">
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- REDUNDANCY ANALYSIS -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+
+<div class="section">
+<div class="section-title">🔴 Current Redundancy</div>
+
+<div class="columns">
+<div>
+<div class="bad">
+<div class="bad-title">3 Parallel Agent Tracking Systems</div>
+<div class="redundant">
+• <code>BackgroundTask</code> (engine/app.rs) — in-memory, UI state<br>
+• <code>BackgroundAgentInfo</code> (daemon/state.rs) — persistent, daemon state<br>
+• <code>InProcessTeammateState</code> (swarm/types.rs) — teammate-specific<br>
+<br>
+All track the same thing: status, tokens, tool_use_count, error, timestamps.
+</div>
+</div>
+
+<div class="bad">
+<div class="bad-title">3 Status Enums</div>
+<div class="redundant">
+• <code>AgentStatus</code> {Running, Completed, Failed}<br>
+• <code>BackgroundAgentStatus</code> {Pending, Running, Completed, Failed, Cancelled}<br>
+• <code>TeammateStatus</code> {Running, Idle, Completed, Failed, Killed}<br>
+<br>
+Idle/Killed are teammate-specific; rest are identical.
+</div>
+</div>
+
+<div class="bad">
+<div class="bad-title">2 Spawn Config Types</div>
+<div class="redundant">
+• <code>AgentConfig</code> (background.rs) — task_description, max_tokens<br>
+• <code>TeammateRunnerConfig</code> (swarm/runner.rs) — identity, prompt, model, provider<br>
+<br>
+TeammateRunnerConfig is a superset.
+</div>
+</div>
+</div>
+
+<div>
+<div class="bad">
+<div class="bad-title">2 Mailbox Systems</div>
+<div class="redundant">
+• <code>swarm/mailbox.rs</code> — file-based JSON inbox per agent<br>
+• <code>SendMessage</code> tool writes to mailbox<br>
+• <code>TeammateEvent::MessageSent</code> goes through events<br>
+<br>
+Economy's <code>SwarmProvider::send_message()</code> is a stub that logs.
+The daemon doesn't use mailbox at all — it uses log files.
+</div>
+</div>
+
+<div class="bad">
+<div class="bad-title">2 Task List Systems</div>
+<div class="redundant">
+• <code>TaskStore</code> (jfc-session) — shared task list for factory/teams<br>
+• <code>ScheduledTaskRegistry</code> (jfc-daemon) — cron/scheduled tasks<br>
+<br>
+Different concerns but similar CRUD + lifecycle patterns.
+Both have their own persistence, their own status enums, their own files.
+</div>
+</div>
+
+<div class="bad">
+<div class="bad-title">Scattered Agent Identity</div>
+<div class="redundant">
+• <code>AgentId(u64)</code> in background.rs<br>
+• <code>AgentId(String)</code> in jfc-economy/types.rs<br>
+• <code>agent_id: String</code> in swarm TeammateIdentity<br>
+• <code>task_id: String</code> in BackgroundTask<br>
+<br>
+No unified identity type.
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- PROPOSED UNIFIED MODEL -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+
+<div class="section">
+<div class="section-title">🟢 Proposed Unified Model</div>
+
+<svg viewBox="0 0 900 500" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#30363d"/>
+    </marker>
+  </defs>
+
+  <!-- Core Identity -->
+  <g class="node core" transform="translate(380,30)">
+    <rect width="140" height="50" rx="6"/>
+    <text x="70" y="20" text-anchor="middle">AgentId</text>
+    <text x="70" y="36" text-anchor="middle" font-size="9" fill="#c9d1d9">unified identity</text>
+  </g>
+
+  <!-- Unified Agent State -->
+  <g class="node unified" transform="translate(340,120)">
+    <rect width="220" height="70" rx="6"/>
+    <text x="110" y="20" text-anchor="middle">AgentState</text>
+    <text x="110" y="36" text-anchor="middle" font-size="9" fill="#c9d1d9">status, tokens, tools, error</text>
+    <text x="110" y="50" text-anchor="middle" font-size="9" fill="#c9d1d9">started_at, completed_at</text>
+    <text x="110" y="64" text-anchor="middle" font-size="9" fill="#c9d1d9">role: Solo | Team | Economy</text>
+  </g>
+
+  <!-- Agent Registry -->
+  <g class="node unified" transform="translate(360,230)">
+    <rect width="180" height="50" rx="6"/>
+    <text x="90" y="20" text-anchor="middle">AgentRegistry</text>
+    <text x="90" y="36" text-anchor="middle" font-size="9" fill="#c9d1d9">spawn, status, complete, abort</text>
+  </g>
+
+  <!-- Execution backends (below registry) -->
+  <g class="node core" transform="translate(100,330)">
+    <rect width="120" height="40" rx="6"/>
+    <text x="60" y="16" text-anchor="middle">InProcess</text>
+    <text x="60" y="30" text-anchor="middle" font-size="9" fill="#c9d1d9">tokio::spawn</text>
+  </g>
+
+  <g class="node core" transform="translate(260,330)">
+    <rect width="120" height="40" rx="6"/>
+    <text x="60" y="16" text-anchor="middle">Daemon</text>
+    <text x="60" y="30" text-anchor="middle" font-size="9" fill="#c9d1d9">detached worker</text>
+  </g>
+
+  <g class="node core" transform="translate(420,330)">
+    <rect width="120" height="40" rx="6"/>
+    <text x="60" y="16" text-anchor="middle">Team</text>
+    <text x="60" y="30" text-anchor="middle" font-size="9" fill="#c9d1d9">mailbox + idle</text>
+  </g>
+
+  <g class="node core" transform="translate(580,330)">
+    <rect width="120" height="40" rx="6"/>
+    <text x="60" y="16" text-anchor="middle">Economy</text>
+    <text x="60" y="30" text-anchor="middle" font-size="9" fill="#c9d1d9">worktree + trust</text>
+  </g>
+
+  <g class="node core" transform="translate(740,330)">
+    <rect width="120" height="40" rx="6"/>
+    <text x="60" y="16" text-anchor="middle">Council</text>
+    <text x="60" y="30" text-anchor="middle" font-size="9" fill="#c9d1d9">parallel + arbiter</text>
+  </g>
+
+  <!-- Single storage layer -->
+  <g transform="translate(360,430)">
+    <ellipse class="storage" cx="90" cy="25" rx="90" ry="25"/>
+    <text x="90" y="29" text-anchor="middle" fill="#fff" font-size="12">Unified State Store</text>
+  </g>
+
+  <!-- Edges -->
+  <path class="edge" d="M 450,80 L 450,118" marker-end="url(#arrow)"/>
+  <path class="edge" d="M 450,190 L 450,228" marker-end="url(#arrow)"/>
+  
+  <path class="edge" d="M 360,280 Q 200,300 160,328" marker-end="url(#arrow)"/>
+  <path class="edge" d="M 400,280 L 320,328" marker-end="url(#arrow)"/>
+  <path class="edge" d="M 450,280 L 480,328" marker-end="url(#arrow)"/>
+  <path class="edge" d="M 500,280 Q 580,300 640,328" marker-end="url(#arrow)"/>
+  <path class="edge" d="M 540,280 Q 700,300 800,328" marker-end="url(#arrow)"/>
+
+  <path class="edge" d="M 160,370 Q 200,400 360,430" marker-end="url(#arrow)"/>
+  <path class="edge" d="M 320,370 Q 340,400 400,430" marker-end="url(#arrow)"/>
+  <path class="edge" d="M 480,370 L 450,430" marker-end="url(#arrow)"/>
+  <path class="edge" d="M 640,370 Q 560,400 490,430" marker-end="url(#arrow)"/>
+  <path class="edge" d="M 800,370 Q 700,400 520,430" marker-end="url(#arrow)"/>
+</svg>
+
+<div class="good">
+<div class="good-title">Single AgentState struct</div>
+<pre>
+pub struct AgentState {
+    pub id: AgentId,
+    pub status: AgentStatus,           // Running | Idle | Completed | Failed | Cancelled
+    pub role: AgentRole,               // Solo | Teammate | Solver | Validator | Council
+    
+    // Progress (all agents share this)
+    pub token_count: u64,
+    pub tool_use_count: u32,
+    pub last_tool: Option&lt;String&gt;,
+    
+    // Lifecycle
+    pub started_at: SystemTime,
+    pub completed_at: Option&lt;SystemTime&gt;,
+    pub error: Option&lt;String&gt;,
+    
+    // Backend-specific (Option fields, only populated for relevant roles)
+    pub team_name: Option&lt;String&gt;,     // Teammate
+    pub worktree_path: Option&lt;PathBuf&gt;, // Solver
+    pub trust_score: Option&lt;i8&gt;,       // Economy agents
+    pub idle_reason: Option&lt;String&gt;,   // Teammate
+}
+</pre>
+</div>
+
+<div class="good">
+<div class="good-title">Single AgentRegistry trait</div>
+<pre>
+pub trait AgentRegistry: Send + Sync {
+    fn spawn(&amp;self, config: SpawnConfig) -&gt; AgentId;
+    fn status(&amp;self, id: &amp;AgentId) -&gt; Option&lt;AgentStatus&gt;;
+    fn state(&amp;self, id: &amp;AgentId) -&gt; Option&lt;AgentState&gt;;
+    fn abort(&amp;self, id: &amp;AgentId) -&gt; bool;
+    fn complete(&amp;self, id: &amp;AgentId, result: AgentResult);
+    fn list(&amp;self) -&gt; Vec&lt;AgentState&gt;;
+}
+</pre>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- CONSOLIDATION TABLE -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+
+<div class="section">
+<div class="section-title">Consolidation Map</div>
+
+<table>
+<tr><th>Current</th><th></th><th>Unified</th><th>Notes</th></tr>
+<tr>
+  <td><span class="strike">BackgroundTask</span></td>
+  <td class="arrow">→</td>
+  <td>AgentState</td>
+  <td>UI-specific fields (messages, chat_messages) move to render layer</td>
+</tr>
+<tr>
+  <td><span class="strike">BackgroundAgentInfo</span></td>
+  <td class="arrow">→</td>
+  <td>AgentState + persistence layer</td>
+  <td>Daemon state becomes AgentState serialization</td>
+</tr>
+<tr>
+  <td><span class="strike">InProcessTeammateState</span></td>
+  <td class="arrow">→</td>
+  <td>AgentState { role: Teammate }</td>
+  <td>Idle, shutdown_requested are status variants</td>
+</tr>
+<tr>
+  <td><span class="strike">TeammateInfo</span></td>
+  <td class="arrow">→</td>
+  <td>AgentState + abort_tx in registry</td>
+  <td>abort handles live in the registry, not state</td>
+</tr>
+<tr>
+  <td><span class="strike">AgentId(u64)</span>, <span class="strike">AgentId(String)</span></td>
+  <td class="arrow">→</td>
+  <td>AgentId(Uuid)</td>
+  <td>Single identity type everywhere</td>
+</tr>
+<tr>
+  <td><span class="strike">AgentStatus</span>, <span class="strike">BackgroundAgentStatus</span>, <span class="strike">TeammateStatus</span></td>
+  <td class="arrow">→</td>
+  <td>AgentStatus</td>
+  <td>Running | Idle | Completed | Failed | Cancelled</td>
+</tr>
+<tr>
+  <td><span class="strike">AgentConfig</span>, <span class="strike">TeammateRunnerConfig</span></td>
+  <td class="arrow">→</td>
+  <td>SpawnConfig</td>
+  <td>role determines which fields are required</td>
+</tr>
+</table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- MESSAGE ROUTING -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+
+<div class="section">
+<div class="section-title">Unified Message Routing</div>
+
+<div class="columns">
+<div>
+<div class="bad">
+<div class="bad-title">Current: 4 message paths</div>
+<div class="redundant">
+1. <code>TeammateEvent</code> channel (in-process teammates)<br>
+2. <code>mailbox.json</code> files (team SendMessage)<br>
+3. <code>BackgroundAgentCompletion</code> events (daemon workers)<br>
+4. <code>SwarmProvider::send_message</code> stub (economy, logs only)
+</div>
+</div>
+</div>
+<div>
+<div class="good">
+<div class="good-title">Unified: Single MessageBus</div>
+<pre>
+pub struct MessageBus {
+    // In-memory for in-process agents
+    channels: HashMap&lt;AgentId, mpsc::Sender&lt;Message&gt;&gt;,
+    
+    // File-backed for cross-process / daemon
+    inbox_dir: PathBuf,
+}
+
+impl MessageBus {
+    fn send(&amp;self, to: &amp;AgentId, msg: Message);
+    fn recv(&amp;self, agent: &amp;AgentId) -&gt; Option&lt;Message&gt;;
+    fn poll(&amp;self, agent: &amp;AgentId) -&gt; Vec&lt;Message&gt;;
+}
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- ECONOMY INTEGRATION -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+
+<div class="section">
+<div class="section-title">Economy Integration</div>
+
+<div class="bad">
+<div class="bad-title">Current: Isolated bounded context</div>
+<div class="redundant">
+• <code>jfc-economy</code> has its own <code>AgentId</code>, <code>SolverPool</code>, <code>ValidationPool</code><br>
+• <code>SwarmProvider</code> trait is implemented as a stub in <code>tools/economy.rs</code><br>
+• Solvers/validators don't show up in the TUI's background task panel<br>
+• Trust scores are orphaned in economy, not visible to the main agent
+</div>
+</div>
+
+<div class="good">
+<div class="good-title">Unified: Economy as AgentRole</div>
+<pre>
+// Solver spawns through the same AgentRegistry
+let solver_id = registry.spawn(SpawnConfig {
+    role: AgentRole::Solver { bounty_id, worktree },
+    prompt: solver_prompt,
+    ..
+});
+
+// Registry tracks it like any other agent
+// TUI can show solver progress in the same panel
+// Trust score is just another field on AgentState
+
+// Economy orchestrator becomes a coordinator, not an owner
+impl BountyCoordinator {
+    fn run_cycle(&amp;self, bounty_id: &amp;str, registry: &amp;dyn AgentRegistry) {
+        let solver_ids = (0..n_solvers).map(|i| {
+            registry.spawn(solver_config(i))
+        }).collect();
+        
+        // Wait for all to complete
+        for id in &amp;solver_ids {
+            while !registry.status(id).is_terminal() {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        }
+        
+        // Settlement uses unified state
+        let solutions = solver_ids.iter()
+            .filter_map(|id| registry.state(id))
+            .filter(|s| s.status == Completed)
+            .collect();
+    }
+}
+</pre>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- FILE CHANGES -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+
+<div class="section">
+<div class="section-title">Proposed File Structure</div>
+
+<pre>
+crates/
+├── jfc-agent/                    # NEW: unified agent primitives
+│   ├── src/
+│   │   ├── id.rs                 # AgentId (Uuid-based)
+│   │   ├── state.rs              # AgentState, AgentStatus, AgentRole
+│   │   ├── registry.rs           # AgentRegistry trait
+│   │   ├── message.rs            # Message, MessageBus
+│   │   └── lib.rs
+│   └── Cargo.toml
+│
+├── jfc-engine/
+│   ├── src/
+│   │   ├── agents/               # REPLACES: background.rs, swarm/
+│   │   │   ├── in_process.rs     # InProcessBackend (tokio::spawn)
+│   │   │   ├── daemon.rs         # DaemonBackend (detached worker)
+│   │   │   ├── team.rs           # TeamBackend (mailbox + idle)
+│   │   │   ├── registry_impl.rs  # AgentRegistryImpl (combines backends)
+│   │   │   └── mod.rs
+│   │   ├── economy/              # Coordinator, not owner
+│   │   │   ├── bounty.rs         # BountyCoordinator
+│   │   │   ├── settlement.rs     # Settlement (reuses AgentState trust)
+│   │   │   └── mod.rs
+│   │   └── ...
+│
+├── jfc-economy/                  # SLIM DOWN: types only, no pools
+│   ├── src/
+│   │   ├── charter.rs            # Rules
+│   │   ├── ledger.rs             # Token accounting
+│   │   ├── trust.rs              # Trust scoring
+│   │   └── lib.rs
+│
+└── <span class="strike">jfc-daemon/src/state.rs</span>   # BackgroundAgentInfo → AgentState serde
+</pre>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- CLEAN DISPATCH -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+
+<div class="section">
+<div class="section-title">Clean Dispatch (After Refactor)</div>
+
+<pre>
+// tools/dispatch.rs becomes trivial routing
+match (kind, input) {
+    // Solo tools — unchanged
+    (Bash, ..) =&gt; execute_bash(..),
+    (Read, ..) =&gt; execute_read(..),
+    
+    // All agent spawns go through registry
+    (Task, TaskInput { run_in_background: true, .. }) =&gt; {
+        let id = registry.spawn(SpawnConfig::from_task_input(input));
+        ExecutionResult::success(format!("Spawned agent {id}"))
+    }
+    
+    // SendMessage uses MessageBus
+    (SendMessage, SendMessageInput { to, text, .. }) =&gt; {
+        let to_id = registry.resolve_name(&amp;to)?;
+        message_bus.send(&amp;to_id, Message::new(text));
+        ExecutionResult::success("Message sent")
+    }
+    
+    // Economy tools spawn through same registry
+    (PostBounty, ..) =&gt; bounty_coordinator.post(..),
+    (RunBounty, ..) =&gt; bounty_coordinator.run(registry, ..).await,
+    
+    // Council is just parallel spawn + join
+    (Council, ..) =&gt; {
+        let ids: Vec&lt;_&gt; = models.iter().map(|m| {
+            registry.spawn(SpawnConfig { role: Council, model: m, .. })
+        }).collect();
+        let results = join_all(ids.iter().map(|id| registry.wait(id))).await;
+        // Arbiter synthesis
+    }
+}
+</pre>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- MIGRATION PATH -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+
+<div class="section">
+<div class="section-title">Migration Path</div>
+
+<table>
+<tr><th>Phase</th><th>Work</th><th>Risk</th></tr>
+<tr>
+  <td>1</td>
+  <td>Create <code>jfc-agent</code> crate with <code>AgentId</code>, <code>AgentState</code>, <code>AgentRegistry</code> trait</td>
+  <td>Low — additive</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td>Implement <code>InProcessBackend</code> that wraps current <code>tokio::spawn</code> pattern</td>
+  <td>Low — parallel to existing</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td>Implement <code>DaemonBackend</code> that wraps current <code>BackgroundAgentInfo</code> serialization</td>
+  <td>Medium — daemon state format change</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td>Implement <code>TeamBackend</code> that wraps current swarm/mailbox</td>
+  <td>Medium — mailbox format stays, types change</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td>Wire <code>dispatch.rs</code> to use <code>AgentRegistry</code> instead of direct spawns</td>
+  <td>High — touches everything</td>
+</tr>
+<tr>
+  <td>6</td>
+  <td>Move economy solver/validator spawns to use <code>AgentRegistry</code></td>
+  <td>Medium — economy becomes coordinator</td>
+</tr>
+<tr>
+  <td>7</td>
+  <td>Delete dead code: <code>background.rs</code>, <code>swarm/types.rs</code> duplicates</td>
+  <td>Low — cleanup</td>
+</tr>
+</table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- WHAT STAYS -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+
+<div class="section">
+<div class="section-title">What Stays the Same</div>
+
+<div class="good">
+<div class="good-title">These are NOT redundant — keep them</div>
+<div class="redundant" style="color: var(--text);">
+• <b>TaskStore</b> (jfc-session) — this is the shared TODO list, not agent tracking<br>
+• <b>ScheduledTaskRegistry</b> (jfc-daemon) — cron jobs, separate concern<br>
+• <b>TeamFile</b> (swarm/types.rs) — team roster config, not agent state<br>
+• <b>Charter</b> (jfc-economy) — rules/policy, not agent tracking<br>
+• <b>TokenLedger</b> (jfc-economy) — accounting, separate concern<br>
+• <b>Provider trait</b> — model API abstraction, orthogonal<br>
+• <b>stream.rs loop</b> — streaming logic, uses registry but doesn't duplicate it
+</div>
+</div>
+</div>
+
+</div>
+</body>
+</html>

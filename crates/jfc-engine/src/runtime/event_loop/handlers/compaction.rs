@@ -1,0 +1,466 @@
+//! `CompactionEvent::*` handlers. Hoisted out of the giant `event_loop::run`
+//! match so the lifecycle (Started → Progress → Done | Failed) reads as a
+//! single coherent file instead of four scattered match arms.
+
+use crate::app::EngineState;
+use crate::context::ToolContext;
+use crate::runtime::{
+    CompactionEvent, EventSender, drain_queued_prompts, maybe_continue_task_factory,
+};
+use crate::types::{ChatMessage, MessagePart, Role};
+use crate::{stream, toast};
+
+pub fn handle_started(state: &mut EngineState) {
+    // The compacting_started_at guard is now set synchronously
+    // at the decision site to prevent the agentic-loop race.
+    // This event still fires for logging/observability but the
+    // fields are already initialized — only set them if they
+    // weren't (handles the edge case of manual /compact which
+    // may not go through the AllToolsComplete path).
+    tracing::debug!(target: "jfc::compact", "CompactionStarted event received — showing spinner");
+    if state.compacting_started_at.is_none() {
+        state.compacting_started_at = Some(std::time::Instant::now());
+        state.compacting_output_chars = 0;
+        state.compacting_attempt_baseline = 0;
+        state.compacting_last_progress = 0;
+    }
+}
+
+pub fn handle_progress(state: &mut EngineState, output_chars: u64) {
+    // Live token feedback during compact streaming. Mirrors
+    // v126's PB7 addResponseLength → spinner refresh
+    // (cli.js:396989).
+    //
+    // `compact()` retries internally when post_tokens is
+    // still over the Blocked threshold or the model returns
+    // a truncated summary. Each retry streams a fresh
+    // response from 0 chars, so the per-attempt counter
+    // regresses. Detect that and bump a baseline so the
+    // spinner shows a monotonically-increasing total — the
+    // user sees the true work-done across attempts instead
+    // of a flickering counter that jumps `↓3k → ↓92 → ↓1k`.
+    if output_chars < state.compacting_last_progress {
+        state.compacting_attempt_baseline += state.compacting_last_progress;
+    }
+    state.compacting_last_progress = output_chars;
+    state.compacting_output_chars = state.compacting_attempt_baseline + output_chars;
+}
+
+/// Pull the last user-role plain-text from a `ChatMessage` slice. Used by
+/// the post-compact memory recall to know what query to recall against.
+fn last_user_query(msgs: &[ChatMessage]) -> Option<String> {
+    for m in msgs.iter().rev() {
+        if m.role != Role::User || m.is_compact_boundary() {
+            continue;
+        }
+        let text: String = m
+            .parts
+            .iter()
+            .filter_map(|p| {
+                if let MessagePart::Text(t) = p {
+                    Some(t.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        if !text.trim().is_empty() {
+            return Some(text);
+        }
+    }
+    None
+}
+
+/// Re-consult memory recall after compaction and append any relevant block to
+/// the compact boundary message so the model has memory context in the new
+/// window. No-op when `consult_memory_after_compact` or
+/// `memory_recall_enabled` is false, when no memories exist, or when the
+/// recall deadline is exceeded.
+async fn inject_post_compact_memory(state: &mut EngineState, messages: &mut Vec<ChatMessage>) {
+    let config = crate::config::load_arc();
+    if !config.consult_memory_after_compact || !config.memory_recall_enabled {
+        return;
+    }
+    let query = match last_user_query(messages) {
+        Some(q) => q,
+        None => return,
+    };
+    let trimmed = query.trim().to_owned();
+    if trimmed.is_empty() || trimmed.starts_with('/') {
+        return;
+    }
+    let cwd_path = std::path::PathBuf::from(&state.cwd);
+    let memories = crate::prompt_context_cache::memories(&cwd_path);
+    if memories.is_empty() {
+        return;
+    }
+    let recall_model = state
+        .provider
+        .available_models()
+        .into_iter()
+        .find(|m| m.id.as_str().contains("haiku"))
+        .map(|m| m.id)
+        .unwrap_or_else(|| state.model.clone());
+    const DEADLINE_MS: u64 = 2_000;
+    let recall_block = tokio::time::timeout(
+        std::time::Duration::from_millis(DEADLINE_MS),
+        crate::memory_recall::run_recall(&trimmed, &memories, state.provider.clone(), recall_model),
+    )
+    .await
+    .unwrap_or(None);
+    let Some(block) = recall_block else { return };
+    tracing::debug!(
+        target: "jfc::compact",
+        recall_block_len = block.len(),
+        "post-compact memory recall: injecting into compact boundary"
+    );
+    // Append to the compact boundary message text. This keeps the
+    // message count stable and avoids violating user/assistant turn ordering.
+    if let Some(boundary) = messages.first_mut() {
+        for part in &mut boundary.parts {
+            if let MessagePart::Text(t) = part {
+                t.push_str("\n\n[Memory context relevant to continuing this session]\n");
+                t.push_str(&block);
+                break;
+            }
+        }
+    }
+}
+
+pub async fn handle_done(
+    state: &mut EngineState,
+    tx: &EventSender,
+    mut messages: Vec<ChatMessage>,
+    mut tool_ctx: ToolContext,
+    pre_tokens: usize,
+    post_tokens: usize,
+) {
+    // Feature: re-consult memory recall after compaction so the fresh context
+    // window starts with relevant memories. Runs before the message swap.
+    inject_post_compact_memory(state, &mut messages).await;
+    let compact_result_post_tokens = post_tokens;
+    let post_tokens = crate::compact::estimate_tokens(&messages);
+    tool_ctx.approx_tokens = post_tokens;
+    if post_tokens != compact_result_post_tokens {
+        tracing::debug!(
+            target: "jfc::compact",
+            compact_result_post_tokens,
+            post_tokens,
+            "post-compact token estimate adjusted after post-processing"
+        );
+    }
+
+    // Reset post-compact read tracker so we can detect re-reads.
+    state.post_compact_reads.clear();
+    let saved = pre_tokens.saturating_sub(post_tokens);
+    // Stash the savings so the next outbound request forwards it as the
+    // context-hint (context-hint-2026-04-09). Drained after one send. Only
+    // worth hinting when non-trivial; the body builder enforces the 20k floor.
+    if saved > 0 {
+        state.pending_context_hint_tokens_saved = Some(saved as u64);
+    }
+    tracing::info!(
+        target: "jfc::compact",
+        pre_tokens, post_tokens, saved,
+        new_message_count = messages.len(),
+        "applying compaction result to app state"
+    );
+    let was_streaming = state.is_streaming;
+    let previous_message_count = state.messages.len();
+    if was_streaming {
+        // Defensive: should be unreachable with the synchronous
+        // compacting_started_at guard, but if a stream somehow
+        // started during compaction, don't clobber live state.
+        tracing::error!(
+            target: "jfc::compact",
+            "CompactionDone arrived while streaming — \
+             discarding compaction result to avoid data corruption"
+        );
+    } else {
+        state.messages = messages;
+        // Migrate cleanup flags (rapid_refill_count, last_compact_turn, etc.)
+        // from the compact worker's local tool_ctx, then use the final
+        // post-processed transcript estimate. This includes restored files and
+        // post-compact memory recall, so the gauge/ceiling match the messages
+        // that will actually be sent next.
+        state.tool_ctx = tool_ctx;
+        state.tool_ctx.approx_tokens = post_tokens;
+        let display_tokens = crate::context_accounting::model_visible_tokens_for_display(state);
+        tracing::info!(
+            target: "jfc::compact",
+            transcript_tokens = state.tool_ctx.approx_tokens,
+            display_tokens,
+            last_system_prompt_len = ?state.last_system_prompt_len,
+            "post-compact context gauge recalibrated"
+        );
+        // Arm the post-compaction gauge ceiling. Anthropic's prompt cache
+        // still holds the pre-compaction prefix for ~5 min, so the very next
+        // request reports a `cache_read_tokens` ≈ the OLD (large) prefix —
+        // which would snap the gauge right back to its pre-compact size
+        // (the "compacts at 750k but never resets" bug). Clamp the gauge to
+        // this freshly-compacted estimate (with generous headroom so a
+        // genuinely growing post-compact turn isn't pinned low) until a real
+        // cache_write proves the new, smaller prefix has been re-cached.
+        let ceiling = state
+            .tool_ctx
+            .approx_tokens
+            .saturating_mul(2)
+            .max(state.tool_ctx.approx_tokens.saturating_add(50_000));
+        state.post_compact_token_ceiling = Some(ceiling);
+        let cache_identity = crate::cache_lineage::current_identity(state);
+        crate::cache_lineage::mark_expected_drop(
+            state,
+            cache_identity,
+            "regular compaction replaced transcript history",
+            previous_message_count.saturating_sub(state.messages.len()),
+            None,
+        );
+        state.last_usage_input = 0;
+        // Reset the per-turn baseline so the next
+        // `StreamUsage` cumulative delta builds from 0,
+        // not from pre-compact totals — without this,
+        // `apply_cumulative` would treat the post-compact
+        // input as a negative delta and stall.
+        state.usage_apply_baseline = (0, 0, 0, 0);
+        // Repin to the bottom of the freshly-compacted transcript. The whole
+        // message vec was just replaced, so any prior `scroll_offset` indexes
+        // into a buffer that no longer exists; leaving `follow_bottom` false
+        // (the user had scrolled up before a post-response or manual /compact)
+        // would strand them mid-buffer staring at stale rows. Claude/OpenClaude
+        // likewise repin on this transition — compaction is a hard transcript
+        // reset, not an ordinary append. The content-addressed render cache
+        // self-invalidates by text hash, so no explicit clear is needed.
+        state.push_effect(crate::app::EngineEffect::ScrollToBottom);
+    }
+    state.compacting_started_at = None;
+    state.compacting_output_chars = 0;
+    state.compacting_attempt_baseline = 0;
+    state.compacting_last_progress = 0;
+    state.compact_suppressed = false;
+    state.speculative_compact_fired = false;
+    // Surface the compaction outcome to the user via a toast
+    // — they don't have to scroll to see the boundary marker.
+    let saved_k = saved / 1000;
+    toast::push_with_cap(
+        &mut state.toasts,
+        toast::Toast::new(
+            toast::ToastKind::Success,
+            format!("Compacted — saved ~{saved_k}k tokens"),
+        ),
+    );
+    // Resume any deferred agentic continuation. When
+    // compaction was triggered from `AllToolsComplete`,
+    // that handler's continuation check skipped because
+    // `compacting_started_at.is_some()`. Without this
+    // resume the user's tool result never feeds back into
+    // the model — the turn silently dies right after the
+    // "Compacted" toast and queued prompts back up while
+    // the spinner hangs. Mirror AllToolsComplete's gate:
+    // continue only if the transcript ends on
+    // tool_results (should_continue_loop=true) and
+    // there's no other reason to pause.
+    if !was_streaming
+        && state.pending_approval.is_none()
+        && state.approval_queue.is_empty()
+        && state.pending_tool_calls.is_empty()
+        && state.pending_question.is_none()
+        && !state
+            .interrupt_flag
+            .load(std::sync::atomic::Ordering::SeqCst)
+        && !state.cancel_token.is_cancelled()
+        && stream::should_continue_loop(&state.messages)
+    {
+        // Same mixed-mode gate as in AllToolsComplete:
+        // if the original Done event flagged
+        // pause_turn, route the resumed turn through
+        // the pause-turn-resume builder so no
+        // synthetic-Continue filler gets injected.
+        // Single-shot semantics: clear the flag here so
+        // a subsequent non-pause turn doesn't inherit
+        // the routing.
+        if state.pending_pause_turn_resume {
+            state.pending_pause_turn_resume = false;
+            tracing::info!(
+                target: "jfc::stream",
+                "agentic loop resuming after CompactionDone — pause_turn mixed mode, routing through continue_after_pause_turn"
+            );
+            stream::continue_after_pause_turn(state, tx).await;
+        } else {
+            tracing::info!(
+                target: "jfc::stream",
+                "agentic loop resuming after CompactionDone — tool results pending"
+            );
+            stream::continue_agentic_loop(state, tx).await;
+        }
+    } else if !was_streaming
+        && state.pending_approval.is_none()
+        && state.approval_queue.is_empty()
+        && state.pending_tool_calls.is_empty()
+        && state.pending_question.is_none()
+    {
+        // Compaction landed at end of turn (no pending
+        // tool results). Drain queued prompts so they
+        // start now that the context is clean.
+        state.turn_started_at = None;
+        drain_queued_prompts(state, tx).await;
+        maybe_continue_task_factory(state, tx).await;
+    }
+}
+
+pub async fn handle_failed(
+    state: &mut EngineState,
+    tx: &EventSender,
+    reason: String,
+    calibrated_tokens: Option<usize>,
+    transient: bool,
+) {
+    tracing::warn!(
+        target: "jfc::compact",
+        %reason,
+        ?calibrated_tokens,
+        transient,
+        "compaction failed — surfacing toast to user"
+    );
+    if let Some(real_count) = calibrated_tokens {
+        state.tool_ctx.approx_tokens = real_count;
+    }
+    state.compacting_started_at = None;
+    state.compacting_output_chars = 0;
+    state.compacting_attempt_baseline = 0;
+    state.compacting_last_progress = 0;
+    state.speculative_compact_fired = false;
+    // Permanent failures (provider unsupported, exhausted retries,
+    // breaker tripped) latch suppression so we stop spamming
+    // compact attempts on every AllToolsComplete; the user clears
+    // it explicitly with /compact. Transient failures (e.g.
+    // TooFewGroups) self-resolve as the conversation grows, so
+    // suppressing them would silently disable auto-compact for
+    // the rest of the session.
+    if !transient {
+        state.compact_suppressed = true;
+        crate::notifications::notify_compact_failed(&reason);
+    }
+    let toast_kind = if transient {
+        toast::ToastKind::Info
+    } else {
+        toast::ToastKind::Error
+    };
+    let toast_msg = if transient {
+        reason.clone()
+    } else {
+        format!("Compaction failed: {reason}")
+    };
+    toast::push_with_cap(&mut state.toasts, toast::Toast::new(toast_kind, toast_msg));
+
+    // Re-check agentic loop continuation after failed compaction —
+    // without this, tool results that triggered the compaction attempt
+    // sit unreplied-to and the loop stalls permanently.
+    if state.pending_approval.is_none()
+        && state.approval_queue.is_empty()
+        && state.pending_tool_calls.is_empty()
+        && state.pending_question.is_none()
+        && !state
+            .interrupt_flag
+            .load(std::sync::atomic::Ordering::SeqCst)
+        && !state.cancel_token.is_cancelled()
+        && stream::should_continue_loop(&state.messages)
+    {
+        tracing::info!(
+            target: "jfc::compact",
+            "agentic loop resuming after CompactionFailed — tool results pending"
+        );
+        stream::continue_agentic_loop(state, tx).await;
+    }
+}
+
+// Glue: dispatch a `CompactionEvent` to the matching handler.
+pub async fn handle_compaction_event(
+    state: &mut EngineState,
+    tx: &EventSender,
+    ev: CompactionEvent,
+) {
+    match ev {
+        CompactionEvent::Started => handle_started(state),
+        CompactionEvent::Progress { output_chars } => handle_progress(state, output_chars),
+        CompactionEvent::Done {
+            messages,
+            tool_ctx,
+            pre_tokens,
+            post_tokens,
+        } => handle_done(state, tx, messages, tool_ctx, pre_tokens, post_tokens).await,
+        CompactionEvent::Failed {
+            reason,
+            calibrated_tokens,
+            transient,
+        } => handle_failed(state, tx, reason, calibrated_tokens, transient).await,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use crate::types::Role;
+    use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
+    use std::sync::Arc;
+
+    struct TestProvider;
+
+    #[async_trait::async_trait]
+    impl Provider for TestProvider {
+        fn name(&self) -> &str {
+            "test"
+        }
+
+        fn available_models(&self) -> Vec<ModelInfo> {
+            Vec::new()
+        }
+
+        async fn stream(
+            &self,
+            _messages: Vec<ProviderMessage>,
+            _options: &StreamOptions,
+        ) -> anyhow::Result<EventStream> {
+            Ok(Box::pin(futures::stream::empty()))
+        }
+    }
+
+    impl jfc_provider::seal::Sealed for TestProvider {}
+
+    #[test]
+    fn compact_boundary_is_user_role_invariant() {
+        let b = ChatMessage::compact_boundary("s", 1);
+        assert_eq!(b.role, Role::User);
+        assert!(b.is_compact_boundary());
+    }
+
+    #[tokio::test]
+    async fn compaction_done_does_not_double_count_request_overhead_regression() {
+        let mut state = EngineState::new(Arc::new(TestProvider), "test-model");
+        state.task_store = jfc_session::TaskStore::in_memory();
+        state.last_system_prompt_len = Some(30_000);
+        let messages = vec![ChatMessage::compact_boundary(&"summary ".repeat(2_000), 1)];
+        let post_tokens = crate::compact::estimate_tokens(&messages);
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+
+        handle_done(
+            &mut state,
+            &tx,
+            messages,
+            ToolContext::default(),
+            200_000,
+            post_tokens,
+        )
+        .await;
+
+        assert_eq!(
+            state.tool_ctx.approx_tokens, post_tokens,
+            "CompactionDone should store the compacted transcript estimate; display/request accounting adds request overhead separately when needed"
+        );
+        assert_eq!(
+            crate::context_accounting::model_visible_tokens_for_display(&state),
+            post_tokens + 30_000
+        );
+    }
+}

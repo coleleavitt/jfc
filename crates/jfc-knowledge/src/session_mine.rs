@@ -1,0 +1,543 @@
+//! Stage 1 — mine the user's own session history into candidate lessons.
+//!
+//! Reads DB-backed session transcripts from the knowledge store. The mined shape is
+//! `{id, messages:[{role, parts:[{type:"tool", kind, status, input, output} |
+//! {type:"text"|"reasoning", content}]}]}` and extracts two lesson
+//! kinds, **deterministically** (no LLM):
+//!
+//! 1. **Error patterns** — a `status:"failed"` tool part followed by a later
+//!    *successful* part of the same `kind` (the "recovery window"). The
+//!    failed→succeeded pair is the **verifier**: we only record the lesson as
+//!    [`Outcome::Verified`] when the transcript proves the fix worked. An
+//!    unrecovered failure is recorded `Unverified` (lower rank) — it's a known
+//!    rough edge, not a confirmed lesson.
+//! 2. **Preferences** — a user `text` turn that *corrects* the immediately
+//!    preceding assistant turn (negation cues: "no,", "don't", "actually",
+//!    "stop", "instead").
+//!
+//! All extracted text is redacted (Stage 0) first. Lessons are project-scoped
+//! candidates keyed by a `norm_key`, so the same lesson seen across many sessions
+//! **compounds** (`support_count`) rather than duplicating. Nothing here promotes
+//! to cross-project scope directly; maintenance promotes proven generalizable
+//! rows after enough verified support.
+
+use serde::Deserialize;
+
+use crate::record::{Kind, Outcome};
+use crate::redact::redact;
+use crate::{KnowledgeStore, SessionMessage as StoredSessionMessage};
+
+/// A mined lesson, ready to be folded into the candidate store.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MinedLesson {
+    pub kind: Kind,
+    /// What triggers/contextualizes the lesson (e.g. the failing tool + message).
+    pub trigger: String,
+    /// The lesson claim (what to do / what the user prefers).
+    pub claim: String,
+    /// Verified iff backed by a failed→succeeded recovery in-transcript.
+    pub outcome: Outcome,
+    /// Normalized dedup key — identical lessons across sessions share it.
+    pub norm_key: String,
+    /// Source session id (provenance).
+    pub session_id: String,
+}
+
+#[derive(Debug, Default)]
+pub struct MineReport {
+    pub sessions_scanned: usize,
+    pub error_lessons: usize,
+    pub preference_lessons: usize,
+    pub verified: usize,
+}
+
+// ── Session JSON model (only the fields we need) ─────────────────────────────
+
+#[derive(Debug, Deserialize)]
+struct Session {
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    messages: Vec<Message>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Message {
+    #[serde(default)]
+    role: String,
+    #[serde(default)]
+    parts: Vec<Part>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Part {
+    #[serde(rename = "type", default)]
+    ptype: String,
+    // tool parts
+    #[serde(default)]
+    kind: Option<String>,
+    #[serde(default)]
+    status: Option<String>,
+    #[serde(default)]
+    output: Option<serde_json::Value>,
+    // text/reasoning parts
+    #[serde(default)]
+    content: Option<String>,
+}
+
+impl Part {
+    fn text(&self) -> Option<&str> {
+        self.content.as_deref()
+    }
+
+    fn output_text(&self) -> String {
+        match &self.output {
+            Some(serde_json::Value::String(s)) => s.clone(),
+            Some(serde_json::Value::Object(map)) => map
+                .get("content")
+                .and_then(|v| v.as_str())
+                .map(str::to_owned)
+                .unwrap_or_default(),
+            _ => String::new(),
+        }
+    }
+}
+
+/// Parse + mine a single session's raw JSON. `project_key` scopes the lessons.
+/// Returns `None` if the JSON isn't a recognizable session.
+pub fn mine_session_json(raw: &str) -> Vec<MinedLesson> {
+    let Ok(session) = serde_json::from_str::<Session>(raw) else {
+        return Vec::new();
+    };
+    let mut lessons = Vec::new();
+    mine_errors(&session, &mut lessons);
+    mine_preferences(&session, &mut lessons);
+    lessons
+}
+
+pub async fn mine_store(store: &KnowledgeStore, limit: usize) -> (Vec<MinedLesson>, MineReport) {
+    let mut lessons = Vec::new();
+    let mut report = MineReport::default();
+    let Ok(sessions) = store.list_sessions(None, limit).await else {
+        return (lessons, report);
+    };
+    for session in sessions {
+        let Ok(messages) = store.load_transcript(&session.id).await else {
+            continue;
+        };
+        if messages.is_empty() {
+            continue;
+        }
+        report.sessions_scanned += 1;
+        for lesson in mine_db_transcript(&session.id, &messages) {
+            match lesson.kind {
+                Kind::Preference => report.preference_lessons += 1,
+                _ => report.error_lessons += 1,
+            }
+            if lesson.outcome == Outcome::Verified {
+                report.verified += 1;
+            }
+            lessons.push(lesson);
+        }
+    }
+    (lessons, report)
+}
+
+fn mine_db_transcript(session_id: &str, messages: &[StoredSessionMessage]) -> Vec<MinedLesson> {
+    let raw_messages = messages
+        .iter()
+        .map(|message| {
+            let parts = message
+                .meta
+                .as_deref()
+                .and_then(|meta| serde_json::from_str::<serde_json::Value>(meta).ok())
+                .and_then(|value| value.get("parts").cloned())
+                .unwrap_or_else(|| {
+                    serde_json::json!([{
+                        "type": "text",
+                        "content": message.content.as_str(),
+                    }])
+                });
+            serde_json::json!({
+                "role": message.role,
+                "parts": parts,
+            })
+        })
+        .collect::<Vec<_>>();
+    let raw = serde_json::json!({
+        "id": session_id,
+        "messages": raw_messages,
+    });
+    serde_json::to_string(&raw)
+        .ok()
+        .map(|raw| mine_session_json(&raw))
+        .unwrap_or_default()
+}
+
+/// Error patterns: each failed tool part, verified if a later same-kind part
+/// succeeded (recovery window). Flatten parts in order so "later" is well-defined.
+fn mine_errors(session: &Session, out: &mut Vec<MinedLesson>) {
+    let parts: Vec<&Part> = session
+        .messages
+        .iter()
+        .flat_map(|m| m.parts.iter())
+        .collect();
+
+    for (i, p) in parts.iter().enumerate() {
+        if p.ptype != "tool" || p.status.as_deref() != Some("failed") {
+            continue;
+        }
+        let kind = p.kind.as_deref().unwrap_or("tool");
+        let msg_class = classify_error(&redact(&p.output_text(), true));
+        if msg_class.is_empty() {
+            continue;
+        }
+        // Recovery window: a later part of the same kind that completed.
+        let recovered = parts[i + 1..].iter().take(12).any(|q| {
+            q.ptype == "tool"
+                && q.kind.as_deref() == Some(kind)
+                && q.status.as_deref() == Some("complete")
+        });
+
+        let outcome = if recovered {
+            Outcome::Verified
+        } else {
+            Outcome::Unverified
+        };
+        let trigger = format!("{kind} failed: {msg_class}");
+        let claim = recovery_claim(kind, &msg_class, recovered);
+        let norm_key = format!("err:{}:{}", kind.to_lowercase(), msg_class.to_lowercase());
+        out.push(MinedLesson {
+            kind: Kind::Finding,
+            trigger,
+            claim,
+            outcome,
+            norm_key,
+            session_id: session.id.clone(),
+        });
+    }
+}
+
+/// Preferences: a user turn that negates the preceding assistant turn.
+fn mine_preferences(session: &Session, out: &mut Vec<MinedLesson>) {
+    for w in session.messages.windows(2) {
+        let (prev, cur) = (&w[0], &w[1]);
+        if prev.role != "assistant" || cur.role != "user" {
+            continue;
+        }
+        let Some(user_text) = cur
+            .parts
+            .iter()
+            .filter(|p| p.ptype == "text")
+            .find_map(|p| p.text())
+        else {
+            continue;
+        };
+        let trimmed = user_text.trim();
+        // Skip harness-injected scaffolding (system reminders, continuation
+        // nudges) — mining it teaches the model its own scaffolding back to
+        // itself, which dominated and polluted recall.
+        if is_harness_noise(trimmed) {
+            continue;
+        }
+        if !is_correction(trimmed) {
+            continue;
+        }
+        let redacted = redact(trimmed, false);
+        let claim = redacted.chars().take(280).collect::<String>();
+        let norm_key = format!("pref:{}", normalize_claim(&claim));
+        out.push(MinedLesson {
+            kind: Kind::Preference,
+            trigger: "user corrected the assistant".to_owned(),
+            claim,
+            // Preferences aren't verified by a recovery pair; they're observed.
+            outcome: Outcome::Unverified,
+            norm_key,
+            session_id: session.id.clone(),
+        });
+    }
+}
+
+/// Harness-injected scaffolding that must NOT be mined as a user preference.
+fn is_harness_noise(text: &str) -> bool {
+    let t = text.trim_start();
+    let lower = t.to_ascii_lowercase();
+    t.starts_with("<system-reminder")
+        || lower.contains("</system-reminder")
+        || lower.contains("[system notification")
+        || lower.contains("automated background-task")
+        || lower.starts_with("continue — do the next")
+        || lower.starts_with("continue the remaining")
+}
+
+/// Normalize a tool's error output into a stable class string for dedup.
+fn classify_error(output: &str) -> String {
+    let o = output.to_lowercase();
+    const CLASSES: &[(&str, &str)] = &[
+        ("old_string not found", "old_string-not-found"),
+        ("unknown bash task id", "unknown-background-task-id"),
+        ("no such background task", "unknown-background-task-id"),
+        ("no such file", "no-such-file"),
+        ("command not found", "command-not-found"),
+        ("permission denied", "permission-denied"),
+        ("modulenotfounderror", "module-not-found"),
+        ("cannot find", "cannot-find"),
+        ("timed out", "timeout"),
+        ("did not match", "no-match"),
+        ("expected", "parse-error"),
+    ];
+    for (needle, class) in CLASSES {
+        if o.contains(needle) {
+            return (*class).to_owned();
+        }
+    }
+    String::new()
+}
+
+fn recovery_claim(kind: &str, class: &str, recovered: bool) -> String {
+    let base = match class {
+        "old_string-not-found" => {
+            "When an Edit's old_string isn't found, re-read the exact current \
+             bytes (including indentation/line-number gutters) before retrying."
+        }
+        "no-such-file" => "Verify the path exists (and the cwd) before operating on a file.",
+        "unknown-background-task-id" => {
+            "Use only exact background task ids emitted by the shell tool; do not invent, trim, or rewrite ids before requesting output."
+        }
+        "command-not-found" => "Check the tool is installed / on PATH before invoking it.",
+        "module-not-found" => "Install/declare the dependency before importing it.",
+        "no-match" | "parse-error" => "Confirm the target text exactly before a search/replace.",
+        _ => "Recheck preconditions before retrying this operation.",
+    };
+    if recovered {
+        format!("{kind}: {base} (a later attempt succeeded in the same session.)")
+    } else {
+        format!("{kind}: {base}")
+    }
+}
+
+/// Does a user message read as a correction of the preceding assistant turn?
+fn is_correction(text: &str) -> bool {
+    let t = text.trim_start().to_lowercase();
+    const CUES: &[&str] = &[
+        "no,",
+        "no.",
+        "no ",
+        "don't",
+        "dont",
+        "do not",
+        "actually",
+        "stop",
+        "instead",
+        "that's wrong",
+        "thats wrong",
+        "incorrect",
+        "not what i",
+        "you should have",
+        "why did you",
+        "revert",
+        "undo",
+    ];
+    // Keep it tight: short-ish messages that lead with a negation cue.
+    text.len() < 400 && CUES.iter().any(|c| t.starts_with(c) || t.contains(c))
+}
+
+fn normalize_claim(s: &str) -> String {
+    s.to_lowercase()
+        .split_whitespace()
+        .take(10)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // A failed Edit later recovered by a successful Edit → one VERIFIED finding.
+    #[test]
+    fn failed_then_succeeded_edit_yields_verified_lesson_normal() {
+        let raw = r#"{
+          "id":"ses_test",
+          "messages":[
+            {"role":"assistant","parts":[
+              {"type":"tool","kind":"Edit","status":"failed","output":{"type":"text","content":"old_string not found in /home/cole/x.rs"}}
+            ]},
+            {"role":"assistant","parts":[
+              {"type":"tool","kind":"Edit","status":"complete","output":{"type":"text","content":"ok"}}
+            ]}
+          ]
+        }"#;
+        let lessons = mine_session_json(raw);
+        let errs: Vec<_> = lessons.iter().filter(|l| l.kind == Kind::Finding).collect();
+        assert_eq!(errs.len(), 1, "{lessons:?}");
+        assert_eq!(errs[0].outcome, Outcome::Verified);
+        assert_eq!(errs[0].norm_key, "err:edit:old_string-not-found");
+    }
+
+    // A failed tool with NO later recovery → an UNVERIFIED finding (not gated in).
+    #[test]
+    fn unrecovered_failure_is_unverified_robust() {
+        let raw = r#"{
+          "id":"s",
+          "messages":[{"role":"assistant","parts":[
+            {"type":"tool","kind":"Bash","status":"failed","output":{"type":"text","content":"command not found: foo"}}
+          ]}]
+        }"#;
+        let lessons = mine_session_json(raw);
+        assert_eq!(lessons.len(), 1);
+        assert_eq!(lessons[0].outcome, Outcome::Unverified);
+    }
+
+    #[test]
+    fn unknown_bash_task_id_yields_shell_id_lesson_normal() {
+        let raw = r#"{
+          "id":"s",
+          "messages":[
+            {"role":"assistant","parts":[
+              {"type":"tool","kind":"BashOutput","status":"failed","output":{"type":"text","content":"Unknown Bash task id 'bash_7f49': no such background task"}}
+            ]},
+            {"role":"assistant","parts":[
+              {"type":"tool","kind":"BashOutput","status":"complete","output":{"type":"text","content":"exit 0"}}
+            ]}
+          ]
+        }"#;
+        let lessons = mine_session_json(raw);
+
+        assert_eq!(lessons.len(), 1);
+        assert_eq!(lessons[0].outcome, Outcome::Verified);
+        assert_eq!(
+            lessons[0].norm_key,
+            "err:bashoutput:unknown-background-task-id"
+        );
+        assert!(lessons[0].claim.contains("exact background task ids"));
+    }
+
+    #[tokio::test]
+    async fn mine_store_reads_lossless_db_meta_normal() {
+        let store = KnowledgeStore::open_in_memory().await.unwrap();
+        let row = crate::SessionRow {
+            id: "ses_db".into(),
+            cwd: Some("/repo".into()),
+            model: Some("claude".into()),
+            created_at: Some("2026-01-01T00:00:00Z".into()),
+            updated_at: Some("2026-01-01T01:00:00Z".into()),
+            first_prompt: Some("debug bash output".into()),
+            title: None,
+            message_count: 2,
+        };
+        let messages = vec![
+            StoredSessionMessage {
+                seq: 0,
+                role: "assistant".into(),
+                content: "visible text alone is not enough".into(),
+                meta: Some(
+                    serde_json::json!({
+                        "role": "assistant",
+                        "parts": [{
+                            "type": "tool",
+                            "kind": "BashOutput",
+                            "status": "failed",
+                            "output": {
+                                "type": "text",
+                                "content": "Unknown Bash task id 'bash_bad': no such background task"
+                            }
+                        }]
+                    })
+                    .to_string(),
+                ),
+            },
+            StoredSessionMessage {
+                seq: 1,
+                role: "assistant".into(),
+                content: "later output succeeded".into(),
+                meta: Some(
+                    serde_json::json!({
+                        "role": "assistant",
+                        "parts": [{
+                            "type": "tool",
+                            "kind": "BashOutput",
+                            "status": "complete",
+                            "output": {
+                                "type": "text",
+                                "content": "exit 0"
+                            }
+                        }]
+                    })
+                    .to_string(),
+                ),
+            },
+        ];
+        store.replace_transcript(&row, &messages).await.unwrap();
+
+        let (lessons, report) = mine_store(&store, 10).await;
+
+        assert_eq!(report.sessions_scanned, 1);
+        assert_eq!(report.verified, 1);
+        assert_eq!(lessons.len(), 1);
+        assert_eq!(
+            lessons[0].norm_key,
+            "err:bashoutput:unknown-background-task-id"
+        );
+    }
+
+    // A user negation after an assistant turn → a preference lesson.
+    #[test]
+    fn user_correction_yields_preference_normal() {
+        let raw = r#"{
+          "id":"s",
+          "messages":[
+            {"role":"assistant","parts":[{"type":"text","content":"I'll use tabs."}]},
+            {"role":"user","parts":[{"type":"text","content":"No, always use spaces, not tabs."}]}
+          ]
+        }"#;
+        let lessons = mine_session_json(raw);
+        let prefs: Vec<_> = lessons
+            .iter()
+            .filter(|l| l.kind == Kind::Preference)
+            .collect();
+        assert_eq!(prefs.len(), 1, "{lessons:?}");
+        assert!(prefs[0].claim.to_lowercase().contains("spaces"));
+    }
+
+    // A normal (non-correcting) user reply → no preference.
+    #[test]
+    fn non_correction_user_reply_is_ignored_robust() {
+        let raw = r#"{
+          "id":"s",
+          "messages":[
+            {"role":"assistant","parts":[{"type":"text","content":"Done."}]},
+            {"role":"user","parts":[{"type":"text","content":"Great, thanks! Now add a test."}]}
+          ]
+        }"#;
+        let prefs: Vec<_> = mine_session_json(raw)
+            .into_iter()
+            .filter(|l| l.kind == Kind::Preference)
+            .collect();
+        assert!(prefs.is_empty(), "{prefs:?}");
+    }
+
+    // Secrets in tool output must be redacted before they reach a lesson.
+    #[test]
+    fn mined_lesson_text_is_redacted_regression() {
+        let raw = r#"{
+          "id":"s",
+          "messages":[{"role":"assistant","parts":[
+            {"type":"tool","kind":"Bash","status":"failed","output":{"type":"text","content":"old_string not found token=ghp_0123456789abcdefghij"}}
+          ]}]
+        }"#;
+        let lessons = mine_session_json(raw);
+        // The classifier keys off "old_string not found"; the trigger carries the
+        // redacted class, and no raw secret survives anywhere in the lesson.
+        for l in &lessons {
+            let blob = format!("{} {} {}", l.trigger, l.claim, l.norm_key);
+            assert!(!blob.contains("ghp_0123456789"), "secret leaked: {blob}");
+        }
+    }
+
+    #[test]
+    fn malformed_json_is_skipped_robust() {
+        assert!(mine_session_json("not json at all").is_empty());
+        assert!(mine_session_json("{}").is_empty());
+    }
+}

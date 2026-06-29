@@ -1,0 +1,2031 @@
+//! Engine operations — the verbs of the engine API. Each op is a pure
+//! `EngineState` mutation + event/effect emission; frontends (TUI key
+//! handlers, headless drivers, remote control) call these instead of
+//! reaching into engine internals. Carved out of `input/` as stage 4 of
+//! the jfc-engine extraction.
+
+use std::sync::Arc;
+
+use crate::app::EngineState;
+use crate::context_accounting::{
+    load_session_detected_context_limit, load_session_provider_history_archive_seen,
+    pending_turn_tokens,
+};
+use crate::runtime::EventSender;
+use crate::types::ChatMessage;
+
+/// What `submit_prompt` did with the prompt. Frontends use this to decide
+/// follow-up behavior (e.g. the TUI leaves queued prompts to the drain
+/// loop; headless treats `CompactingFirst` as "wait for the re-fire").
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SubmitOutcome {
+    /// The turn started: user message pushed, stream spawned.
+    Started,
+    /// An OnUserPromptSubmit hook vetoed the turn. Note: any staged
+    /// attachments passed in are dropped with the veto.
+    AbortedByHook,
+    /// The configured hard session budget has already been reached, so the
+    /// prompt was refused before hooks, transcript mutation, or streaming.
+    BudgetExceeded,
+    /// Context is at/over the compaction threshold — a pre-submit compaction
+    /// was spawned and the prompt will re-fire via
+    /// `ControlEvent::SubmitPrompt` once it lands.
+    CompactingFirst,
+}
+
+async fn spawn_compaction_worker(
+    state: &mut EngineState,
+    tx: &EventSender,
+    level: crate::compact::CompactLevel,
+    pending_prompt: Option<String>,
+    session_id: String,
+) {
+    let messages = state.messages.clone();
+    let provider = Arc::clone(&state.provider);
+    let model = state.model.clone();
+    let mut tool_ctx = state.tool_ctx.clone();
+    let window = state.max_context_tokens;
+    let max_output_tokens = state.max_output_tokens;
+    let tx_pre = tx.clone();
+    let is_blocked = matches!(level, crate::compact::CompactLevel::Blocked);
+    state.compacting_started_at = Some(std::time::Instant::now());
+    state.compacting_output_chars = 0;
+    state.compacting_attempt_baseline = 0;
+    state.compacting_last_progress = 0;
+    let _ = tx_pre
+        .send(crate::runtime::EngineEvent::Compaction(
+            crate::runtime::CompactionEvent::Started,
+        ))
+        .await;
+    let progress_tx = tx_pre.clone();
+    let on_progress: crate::compact::CompactProgressCb = Box::new(move |chars| {
+        let _ = progress_tx.try_send(crate::runtime::EngineEvent::Compaction(
+            crate::runtime::CompactionEvent::Progress {
+                output_chars: chars,
+            },
+        ));
+    });
+    let cancel_compact = state.cancel_token.clone();
+    tokio::spawn(async move {
+        let options = jfc_provider::StreamOptions::new(model.clone());
+        tracing::debug!(
+            target: "jfc::compact",
+            model = %model,
+            window,
+            manual = pending_prompt.is_none(),
+            "spawned compaction task"
+        );
+        crate::hooks::fire(
+            crate::hooks::HookPoint::BeforeCompact,
+            &crate::hooks::HookContext::for_session(&session_id),
+        );
+        let result = tokio::select! {
+            biased;
+            _ = cancel_compact.cancelled() => {
+                tracing::info!(
+                    target: "jfc::compact",
+                    "compaction cancelled via token"
+                );
+                let _ = tx_pre
+                    .send(crate::runtime::EngineEvent::Compaction(
+                        crate::runtime::CompactionEvent::Failed {
+                            reason: "Compaction cancelled by user".into(),
+                            calibrated_tokens: None,
+                            transient: true,
+                        },
+                    ))
+                    .await;
+                return;
+            }
+            r = crate::compact::compact(
+                &messages,
+                provider.as_ref(),
+                &options,
+                &mut tool_ctx,
+                window,
+                max_output_tokens,
+                Some(on_progress),
+            ) => r,
+        };
+        match result {
+            crate::compact::CompactResult::Success {
+                messages,
+                pre_tokens,
+                post_tokens,
+            } => {
+                tracing::info!(
+                    target: "jfc::compact",
+                    pre_tokens, post_tokens,
+                    saved = pre_tokens.saturating_sub(post_tokens),
+                    resume_prompt = pending_prompt.is_some(),
+                    "compaction succeeded"
+                );
+                let _ = tx_pre
+                    .send(crate::runtime::EngineEvent::Compaction(
+                        crate::runtime::CompactionEvent::Done {
+                            messages,
+                            tool_ctx,
+                            pre_tokens,
+                            post_tokens,
+                        },
+                    ))
+                    .await;
+                if let Some(user_text) = pending_prompt {
+                    let _ = tx_pre
+                        .send(crate::runtime::EngineEvent::Control(
+                            crate::runtime::ControlEvent::SubmitPrompt(user_text),
+                        ))
+                        .await;
+                }
+            }
+            crate::compact::CompactResult::CircuitBreakerTripped => {
+                tracing::warn!(target: "jfc::compact", "compaction: circuit breaker tripped");
+                let _ = tx_pre
+                    .send(crate::runtime::EngineEvent::Compaction(
+                        crate::runtime::CompactionEvent::Failed {
+                            reason:
+                                "Circuit breaker tripped — submit again with `/compact` if needed"
+                                    .into(),
+                            calibrated_tokens: None,
+                            transient: false,
+                        },
+                    ))
+                    .await;
+            }
+            crate::compact::CompactResult::Exhausted { attempts } => {
+                tracing::warn!(
+                    target: "jfc::compact",
+                    attempts,
+                    "compaction exhausted all attempts"
+                );
+                let _ = tx_pre
+                    .send(crate::runtime::EngineEvent::Compaction(
+                        crate::runtime::CompactionEvent::Failed {
+                            reason: format!(
+                                "Exhausted {attempts} compaction attempts — request is too large"
+                            ),
+                            calibrated_tokens: Some(tool_ctx.approx_tokens),
+                            transient: false,
+                        },
+                    ))
+                    .await;
+            }
+            crate::compact::CompactResult::TooFewGroups => {
+                tracing::debug!(target: "jfc::compact", "compaction skipped: too few groups");
+                if let Some(user_text) = pending_prompt {
+                    let _ = tx_pre
+                        .send(crate::runtime::EngineEvent::Control(
+                            crate::runtime::ControlEvent::SubmitPrompt(user_text),
+                        ))
+                        .await;
+                } else {
+                    let _ = tx_pre
+                        .send(crate::runtime::EngineEvent::Compaction(
+                            crate::runtime::CompactionEvent::Failed {
+                                reason: "Too little conversation to compact yet".into(),
+                                calibrated_tokens: Some(tool_ctx.approx_tokens),
+                                transient: true,
+                            },
+                        ))
+                        .await;
+                }
+            }
+            crate::compact::CompactResult::Unsupported => {
+                if is_blocked {
+                    tracing::warn!(
+                        target: "jfc::compact",
+                        "compaction unsupported and context is Blocked — cannot proceed"
+                    );
+                    let _ = tx_pre
+                        .send(crate::runtime::EngineEvent::Compaction(
+                            crate::runtime::CompactionEvent::Failed {
+                                reason: "Context exceeds limit and provider cannot compact — \
+                         try switching to a model/provider that supports compaction, \
+                         or start a new session."
+                                    .into(),
+                                calibrated_tokens: Some(tool_ctx.approx_tokens),
+                                transient: false,
+                            },
+                        ))
+                        .await;
+                } else if let Some(user_text) = pending_prompt {
+                    tracing::debug!(
+                        target: "jfc::compact",
+                        "pre-submit compaction unsupported — submitting anyway"
+                    );
+                    let _ = tx_pre
+                        .send(crate::runtime::EngineEvent::Control(
+                            crate::runtime::ControlEvent::SubmitPrompt(user_text),
+                        ))
+                        .await;
+                } else {
+                    tracing::warn!(target: "jfc::compact", "manual compaction unsupported");
+                    let _ = tx_pre
+                        .send(crate::runtime::EngineEvent::Compaction(
+                            crate::runtime::CompactionEvent::Failed {
+                                reason: "Provider does not support compaction for this model"
+                                    .into(),
+                                calibrated_tokens: Some(tool_ctx.approx_tokens),
+                                transient: false,
+                            },
+                        ))
+                        .await;
+                }
+            }
+        }
+        crate::hooks::fire(
+            crate::hooks::HookPoint::AfterCompact,
+            &crate::hooks::HookContext::for_session(&session_id),
+        );
+    });
+}
+
+pub async fn start_manual_compaction(state: &mut EngineState, tx: &EventSender) -> bool {
+    if state.is_streaming || state.pipeline_busy_for_submit() {
+        state.force_compact_pending = true;
+        crate::toast::push_with_cap(
+            &mut state.toasts,
+            crate::toast::Toast::new(
+                crate::toast::ToastKind::Warning,
+                "Compaction will start after the current turn finishes",
+            ),
+        );
+        return false;
+    }
+
+    let est = crate::context_accounting::model_visible_tokens_for_display(state);
+    let level = crate::compact::compact_level_with_output(
+        est,
+        state.max_context_tokens,
+        state.max_output_tokens,
+    );
+    tracing::info!(
+        target: "jfc::compact",
+        est,
+        max_context_tokens = state.max_context_tokens,
+        level = ?level,
+        model = %state.model,
+        "manual compaction starting immediately"
+    );
+    state.force_compact_pending = false;
+    state.compact_suppressed = false;
+    crate::toast::push_with_cap(
+        &mut state.toasts,
+        crate::toast::Toast::new(
+            crate::toast::ToastKind::Info,
+            format!("Compacting now — current estimate {est} tokens"),
+        ),
+    );
+    let session_id = state
+        .current_session_id
+        .as_ref()
+        .map(|s| s.as_str().to_owned())
+        .unwrap_or_else(|| "<no-session>".to_owned());
+    spawn_compaction_worker(state, tx, level, None, session_id).await;
+    true
+}
+
+fn current_budget_cap_excess(state: &EngineState) -> Option<(f64, f64)> {
+    let cap = state
+        .max_budget_usd
+        .filter(|cap| cap.is_finite() && *cap > 0.0)?;
+    let spent = crate::cost::total_cost(&state.usage_by_model);
+    (spent >= cap).then_some((spent, cap))
+}
+
+pub fn refuse_budget_cap_if_reached(state: &mut EngineState) -> bool {
+    let Some((spent, cap)) = current_budget_cap_excess(state) else {
+        return false;
+    };
+    tracing::warn!(
+        target: "jfc::cost",
+        spent,
+        cap,
+        "refusing submit: max_budget_usd reached"
+    );
+    crate::toast::push_with_cap(
+        &mut state.toasts,
+        crate::toast::Toast::new(
+            crate::toast::ToastKind::Error,
+            format!(
+                "Budget cap reached: spent {} of {}. Start a new session or raise --max-budget-usd to continue.",
+                crate::cost::fmt_cost(spent),
+                crate::cost::fmt_cost(cap),
+            ),
+        ),
+    );
+    true
+}
+
+/// Interrupt the current turn: cancel the stream, abort in-flight tools,
+/// deny pending approvals, kill bash subprocesses. The engine half of the
+/// TUI's Esc handling and the whole of remote/headless interrupt.
+pub fn interrupt(state: &mut EngineState, tx: &EventSender) {
+    let already_requested = state.cancel_token.is_cancelled()
+        || state
+            .interrupt_flag
+            .load(std::sync::atomic::Ordering::SeqCst);
+
+    let old_cancel = state.cancel_token.clone();
+    state
+        .interrupt_flag
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    old_cancel.cancel();
+    state.cancel_token = tokio_util::sync::CancellationToken::new();
+
+    if let Some(handle) = state.active_stream_handle.take() {
+        handle.abort();
+    }
+
+    let denied_approvals = crate::runtime::approvals::deny_pending_and_queued(state, tx);
+
+    if state.goal_evaluator_in_flight {
+        tracing::info!(
+            target: "jfc::input::abort",
+            "marking in-flight goal evaluator cancelled"
+        );
+        crate::runtime::cancel_goal_evaluator(state);
+    }
+
+    // Zero the in-flight auto-mode classifier counter. Each classifier task
+    // races the (now-cancelled) cancel token and returns WITHOUT emitting a
+    // ClassifierDecision, so `pending_classifications` is never decremented —
+    // it would otherwise stay > 0 forever, wedging `pipeline_busy_for_submit`
+    // true so every later submit gets queued behind a turn that will never run
+    // (the "queue a message after cancelling and it never fires" bug). The
+    // aborted stream's StreamEvent::Error resets the rest of the pipeline; this
+    // counter has no such self-clearing event.
+    if state.pending_classifications > 0 {
+        tracing::info!(
+            target: "jfc::input::abort",
+            pending = state.pending_classifications,
+            "zeroing in-flight classifier counter on interrupt"
+        );
+        state.pending_classifications = 0;
+    }
+
+    let killed = crate::bash_processes::terminate_all();
+    if killed > 0 {
+        tracing::info!(
+            target: "jfc::input::abort",
+            killed,
+            "SIGTERMed in-flight bash subprocesses"
+        );
+    }
+
+    if !state.has_interruptible_work() {
+        state
+            .interrupt_flag
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    if already_requested {
+        tracing::debug!(
+            target: "jfc::input::abort",
+            denied_approvals,
+            "interrupt request ignored because cancellation is already in progress"
+        );
+        return;
+    }
+
+    // Fire UserInterrupt hook so external scripts can react (notifications,
+    // audit logging, etc.). Best-effort: must never block the interrupt path.
+    crate::hooks::fire_async(
+        crate::hooks::HookPoint::OnUserInterrupt,
+        &crate::hooks::HookContext::for_session(
+            state
+                .current_session_id
+                .as_ref()
+                .map(|s| s.as_str())
+                .unwrap_or("<no-session>"),
+        )
+        .with_extra("reason", "ctrl_c")
+        .with_extra("denied_approvals", denied_approvals.to_string()),
+    );
+
+    crate::toast::push_with_cap(
+        &mut state.toasts,
+        crate::toast::Toast::new(
+            crate::toast::ToastKind::Warning,
+            if killed > 0 {
+                format!(
+                    "⏹ Interrupted (killed {killed} process{})",
+                    if killed == 1 { "" } else { "es" }
+                )
+            } else {
+                "⏹ Interrupted".to_owned()
+            },
+        ),
+    );
+}
+
+/// Load a session by id: read the transcript from disk, switch the engine
+/// session (task store, per-session state), and reset streaming state.
+/// View-side resets ride on the `SessionSwitched` effect.
+pub async fn load_session(state: &mut EngineState, session_id: crate::ids::SessionId) {
+    tracing::info!(
+        target: "jfc::session_picker",
+        session_id = %session_id,
+        "LoadSession: fetching messages"
+    );
+    match crate::session::load_session(&session_id).await {
+        Some(messages) => {
+            state.messages = messages;
+            let id_for_toast = session_id.clone();
+            state.switch_session(Some(session_id));
+            restore_session_context_state(state, id_for_toast.as_str()).await;
+            state.streaming_text.clear();
+            state.streaming_reasoning.clear();
+            state.streaming_response_bytes = 0;
+            state.streaming_response_baseline = 0;
+            state.streaming_thinking_tokens = 0;
+            state.token_rate_samples.clear();
+            state.token_rate_sample_thinking = None;
+            state.streaming_assistant_idx = None;
+            state.clear_active_stream_scope();
+            state.push_effect(crate::app::EngineEffect::SessionSwitched);
+            state.push_effect(crate::app::EngineEffect::ScrollToBottom);
+            crate::toast::push_with_cap(
+                &mut state.toasts,
+                crate::toast::Toast::new(
+                    crate::toast::ToastKind::Success,
+                    format!("Loaded session {id_for_toast}"),
+                ),
+            );
+        }
+        None => {
+            crate::toast::push_with_cap(
+                &mut state.toasts,
+                crate::toast::Toast::new(
+                    crate::toast::ToastKind::Error,
+                    format!("Failed to load session {session_id}"),
+                ),
+            );
+        }
+    }
+}
+
+pub(crate) async fn restore_session_context_state(state: &mut EngineState, session_id: &str) {
+    restore_detected_context_limit(state, session_id).await;
+    let typed_session_id = crate::ids::SessionId::new(session_id);
+    state.context_reduction_queue =
+        crate::session::load_context_reduction_queue(&typed_session_id).await;
+    match load_session_provider_history_archive_seen(session_id).await {
+        Ok(seen) => {
+            let count = seen.len();
+            state.provider_history_archive_seen = seen;
+            if count > 0 {
+                tracing::info!(
+                    target: "jfc::stream::provider_history",
+                    session_id,
+                    count,
+                    "restored persisted provider-history archive recall ledger"
+                );
+            }
+        }
+        Err(err) => {
+            tracing::warn!(
+                target: "jfc::stream::provider_history",
+                session_id,
+                error = %err,
+                "failed to restore provider-history archive recall ledger"
+            );
+        }
+    }
+}
+
+async fn restore_detected_context_limit(state: &mut EngineState, session_id: &str) {
+    if let Some(detected) =
+        load_session_detected_context_limit(session_id, state.model.as_str()).await
+    {
+        let changed = state.record_detected_context_limit(detected);
+        tracing::info!(
+            target: "jfc::stream::budget",
+            session_id,
+            model = %state.model,
+            limit_tokens = detected.limit_tokens,
+            actual_tokens = ?detected.actual_tokens,
+            changed = changed.is_some(),
+            "restored persisted detected context limit"
+        );
+    }
+}
+
+/// Submit a user prompt: fire hooks, resolve @-mentions, (optionally)
+/// rewrite history for an edit-resubmit, run the pre-submit compaction
+/// gate, push the user message + reminders, reset per-turn state, persist
+/// the session, and spawn the stream. The frontend half (textarea drain,
+/// paste-chip expansion, pasted-image extraction, slash routing) happens
+/// before this is called; `attachments` carries whatever the frontend
+/// staged for this turn.
+/// Whether to *infer* an interaction mode from the prompt when the user hasn't
+/// set one explicitly via `/mode`. Off by default so the lexical projection only
+/// engages for users who opt in (`JFC_INTERACTION_MODE_INFER=1`); an explicit
+/// `/mode` toggle works regardless of this flag.
+fn interaction_mode_inference_enabled() -> bool {
+    matches!(
+        std::env::var("JFC_INTERACTION_MODE_INFER").as_deref(),
+        Ok("1") | Ok("true") | Ok("on") | Ok("yes")
+    )
+}
+
+pub async fn submit_prompt(
+    state: &mut EngineState,
+    tx: &EventSender,
+    text: String,
+    attachments: Vec<crate::attachments::Attachment>,
+    edit_at: Option<usize>,
+) -> anyhow::Result<SubmitOutcome> {
+    let _ls = linkscope::phase("turn.submit");
+    let _linkscope_submit_trace = linkscope::trace_fields(
+        "turn.submit",
+        [
+            linkscope::TraceField::bytes("prompt_bytes", usize_to_u64_saturating(text.len())),
+            linkscope::TraceField::count("attachments", usize_to_u64_saturating(attachments.len())),
+            linkscope::TraceField::count("messages", usize_to_u64_saturating(state.messages.len())),
+        ],
+    );
+    linkscope::record_bytes("turn.prompt", usize_to_u64_saturating(text.len()));
+    tracing::debug!(
+        target: "jfc::submit",
+        "submit_prompt TOP: msgs={} budget_reached={}",
+        state.messages.len(),
+        refuse_budget_cap_if_reached(state)
+    );
+    if refuse_budget_cap_if_reached(state) {
+        return Ok(SubmitOutcome::BudgetExceeded);
+    }
+
+    // Resolve the interaction mode for THIS user turn (Junie-style behavioral
+    // mode). Done once here — not per continuation — so a multi-step tool loop
+    // inherits the user turn's mode and can't re-mode itself. An explicit
+    // `/mode` toggle always wins; otherwise inference is gated off by default
+    // (`JFC_INTERACTION_MODE_INFER=1` opt-in), so with neither the result is
+    // `Code` and request assembly is byte-identical to before.
+    state.active_interaction_mode = crate::interaction_mode::InteractionMode::resolve(
+        state.interaction_mode,
+        crate::slate::QueryClass::from_query(&text),
+        interaction_mode_inference_enabled(),
+    );
+
+    // v132 OnUserPromptSubmit hook — fires before any compaction or
+    // stream setup so a registered handler can inject system reminders,
+    // veto the turn, or rewrite the text. Default registry has only
+    // a Logger so production behavior is unchanged when no user hooks
+    // are configured.
+    let session_id_for_hook = state
+        .current_session_id
+        .as_ref()
+        .map(|s| s.as_str().to_owned())
+        .unwrap_or_else(|| "<no-session>".to_owned());
+
+    // CC 2.1.167 Setup hook — fires once, before the very first model turn.
+    // Any shell hook registered on "Setup" can inject additional context into
+    // the session. We fire it here (fire-and-forget) so it runs before the
+    // OnUserPromptSubmit gate that can abort the turn.
+    if state.messages.is_empty() {
+        crate::hooks::fire_async(
+            crate::hooks::HookPoint::OnSetup,
+            &crate::hooks::HookContext::for_session(&session_id_for_hook),
+        );
+        tracing::debug!(
+            target: "jfc::hooks",
+            session_id = %session_id_for_hook,
+            "fired OnSetup hook (first turn)"
+        );
+    }
+
+    let hook_input_tokens: u64 = state.usage_by_model.values().map(|u| u.input_tokens).sum();
+    let hook_output_tokens: u64 = state.usage_by_model.values().map(|u| u.output_tokens).sum();
+    let hook_cost_usd = crate::cost::total_cost(&state.usage_by_model);
+    let hook_action = crate::hooks::fire(
+        crate::hooks::HookPoint::OnUserPromptSubmit,
+        &crate::hooks::HookContext::for_session(&session_id_for_hook)
+            .with_extra("text_len", text.len().to_string())
+            .with_extra("session_input_tokens", hook_input_tokens.to_string())
+            .with_extra("session_output_tokens", hook_output_tokens.to_string())
+            .with_extra("session_cost_usd", format!("{hook_cost_usd:.6}")),
+    );
+    if let crate::hooks::HookAction::Abort(reason) = &hook_action {
+        tracing::warn!(target: "jfc::hooks", %reason, "OnUserPromptSubmit aborted turn");
+        let _ = tx
+            .send(crate::runtime::EngineEvent::Control(
+                crate::runtime::ControlEvent::Notice {
+                    kind: crate::toast::ToastKind::Error,
+                    text: format!("Turn aborted by hook: {reason}"),
+                },
+            ))
+            .await;
+        return Ok(SubmitOutcome::AbortedByHook);
+    }
+
+    // Prompt rewriting is intentionally not a pre-submit gate. User prompts
+    // should enter the transcript and be sent normally; the configured
+    // prompt-rewrite model is used later by the response-side refusal recovery
+    // path when the provider actually refuses, or when the classifier judges
+    // the response as a likely refusal. This avoids blocking Enter on a model
+    // call and avoids asking for approval before there is a concrete refusal.
+
+    // v132 @-mention auto-attach: scan the prompt for `@path/to/file`
+    // tokens. If the path resolves to a real file, read it and stage
+    // it as an attachment so the model sees the content alongside the
+    // user's text. URLs (containing `://`) are skipped — those are
+    // user-supplied references, not local paths.
+    //
+    // Text @-mentions: collect reminder bodies; inject after the new
+    // user message is pushed so they land on the correct turn.
+    // Binary @-mentions: collect locally; attach to the user message
+    // after it's pushed — per-message ownership, no global queue.
+    let mut deferred_text_reminders: Vec<String> = Vec::new();
+    let mut mention_attachments: Vec<crate::attachments::Attachment> = Vec::new();
+    {
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for token in text.split_whitespace() {
+            // Strip surrounding punctuation: `(@src/foo.rs)` → `src/foo.rs`.
+            let stripped = token.trim_matches(|c: char| {
+                !c.is_alphanumeric() && c != '/' && c != '.' && c != '_' && c != '-' && c != '@'
+            });
+            let Some(rest) = stripped.strip_prefix('@') else {
+                continue;
+            };
+            if rest.is_empty() || rest.contains("://") {
+                continue;
+            }
+            if seen.contains(rest) {
+                continue;
+            }
+            let path = std::path::PathBuf::from(rest);
+            if !path.is_file() {
+                continue;
+            }
+            let Ok(meta) = path.metadata() else {
+                continue;
+            };
+            // Cap at 1 MB so a runaway @ doesn't OOM the prompt.
+            if meta.len() > 1_000_000 {
+                tracing::debug!(
+                    target: "jfc::input::mention",
+                    path = %path.display(),
+                    bytes = meta.len(),
+                    "@-mention skipped (file too large)"
+                );
+                continue;
+            }
+            // Image/PDF: stage as binary attachment via the existing
+            // attachments path. Text: just nudge via system reminder
+            // (the model can Read it itself if needed; auto-Read'ing
+            // would burn tokens on every @ even when the user didn't
+            // mean "show me this file").
+            let bytes = match std::fs::read(&path) {
+                Ok(b) => b,
+                Err(_) => continue,
+            };
+            if let Some(kind) = crate::attachments::detect_kind(&bytes) {
+                let att = crate::attachments::Attachment { id: 0, kind, bytes };
+                mention_attachments.push(att);
+                tracing::info!(
+                    target: "jfc::input::mention",
+                    path = %path.display(),
+                    "@-mention auto-attached image/pdf"
+                );
+            } else if let Ok(content) = String::from_utf8(bytes) {
+                let preview: String = content.chars().take(50_000).collect();
+                deferred_text_reminders.push(format!(
+                    "User mentioned `@{rest}` — content of `{}` follows:\n\n```\n{preview}\n```",
+                    path.display()
+                ));
+                tracing::info!(
+                    target: "jfc::input::mention",
+                    path = %path.display(),
+                    bytes = preview.len(),
+                    "@-mention queued text reminder"
+                );
+            }
+            seen.insert(rest.to_owned());
+        }
+    }
+
+    // Pre-submit compaction gate (mirrors v126 `Du7` running before the API
+    // call rather than only after tool batches). Without this, a long
+    // text-only assistant reply pushes the context past 200K — by the time
+    // the next user message arrives, the conversation already exceeds the
+    // hard limit and the provider returns 400 prompt_too_long. v126 cli.js
+    // line 382476 shows the same pre-submit check returning a "blocking_limit"
+    // result before queryDirect ever fires.
+    //
+    // Use `tool_ctx.approx_tokens` (the calibrated wire-truth) as the baseline,
+    // then add the pending user text. The prompt is not pushed yet, but it is
+    // part of the request we're about to send; ignoring it makes huge pastes
+    // skip this gate and fall through to provider-side prompt_too_long.
+    let pending_prompt_tokens =
+        pending_turn_tokens(text.clone(), &attachments, &mention_attachments);
+    let mut est =
+        crate::context_accounting::model_visible_tokens_for_request(state, pending_prompt_tokens);
+    let mut level = crate::compact::compact_level_with_output(
+        est,
+        state.max_context_tokens,
+        state.max_output_tokens,
+    );
+    if !state.force_compact_pending {
+        let saved_tokens = crate::compact::microcompact_if_helpful(
+            &mut state.messages,
+            &mut state.tool_ctx.approx_tokens,
+            level,
+        );
+        if saved_tokens > 0 {
+            est = crate::context_accounting::model_visible_tokens_for_request(
+                state,
+                pending_prompt_tokens,
+            );
+            level = crate::compact::compact_level_with_output(
+                est,
+                state.max_context_tokens,
+                state.max_output_tokens,
+            );
+            tracing::info!(
+                target: "jfc::compact::micro",
+                saved_tokens,
+                new_est = est,
+                new_level = ?level,
+                "pre-submit microcompaction applied"
+            );
+        }
+    }
+    let want_compact = matches!(
+        level,
+        crate::compact::CompactLevel::Compact | crate::compact::CompactLevel::Blocked
+    ) || state.force_compact_pending;
+    tracing::debug!(
+        target: "jfc::submit",
+        "submit_prompt: est={est} max_ctx={} max_out={:?} level={level:?} want_compact={want_compact} compact_suppressed={} msgs={}",
+        state.max_context_tokens, state.max_output_tokens, state.compact_suppressed, state.messages.len()
+    );
+    // Respect the suppression flag set by the post-response compact
+    // path. Once compaction has permanently failed (provider doesn't
+    // support it, breaker latched, retries exhausted), retrying on
+    // every user message just re-fires the failing API call and
+    // re-warns. The user clears it manually via /compact, which sets
+    // `force_compact_pending` and bypasses this guard.
+    if want_compact && state.compact_suppressed && !state.force_compact_pending {
+        tracing::debug!(
+            target: "jfc::compact",
+            est, level = ?level,
+            "pre-submit compact skipped — compact_suppressed latched"
+        );
+    } else if want_compact {
+        let manual = std::mem::take(&mut state.force_compact_pending);
+        tracing::info!(
+            target: "jfc::compact",
+            est, level = ?level, manual,
+            pending_prompt_tokens,
+            model = %state.model,
+            max_context_tokens = state.max_context_tokens,
+            message_count = state.messages.len(),
+            rapid_refill_count = state.tool_ctx.rapid_refill_count,
+            "pre-submit compact triggered"
+        );
+        let messages = state.messages.clone();
+        let provider = Arc::clone(&state.provider);
+        let model = state.model.clone();
+        let mut tool_ctx = state.tool_ctx.clone();
+        let window = state.max_context_tokens;
+        let max_output_tokens = state.max_output_tokens;
+        let tx_pre = tx.clone();
+        let user_text = text.clone();
+        let user_attachments = attachments.clone();
+        let user_edit_at = edit_at;
+        let is_blocked = matches!(level, crate::compact::CompactLevel::Blocked);
+        let session_id_for_compact = session_id_for_hook.clone();
+        state.compacting_started_at = Some(std::time::Instant::now());
+        state.compacting_output_chars = 0;
+        state.compacting_attempt_baseline = 0;
+        state.compacting_last_progress = 0;
+        let _ = tx_pre
+            .send(crate::runtime::EngineEvent::Compaction(
+                crate::runtime::CompactionEvent::Started,
+            ))
+            .await;
+        // Progress callback fires on every text_delta from the streaming
+        // compact, forwards the cumulative output length as a
+        // CompactionProgress event so the spinner shows live token
+        // count. Mirrors v126's `addResponseLength` callback in PB7.
+        let progress_tx = tx_pre.clone();
+        let on_progress: crate::compact::CompactProgressCb = Box::new(move |chars| {
+            // CompactionProgress is non-critical; next progress update supersedes.
+            let _ = progress_tx.try_send(crate::runtime::EngineEvent::Compaction(
+                crate::runtime::CompactionEvent::Progress {
+                    output_chars: chars,
+                },
+            ));
+        });
+        let cancel_compact = state.cancel_token.clone();
+        tokio::spawn(async move {
+            let options = jfc_provider::StreamOptions::new(model.clone());
+            tracing::debug!(
+                target: "jfc::compact",
+                model = %model,
+                window,
+                "spawned pre-submit compaction task"
+            );
+            // Fire BeforeCompact hook
+            crate::hooks::fire(
+                crate::hooks::HookPoint::BeforeCompact,
+                &crate::hooks::HookContext::for_session(&session_id_for_compact),
+            );
+            let result = tokio::select! {
+                biased;
+                _ = cancel_compact.cancelled() => {
+                    tracing::info!(
+                        target: "jfc::compact",
+                        "pre-submit compaction cancelled via token"
+                    );
+                    let _ = tx_pre
+                        .send(crate::runtime::EngineEvent::Compaction(
+                            crate::runtime::CompactionEvent::Failed {
+                                reason: "Compaction cancelled by user".into(),
+                                calibrated_tokens: None,
+                                transient: true,
+                            },
+                        ))
+                        .await;
+                    return;
+                }
+                r = crate::compact::compact(
+                    &messages,
+                    provider.as_ref(),
+                    &options,
+                    &mut tool_ctx,
+                    window,
+                    max_output_tokens,
+                    Some(on_progress),
+                ) => r,
+            };
+            match result {
+                crate::compact::CompactResult::Success {
+                    messages,
+                    pre_tokens,
+                    post_tokens,
+                } => {
+                    tracing::info!(
+                        target: "jfc::compact",
+                        pre_tokens, post_tokens,
+                        saved = pre_tokens.saturating_sub(post_tokens),
+                        "pre-submit compaction succeeded — re-queuing user message"
+                    );
+                    let _ = tx_pre
+                        .send(crate::runtime::EngineEvent::Compaction(
+                            crate::runtime::CompactionEvent::Done {
+                                messages,
+                                tool_ctx,
+                                pre_tokens,
+                                post_tokens,
+                            },
+                        ))
+                        .await;
+                    // Re-queue the user's message — it didn't make it into
+                    // the conversation before compaction ran.
+                    let _ = tx_pre
+                        .send(crate::runtime::EngineEvent::Control(
+                            crate::runtime::ControlEvent::SubmitPromptWithState(
+                                crate::runtime::PromptSubmission {
+                                    text: user_text,
+                                    attachments: user_attachments,
+                                    edit_at: user_edit_at,
+                                },
+                            ),
+                        ))
+                        .await;
+                }
+                crate::compact::CompactResult::CircuitBreakerTripped => {
+                    tracing::warn!(
+                        target: "jfc::compact",
+                        "pre-submit compaction: circuit breaker tripped"
+                    );
+                    let _ = tx_pre
+                        .send(crate::runtime::EngineEvent::Compaction(
+                            crate::runtime::CompactionEvent::Failed {
+                                reason: "Circuit breaker tripped — submit again with `/compact` if needed"
+                                    .into(),
+                                calibrated_tokens: None,
+                                transient: false,
+                            },
+                        ))
+                        .await;
+                }
+                crate::compact::CompactResult::Exhausted { attempts } => {
+                    tracing::warn!(
+                        target: "jfc::compact",
+                        attempts,
+                        "pre-submit compaction exhausted all attempts"
+                    );
+                    let _ = tx_pre
+                        .send(crate::runtime::EngineEvent::Compaction(
+                            crate::runtime::CompactionEvent::Failed {
+                                reason: format!(
+                                "Exhausted {attempts} compaction attempts — request is too large"
+                            ),
+                                calibrated_tokens: Some(tool_ctx.approx_tokens),
+                                transient: false,
+                            },
+                        ))
+                        .await;
+                }
+                _ => {
+                    // Unsupported / TooFewGroups: provider can't compact.
+                    // If we were merely at Compact level, submit anyway and
+                    // let the API handle it. But if Blocked, don't re-submit
+                    // (that would re-enter the compaction gate and loop forever).
+                    if is_blocked {
+                        tracing::warn!(
+                            target: "jfc::compact",
+                            "pre-submit compaction unsupported and context is Blocked — cannot proceed"
+                        );
+                        let _ = tx_pre
+                            .send(crate::runtime::EngineEvent::Compaction(
+                                crate::runtime::CompactionEvent::Failed {
+                                    reason: "Context exceeds limit and provider cannot compact — \
+                             try switching to a model/provider that supports compaction, \
+                             or start a new session."
+                                        .into(),
+                                    calibrated_tokens: Some(tool_ctx.approx_tokens),
+                                    transient: false,
+                                },
+                            ))
+                            .await;
+                    } else {
+                        tracing::debug!(
+                            target: "jfc::compact",
+                            "pre-submit compaction skipped (unsupported/too few groups) — submitting anyway"
+                        );
+                        let _ = tx_pre
+                            .send(crate::runtime::EngineEvent::Control(
+                                crate::runtime::ControlEvent::SubmitPromptWithState(
+                                    crate::runtime::PromptSubmission {
+                                        text: user_text,
+                                        attachments: user_attachments,
+                                        edit_at: user_edit_at,
+                                    },
+                                ),
+                            ))
+                            .await;
+                    }
+                }
+            }
+            // Fire AfterCompact hook
+            crate::hooks::fire(
+                crate::hooks::HookPoint::AfterCompact,
+                &crate::hooks::HookContext::for_session(&session_id_for_compact),
+            );
+        });
+        return Ok(SubmitOutcome::CompactingFirst);
+    }
+
+    // Edit mode is applied only after the compaction gate has decided the turn
+    // can proceed without first replacing history. If compaction is needed and
+    // then fails/cancels, the live transcript is still intact.
+    if let Some(edit_idx) = edit_at {
+        if edit_idx < state.messages.len() {
+            tracing::info!(
+                target: "jfc::input",
+                edit_idx,
+                kept = edit_idx,
+                dropped = state.messages.len() - edit_idx,
+                "edit-resubmit: rewriting history"
+            );
+            state.messages.truncate(edit_idx);
+        }
+        state.streaming_text.clear();
+        state.streaming_reasoning.clear();
+        state.streaming_response_bytes = 0;
+        state.streaming_response_baseline = 0;
+        state.streaming_thinking_tokens = 0;
+        state.token_rate_samples.clear();
+        state.token_rate_sample_thinking = None;
+        state.turn_output_tokens = 0;
+        state.refusal_fallback_attempted = false;
+        state.refusal_resend_count = 0;
+        state.refusal_rewrite_retry_count = 0;
+        state.refusal_rewrite_attempts.clear();
+        state.streaming_assistant_idx = None;
+        state.clear_active_stream_scope();
+    }
+
+    // Keyword scan: detect and strip magic keywords (e.g. "ultrawork")
+    // from the user's input before it becomes a message. The stripped
+    // text is what gets stored in the conversation; the keyword's effect
+    // is delivered via a system-reminder injected after the message push.
+    let keyword_result = crate::keywords::scan_and_strip(&text);
+    let any_keyword = keyword_result.ultrawork
+        || keyword_result.ultracode
+        || keyword_result.ultrathink
+        || keyword_result.explore
+        || keyword_result.turn_effort.is_some();
+    let display_text = if any_keyword {
+        tracing::info!(
+            target: "jfc::keywords",
+            ultrawork = keyword_result.ultrawork,
+            ultracode = keyword_result.ultracode,
+            ultrathink = keyword_result.ultrathink,
+            explore = keyword_result.explore,
+            "detected turn keyword — stripping and injecting reminder"
+        );
+        keyword_result.text.clone()
+    } else {
+        text.clone()
+    };
+
+    // The `ultracode` keyword turns on the standing session mode (xhigh +
+    // workflow-by-default). Once on it persists across turns until `/effort`
+    // clears it; the reminder below is injected every turn while active.
+    if keyword_result.ultracode && !state.effort_state.is_ultracode() {
+        state.effort_state.set_ultracode();
+    }
+
+    // `//effort <level>` sets a one-shot per-turn effort override that wins over
+    // the session pin for this request only, then reverts.
+    if let Some(level) = keyword_result.turn_effort {
+        crate::effort::set_turn_effort(Some(level));
+        tracing::info!(
+            target: "jfc::keywords",
+            effort = %level,
+            "per-turn effort override set via //effort marker"
+        );
+    }
+
+    // Combine pasted images ([Image #N] refs) with @-mention binary files.
+    let mut all_attachments = attachments;
+    all_attachments.extend(mention_attachments);
+    let attachment_count = all_attachments.len();
+    let mission_route = jfc_core::MissionRouter::route_prompt(&display_text, attachment_count);
+    let seeded_mission_task_id =
+        super::mission::seed_mission_task(&state.task_store, &mission_route, &display_text);
+    let mission_route_reminder = mission_route.should_inject_turn_reminder().then(|| {
+        let mut reminder = mission_route.turn_reminder();
+        if let Some(task_id) = seeded_mission_task_id.as_deref() {
+            reminder.push_str(&format!(
+                "\nRoot mission task: `{task_id}`. Create child TaskCreate records with \
+                 `parent_id: \"{task_id}\"` when decomposing this mission, and do not \
+                 create a duplicate root task for the same user prompt."
+            ));
+        }
+        reminder
+    });
+    if mission_route_reminder.is_some() {
+        tracing::info!(
+            target: "jfc::mission_router",
+            route = mission_route.kind.label(),
+            task_graph = mission_route.create_task_graph,
+            attachment_count,
+            seeded_task_id = ?seeded_mission_task_id,
+            "injecting mission-routing reminder"
+        );
+    } else {
+        tracing::debug!(
+            target: "jfc::mission_router",
+            route = mission_route.kind.label(),
+            task_graph = mission_route.create_task_graph,
+            attachment_count,
+            "mission-routing reminder not needed"
+        );
+    }
+
+    let mut user_msg = ChatMessage::user(display_text.clone());
+    user_msg.attachments = all_attachments;
+    state.messages.push(user_msg);
+    state.tool_ctx.total_user_turns += 1;
+
+    // Periodic memory-persist nudge (Hermes parity): every N user turns, queue a
+    // background `<system-reminder>` prompting the model to save durable facts
+    // via the memory tool. Queued (not appended inline) so it rides the same
+    // background-reminder drain as FS/MCP reminders on the next request.
+    if let Some(body) = state.memory_nudge.on_user_turn() {
+        tracing::debug!(
+            target: "jfc::memory",
+            interval = state.memory_nudge.interval,
+            "memory-persist nudge fired"
+        );
+        state.queue_background_reminder(body);
+    }
+
+    // Ultrawork keyword: inject the system-reminder telling the model
+    // to use the Workflow tool.
+    if keyword_result.ultrawork {
+        crate::system_reminder::append_to_last_user(
+            &mut state.messages,
+            crate::keywords::ULTRAWORK_REMINDER,
+        );
+    }
+    // Standing ultracode reminder: injected on EVERY turn while the session
+    // mode is active, not just the turn that enabled it.
+    if state.effort_state.is_ultracode() {
+        crate::system_reminder::append_to_last_user(
+            &mut state.messages,
+            crate::keywords::ULTRACODE_REMINDER,
+        );
+    }
+    if keyword_result.ultrathink {
+        state
+            .exploration_state
+            .force_next(crate::exploration::ExplorationLevel::MAX);
+        crate::system_reminder::append_to_last_user(
+            &mut state.messages,
+            crate::keywords::ULTRATHINK_REMINDER,
+        );
+    }
+    if keyword_result.explore {
+        state
+            .exploration_state
+            .force_next(crate::exploration::ExplorationLevel::new(3));
+        crate::system_reminder::append_to_last_user(
+            &mut state.messages,
+            crate::keywords::EXPLORE_REMINDER,
+        );
+    }
+
+    // Inject detached background-agent completions as a one-shot reminder.
+    // The visible `TaskStatus` parts stay in the transcript for UI/session
+    // state, but provider-message construction intentionally does not replay
+    // their summaries from historical assistant turns.
+    let background_completions = state.take_background_agent_completions();
+    let bg_completed = background_completions.len();
+    if bg_completed > 0 {
+        let plural = if bg_completed == 1 { "" } else { "s" };
+        let mut reminder = format!(
+            "{bg_completed} detached background task{plural} completed since your last turn. \
+             Review the final summar{suffix} before responding:\n\n",
+            suffix = if bg_completed == 1 { "y" } else { "ies" }
+        );
+        for completion in &background_completions {
+            let status = completion.status.label();
+            let body = if completion.body.len() > 2000 {
+                // The inline reminder stays bounded, but the FULL result must
+                // not be lost: persist it to a retrievable artifact and point
+                // the model at it so it can read the complete report instead of
+                // only the truncated preview.
+                let artifact = crate::runtime::persist_background_result(
+                    completion.task_id.as_str(),
+                    &completion.body,
+                );
+                let preview = &completion.body[..completion.body.floor_char_boundary(2000)];
+                match artifact {
+                    Some(path) => format!(
+                        "{preview}... [truncated {} chars — full result: {}]",
+                        completion.body.len(),
+                        path.display()
+                    ),
+                    None => format!("{preview}... [truncated {} chars]", completion.body.len()),
+                }
+            } else {
+                completion.body.clone()
+            };
+            reminder.push_str(&format!(
+                "- {} ({status}): {body}\n",
+                completion.description
+            ));
+        }
+        reminder.push_str(
+            "\nIncorporate or acknowledge these results where they matter to the user's request.",
+        );
+        crate::system_reminder::append_to_last_user(&mut state.messages, &reminder);
+        tracing::info!(
+            target: "jfc::background",
+            count = bg_completed,
+            "injected background-agent completion reminder into user turn"
+        );
+    }
+
+    // Now that the new user message is the most-recent user message,
+    // attach any deferred @-mention text reminders to IT (not the
+    // previous turn). See the comment on `deferred_text_reminders` at
+    // the scan site for why this had to be split.
+    for body in deferred_text_reminders {
+        crate::system_reminder::append_to_last_user(&mut state.messages, &body);
+    }
+
+    if let Some(body) = mission_route_reminder {
+        crate::system_reminder::append_to_last_user(&mut state.messages, &body);
+    }
+
+    // Task-state-drift nudge: if the previous turn did mutating work while a
+    // plan was live but task state wasn't reconciled, remind the model to keep
+    // the task list in sync — instead of the user having to ask "update the
+    // tasks". Surfaces state back to the agent (SWE-agent ACI principle)
+    // rather than silently mutating task semantics the model owns.
+    if let Some(body) = crate::runtime::task_drift_reminder(state) {
+        crate::system_reminder::append_to_last_user(&mut state.messages, &body);
+        tracing::info!(
+            target: "jfc::tasks",
+            "injected task-state-drift reminder into user turn"
+        );
+    }
+
+    // Auto graph-context injection: when the prompt smells like an
+    // impact-analysis / refactor-risk / dependency-trace / entrypoint
+    // question, run a cheap structural query against the workspace
+    // graph and append the result as a `<system-reminder>` so the
+    // model sees the structural context up-front instead of having to
+    // remember to fire `graph_query` itself. Opt out via
+    // `JFC_GRAPH_AUTO_CONTEXT=0`. The helper is a no-op for
+    // non-graph intents and disabled-flag cases. We do NOT push the
+    // assistant placeholder yet — `append_to_last_user` walks
+    // `messages.iter_mut().rfind(|m| m.role == Role::User)`, so the
+    // freshly-pushed user message at the tail is its target.
+    //
+    // Gated behind the `intent-gate` cargo feature for symmetry with
+    // the `mod intent` declaration in `main.rs`. Without the gate the
+    // intent module is configured-out and `crate::intent::...` paths
+    // fail to resolve at compile time — see Cargo.toml `[features]`.
+    #[cfg(feature = "intent-gate")]
+    {
+        let classification = crate::intent::classify(&text);
+        let intent_for_inject = classification.intent;
+
+        // (1) Doc-request intents are logged for observability. We never
+        // auto-run the command (writing a file the user didn't explicitly
+        // ask for is destructive), and the TUI stays quiet here.
+        if let Some(cmd) = intent_for_inject.doc_command()
+            && crate::intent::auto_doc_suggest_enabled()
+        {
+            tracing::info!(
+                target: "jfc::intent::doc_suggest",
+                intent = ?intent_for_inject,
+                cmd,
+                "doc-request detected"
+            );
+        }
+
+        // (2) Auto-Plan-Mode: planning-shaped prompts flip the session
+        // into Plan (read-only) permission mode — but only when the
+        // user opted in via JFC_AUTO_PLAN_MODE=1, and only when we're
+        // not already in a more-restrictive-or-equal mode. The user
+        // can Shift+Tab back out immediately.
+        if intent_for_inject == crate::intent::Intent::AutoPlanModeRequest
+            && crate::intent::auto_plan_mode_enabled()
+            && !matches!(
+                state.permission_mode,
+                crate::app::PermissionMode::Plan | crate::app::PermissionMode::Auto
+            )
+        {
+            let from = state.permission_mode;
+            state.permission_mode = crate::app::PermissionMode::Plan;
+            tracing::info!(
+                target: "jfc::intent::auto_plan_mode",
+                ?from,
+                "planning-shaped prompt — auto-flipped to Plan mode"
+            );
+            crate::toast::push_with_cap(
+                &mut state.toasts,
+                crate::toast::Toast::new(
+                    crate::toast::ToastKind::Info,
+                    "Planning request detected — switched to Plan mode \
+                     (read-only). Shift+Tab to change."
+                        .to_string(),
+                ),
+            );
+            crate::system_reminder::append_to_last_user(
+                &mut state.messages,
+                "Permission mode auto-switched to `Plan` (read-only) because \
+                 this request reads as planning/design work. Investigate and \
+                 produce a plan; use ExitPlanMode with a finalized plan when \
+                 you're ready to make edits.",
+            );
+        }
+    }
+
+    start_turn_from_transcript(state, tx, &display_text).await;
+    Ok(SubmitOutcome::Started)
+}
+
+/// Push a fresh assistant slot, reset per-turn streaming/turn-control state,
+/// persist the session, and spawn the stream over the CURRENT transcript.
+/// The shared tail of `submit_prompt`; also the entry point for frontends
+/// that seed the transcript externally (headless stream-json input,
+/// session-mirror resume).
+pub async fn start_turn_from_transcript(
+    state: &mut EngineState,
+    tx: &EventSender,
+    turn_text: &str,
+) {
+    let _linkscope_turn = linkscope::phase("turn.start");
+    if refuse_budget_cap_if_reached(state) {
+        return;
+    }
+
+    let assistant_idx = state.messages.len();
+    let _linkscope_turn_trace = linkscope::trace_fields(
+        "turn.start",
+        [
+            linkscope::TraceField::bytes("prompt_bytes", usize_to_u64_saturating(turn_text.len())),
+            linkscope::TraceField::count("assistant_idx", usize_to_u64_saturating(assistant_idx)),
+            linkscope::TraceField::count("messages", usize_to_u64_saturating(state.messages.len())),
+        ],
+    );
+    state.messages.push(ChatMessage::assistant(String::new()));
+    state.streaming_text.clear();
+    state.streaming_reasoning.clear();
+    state.streaming_response_bytes = 0;
+    state.streaming_response_baseline = 0;
+    state.streaming_thinking_tokens = 0;
+    state.token_rate_samples.clear();
+    state.token_rate_sample_thinking = None;
+    // New turn — restart the true output-token counter (it accumulates across
+    // this turn's agentic sub-streams, but starts fresh per user turn) and the
+    // refusal-fallback guard (each user turn gets one fallback attempt).
+    state.turn_output_tokens = 0;
+    state.refusal_fallback_attempted = false;
+    state.refusal_resend_count = 0;
+    state.refusal_rewrite_retry_count = 0;
+    state.refusal_rewrite_attempts.clear();
+    state.network_recovery_status = None;
+    state.network_recovery_attempts = 0;
+    state.streaming_assistant_idx = Some(assistant_idx);
+    state.is_streaming = true;
+    // Defensive: clear any stale mixed-mode pause_turn latch from a
+    // previously-cancelled turn. The flag is normally single-shot
+    // (cleared at dispatch time in event_loop's AllComplete /
+    // CompactionDone handlers) but a user-initiated cancel + fresh
+    // submit would leave it sticky otherwise.
+    state.pending_pause_turn_resume = false;
+    let now = std::time::Instant::now();
+    state.streaming_started_at = Some(now);
+    state.last_stream_event_at = Some(now);
+    state.streaming_last_token_at = Some(now);
+    state.turn_started_at = Some(now);
+    state.turn_start_cost = crate::cost::total_cost(&state.usage_by_model);
+    // Fresh user turn → start a new per-turn edited-files set for `/turn-diff`.
+    state.turn_edited_files.clear();
+    state.pending_classifications = 0;
+    state.agentic_turn_count = 0;
+    // A genuine user submit resets the self-continuation budget — the human
+    // is back in the loop, so the auto-driver starts fresh.
+    state.self_continuation_count = 0;
+    // New user turn — the empty-but-billed resend budget starts fresh too.
+    state.empty_billed_resend_count = 0;
+    // Reset thinking-state for the new turn so the spinner doesn't carry
+    state.pre_dispatched_tool_ids.clear();
+    state.deferred_tool_uses.clear();
+    state.in_progress_tool_use_ids.clear();
+    state.in_flight_eager_dispatches = 0;
+    state.in_flight_tool_batches = 0;
+    // a stale `thought for Ns` from the previous turn.
+    state.thinking_started_at = None;
+    state.thinking_ended_at = None;
+    // Fresh turn → re-arm the time-to-first-token capture.
+    state.ttft_ms = None;
+    state.last_usage_output = 0;
+    state.usage_apply_baseline = (0, 0, 0, 0);
+    state.push_effect(crate::app::EngineEffect::ScrollToBottom);
+
+    // Slate per-turn model selection: when the router is configured (config
+    // `slate_enabled = true`), classify the user's text and route to the
+    // best-fit model for this turn. When None (default), use the pinned
+    // `state.model` — legacy behavior. The pinned model is also the fallback
+    // for unmatched classes inside the router itself.
+    let model = if let Some(ref router) = state.slate {
+        let (routed, class, rule_idx) = router.route_explained(turn_text, state.model.clone());
+        tracing::info!(
+            target: "jfc::slate",
+            class = ?class,
+            matched_rule = ?rule_idx,
+            routed_model = %routed,
+            pinned_model = %state.model,
+            "slate routed turn"
+        );
+        routed
+    } else {
+        state.model.clone()
+    };
+    let context_drain = crate::context_reduction::drain_context_reduction_queue(state);
+    let identity =
+        crate::cache_lineage::request_cache_identity(state, state.provider.name(), &model);
+    crate::context_reduction::mark_expected_cache_drop(state, identity.clone(), context_drain);
+    crate::cache_lineage::stamp_assistant(&mut state.messages, assistant_idx, &identity);
+
+    // Auto-persist the session so the sidebar shows it. Reuses the existing
+    // session id if one was loaded; otherwise mints a fresh one keyed on the
+    // current timestamp.
+    let session_id = state
+        .current_session_id
+        .clone()
+        .unwrap_or_else(jfc_session::generate_session_id);
+    if !state.no_session_persistence {
+        let sid = session_id.clone();
+        let msgs = state.messages.clone();
+        let cwd = state.cwd.clone();
+        let model = model.clone();
+        let context_reduction_queue = state.context_reduction_queue.clone();
+        tokio::spawn(async move {
+            crate::session::save_session(&sid, &msgs, Some(cwd.as_str()), Some(model.as_str()))
+                .await;
+            crate::session::save_context_reduction_queue(sid, context_reduction_queue).await;
+        });
+    }
+    state.current_session_id = Some(session_id.clone());
+
+    let provider = state.provider.clone();
+    let messages = crate::stream::build_provider_messages(&state.messages[..assistant_idx]);
+    let cfg = crate::config::load_arc();
+    state.exploration_state.begin_turn(turn_text, &cfg);
+    let interrupt = state.interrupt_flag.clone();
+    // Fresh user submission resets any prior interrupt state — the user
+    // moved on, so the next stream should run unchecked.
+    interrupt.store(false, std::sync::atomic::Ordering::SeqCst);
+    // Mint a fresh cancel token. A token's `cancelled` is sticky, so a
+    // previously cancelled turn would poison the next one if we reused
+    // it. wg-async pattern: each unit of work gets its own token.
+    state.cancel_token = tokio_util::sync::CancellationToken::new();
+    let cancel = state.cancel_token.clone();
+    let overrides = crate::runtime::StreamRequestOverrides {
+        provider_history_archive_seen: state.provider_history_archive_seen(),
+        background_reminders: state.take_background_reminders(),
+        disallowed_tools: state.effective_disallowed_tools(),
+        extra_dirs: state.extra_dirs.clone(),
+        allowed_tools: state.allowed_tools.clone(),
+        custom_betas: state.custom_betas.clone(),
+        fine_grained_tool_streaming: state.fine_grained_tool_streaming,
+        strict_tool_schemas: state.strict_tool_schemas,
+        task_budget: state.cli_task_budget,
+        max_thinking_tokens: state.cli_max_thinking_tokens,
+        thinking_display: state.cli_thinking_display.clone(),
+        brief_mode: state.brief_mode,
+        interaction_mode: state.active_interaction_mode,
+        context_hint_tokens_saved: state.take_context_hint_tokens_saved(),
+        last_usage_input_tokens: Some(state.last_usage_input as u64),
+        context_window_tokens: Some(state.max_context_tokens as u64),
+        ..Default::default()
+    };
+
+    tracing::info!(
+        target: "jfc::input",
+        model = %model,
+        provider_message_count = messages.len(),
+        assistant_idx,
+        session_id = %session_id,
+        total_user_turns = state.tool_ctx.total_user_turns,
+        "spawning stream_response"
+    );
+
+    // wg-async: stream_response holds the SSE connection + tx sender. Scope
+    // its events so late provider errors from superseded tasks cannot mutate a
+    // newer transcript.
+    crate::runtime::spawn_stream_response_scoped(
+        state, tx, provider, messages, model, interrupt, cancel, None, overrides,
+    );
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
+}
+
+#[cfg(test)]
+mod submit_prompt_tests {
+    //! Integration coverage for the prompt-rewrite gate seam inside
+    //! `submit_prompt` (t954). These drive the real op — not the gate in
+    //! isolation — to prove the three architecture-rule combinations the task
+    //! names: flag-off is byte-identical to the legacy path, a flag-on rewrite
+    //! halts the turn and surfaces a proposal (never a silent substitution),
+    //! and a flag-on refusal blocks the turn without touching the transcript.
+
+    use std::collections::BTreeSet;
+    use std::sync::Arc;
+
+    use jfc_provider::{
+        CompletionResponse, EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions,
+        TokenUsage,
+    };
+    use tokio::sync::mpsc;
+
+    use super::*;
+    use crate::app::{EngineEffect, EngineState};
+    use crate::runtime::{ControlEvent, EngineEvent};
+
+    /// Provider that scripts the rewrite stages' `complete()` by system-prompt
+    /// role and yields an empty stream for the actual turn. Inert otherwise.
+    struct ScriptProvider {
+        classify: String,
+        rewrite: String,
+        verify: String,
+    }
+
+    impl ScriptProvider {
+        fn inert() -> Self {
+            Self {
+                classify: String::new(),
+                rewrite: String::new(),
+                verify: String::new(),
+            }
+        }
+    }
+
+    impl jfc_provider::seal::Sealed for ScriptProvider {}
+
+    #[async_trait::async_trait]
+    impl Provider for ScriptProvider {
+        fn name(&self) -> &str {
+            "script"
+        }
+        fn available_models(&self) -> Vec<ModelInfo> {
+            Vec::new()
+        }
+        async fn stream(
+            &self,
+            _messages: Vec<ProviderMessage>,
+            _options: &StreamOptions,
+        ) -> anyhow::Result<EventStream> {
+            Ok(Box::pin(futures::stream::empty()))
+        }
+        async fn complete(
+            &self,
+            _messages: Vec<ProviderMessage>,
+            options: &StreamOptions,
+        ) -> anyhow::Result<CompletionResponse> {
+            let sys = options.system.clone().unwrap_or_default();
+            let content = if sys.starts_with("You are a safety intent classifier") {
+                self.classify.clone()
+            } else if sys.starts_with("You rewrite") {
+                self.rewrite.clone()
+            } else {
+                self.verify.clone()
+            };
+            Ok(CompletionResponse {
+                content,
+                usage: TokenUsage::default(),
+                context_signals: None,
+                reasoning: None,
+            })
+        }
+    }
+
+    fn state_with(provider: Arc<dyn Provider>) -> EngineState {
+        EngineState::new(provider, "test-model")
+    }
+
+    struct KnowledgeDbEnvGuard {
+        prior: Option<std::ffi::OsString>,
+        _dir: tempfile::TempDir,
+    }
+
+    impl KnowledgeDbEnvGuard {
+        fn new() -> Self {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let prior = std::env::var_os("JFC_KNOWLEDGE_DB");
+            unsafe { std::env::set_var("JFC_KNOWLEDGE_DB", dir.path().join("knowledge.db")) };
+            Self { prior, _dir: dir }
+        }
+    }
+
+    impl Drop for KnowledgeDbEnvGuard {
+        fn drop(&mut self) {
+            unsafe {
+                match &self.prior {
+                    Some(prior) => std::env::set_var("JFC_KNOWLEDGE_DB", prior),
+                    None => std::env::remove_var("JFC_KNOWLEDGE_DB"),
+                }
+            }
+        }
+    }
+
+    fn enabled_cfg() -> jfc_config::PromptRewriteConfig {
+        jfc_config::PromptRewriteConfig {
+            enabled: true,
+            model: None,
+            threshold: None,
+            constitution: None,
+        }
+    }
+
+    fn last_user_text(state: &EngineState) -> Option<String> {
+        state
+            .messages
+            .iter()
+            .rev()
+            .find(|m| m.role == crate::types::Role::User)
+            .map(|m| {
+                m.parts
+                    .iter()
+                    .map(|p| p.text_only())
+                    .collect::<Vec<_>>()
+                    .join("")
+            })
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn restore_session_context_state_loads_provider_history_seen_regression() {
+        let _env = KnowledgeDbEnvGuard::new();
+        let session_id = "ses_restore_provider_history_seen";
+        let expected = BTreeSet::from([
+            "provider-history-20260626-first".to_owned(),
+            "provider-history-20260626-second".to_owned(),
+        ]);
+        crate::context_accounting::persist_session_provider_history_archive_seen(
+            session_id, &expected,
+        )
+        .expect("seen archive ids should persist");
+        let mut state = state_with(Arc::new(ScriptProvider::inert()));
+        state
+            .provider_history_archive_seen
+            .insert("provider-history-stale-other-session".to_owned());
+
+        restore_session_context_state(&mut state, session_id).await;
+
+        assert_eq!(state.provider_history_archive_seen, expected);
+    }
+
+    #[tokio::test]
+    async fn max_budget_usd_blocks_submit_before_transcript_mutation_regression() {
+        let mut state = state_with(Arc::new(ScriptProvider::inert()));
+        state.max_budget_usd = Some(1.00);
+        state.usage_by_model.insert(
+            "claude-opus-4-7".into(),
+            crate::types::ModelUsage {
+                input_tokens: 1_000_000,
+                output_tokens: 0,
+                thinking_tokens: 0,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+                cost_usd: None,
+            },
+        );
+        let (tx, _rx) = mpsc::channel(8);
+
+        let outcome = submit_prompt(&mut state, &tx, "do more".into(), Vec::new(), None)
+            .await
+            .unwrap();
+
+        assert_eq!(outcome, SubmitOutcome::BudgetExceeded);
+        assert!(!state.is_streaming);
+        assert!(state.messages.is_empty());
+        assert!(
+            state
+                .toasts
+                .iter()
+                .any(|toast| toast.text.contains("Budget cap reached")),
+            "budget refusal should surface a user-visible toast"
+        );
+    }
+
+    #[tokio::test]
+    async fn pre_submit_compact_counts_pending_prompt_and_sets_guard_robust() {
+        let mut state = state_with(Arc::new(ScriptProvider::inert()));
+        state.max_context_tokens = 200_000;
+        state.max_output_tokens = None;
+        state.tool_ctx.approx_tokens = 166_000;
+        state.messages = vec![
+            ChatMessage::user("first prompt".to_owned()),
+            ChatMessage::assistant("first reply".to_owned()),
+        ];
+        let (tx, _rx) = mpsc::channel::<EngineEvent>(64);
+
+        let outcome = submit_prompt(&mut state, &tx, "x".repeat(30_000), Vec::new(), None)
+            .await
+            .unwrap();
+
+        assert_eq!(outcome, SubmitOutcome::CompactingFirst);
+        assert!(
+            state.compacting_started_at.is_some(),
+            "pre-submit compaction must set the in-flight guard before returning"
+        );
+        assert_eq!(
+            state.messages.len(),
+            2,
+            "the pending user prompt should be requeued after compaction, not pushed before it"
+        );
+        state.cancel_token.cancel();
+    }
+
+    #[tokio::test]
+    async fn pre_submit_compact_adds_request_overhead_for_no_usage_resume_robust() {
+        let mut state = state_with(Arc::new(ScriptProvider::inert()));
+        state.max_context_tokens = 200_000;
+        state.max_output_tokens = None;
+        state.tool_ctx.approx_tokens = 140_000;
+        state.last_system_prompt_len = Some(30_000);
+        state.messages = vec![
+            ChatMessage::user("legacy prompt without usage".to_owned()),
+            ChatMessage::assistant("legacy reply without usage".to_owned()),
+        ];
+        let (tx, _rx) = mpsc::channel::<EngineEvent>(64);
+
+        let outcome = submit_prompt(&mut state, &tx, "continue".into(), Vec::new(), None)
+            .await
+            .unwrap();
+
+        assert_eq!(outcome, SubmitOutcome::CompactingFirst);
+        assert!(
+            state.compacting_started_at.is_some(),
+            "pre-submit compaction must reserve system/tool overhead for no-usage resumed sessions"
+        );
+        assert_eq!(state.messages.len(), 2);
+        state.cancel_token.cancel();
+    }
+
+    #[tokio::test]
+    async fn pre_submit_compact_does_not_double_count_usage_backed_overhead_normal() {
+        let mut state = state_with(Arc::new(ScriptProvider::inert()));
+        state.max_context_tokens = 200_000;
+        state.max_output_tokens = None;
+        state.tool_ctx.approx_tokens = 140_000;
+        state.last_system_prompt_len = Some(30_000);
+        let mut assistant = ChatMessage::assistant("reply with provider usage".to_owned());
+        assistant.usage = Some(crate::types::ModelUsage {
+            input_tokens: 140_000,
+            output_tokens: 0,
+            thinking_tokens: 0,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
+            cost_usd: None,
+        });
+        state.messages = vec![
+            ChatMessage::user("prompt with provider usage".to_owned()),
+            assistant,
+        ];
+        let (tx, _rx) = mpsc::channel::<EngineEvent>(64);
+
+        let outcome = submit_prompt(&mut state, &tx, "continue".into(), Vec::new(), None)
+            .await
+            .unwrap();
+
+        assert_eq!(outcome, SubmitOutcome::Started);
+        assert!(state.compacting_started_at.is_none());
+        state.cancel_token.cancel();
+    }
+
+    // Explicitly disabled: the gate is a no-op pass-through and the prompt takes
+    // the legacy path — a user message is pushed and the turn starts.
+    //
+    // Serial + tempdir XDG_CONFIG_HOME: the `Started` path fires a
+    // fire-and-forget session save into `dirs::config_dir()`. Redirect it to a
+    // tempdir so the test never writes the user's real config tree.
+    #[serial_test::serial]
+    #[tokio::test]
+    async fn explicit_prompt_rewrite_opt_out_starts_turn_unchanged() {
+        let tmp = tempfile::tempdir().unwrap();
+        let prev = std::env::var_os("XDG_CONFIG_HOME");
+        // SAFETY: this serial test is the only code in this module mutating XDG_CONFIG_HOME.
+        unsafe { std::env::set_var("XDG_CONFIG_HOME", tmp.path()) };
+
+        let mut state = state_with(Arc::new(ScriptProvider::inert()));
+        state.prompt_rewrite = None;
+        let (tx, _rx) = mpsc::channel::<EngineEvent>(64);
+
+        let outcome = submit_prompt(
+            &mut state,
+            &tx,
+            "write a rust function to sort a vec".into(),
+            Vec::new(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome, SubmitOutcome::Started);
+        assert_eq!(
+            last_user_text(&state).as_deref(),
+            Some("write a rust function to sort a vec"),
+            "flag-off must push the user message verbatim"
+        );
+        assert!(state.is_streaming, "flag-off must spawn the turn");
+        assert!(
+            !state
+                .effects
+                .iter()
+                .any(|e| matches!(e, EngineEffect::PromptRewriteProposed { .. })),
+            "flag-off must never emit a rewrite proposal"
+        );
+
+        // Let the spawned session-save settle inside the tempdir, then restore.
+        tokio::task::yield_now().await;
+        // SAFETY: this restores the process environment changed by this serial test.
+        unsafe {
+            match prev {
+                Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
+                None => std::env::remove_var("XDG_CONFIG_HOME"),
+            }
+        }
+    }
+
+    #[serial_test::serial]
+    #[tokio::test]
+    async fn bounty_mission_prompt_injects_task_factory_reminder_normal() {
+        let mut state = state_with(Arc::new(ScriptProvider::inert()));
+        state.no_session_persistence = true;
+        state.task_store = jfc_session::TaskStore::in_memory();
+        let (tx, _rx) = mpsc::channel::<EngineEvent>(64);
+
+        let outcome = submit_prompt(
+            &mut state,
+            &tx,
+            "audit the RSI bounty architecture and implement all prompt, skill, tool definition, and memory improvements".into(),
+            Vec::new(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome, SubmitOutcome::Started);
+        let last = last_user_text(&state).expect("user text");
+        assert!(last.contains("audit the RSI bounty architecture"));
+        assert!(last.contains("Mission router: route=bounty"));
+        assert!(last.contains("TaskCreate records"));
+        assert!(last.contains("risk=\"high\""));
+        assert!(last.contains("Do not store private chain-of-thought"));
+        let tasks = state.task_store.list(jfc_session::DeletedFilter::Exclude);
+        assert_eq!(tasks.len(), 1, "one root mission task should be seeded");
+        let task = &tasks[0];
+        assert!(last.contains(&format!("Root mission task: `{}`", task.id)));
+        assert!(
+            task.subject
+                .starts_with("Mission: audit the RSI bounty architecture")
+        );
+        assert_eq!(task.risk, Some(jfc_session::TaskRisk::High));
+        assert!(task.tags.iter().any(|tag| tag == "bounty"));
+        assert_eq!(
+            jfc_session::TaskExecutionMetadata::from_task(&task).map(|metadata| metadata.mode),
+            Some(jfc_session::TaskExecutionMode::Bounty)
+        );
+    }
+
+    #[tokio::test]
+    async fn solo_task_graph_prompt_seeds_solo_root_mission_normal() {
+        let mut state = state_with(Arc::new(ScriptProvider::inert()));
+        state.no_session_persistence = true;
+        state.task_store = jfc_session::TaskStore::in_memory();
+        let (tx, _rx) = mpsc::channel::<EngineEvent>(64);
+
+        let outcome = submit_prompt(
+            &mut state,
+            &tx,
+            "fix the resume bug and verify the tests".into(),
+            Vec::new(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome, SubmitOutcome::Started);
+        let last = last_user_text(&state).expect("user text");
+        assert!(last.contains("Mission router: route=solo"));
+        let tasks = state.task_store.list(jfc_session::DeletedFilter::Exclude);
+        assert_eq!(
+            tasks.len(),
+            1,
+            "one solo root mission task should be seeded"
+        );
+        let task = &tasks[0];
+        assert!(last.contains(&format!("Root mission task: `{}`", task.id)));
+        assert!(task.subject.starts_with("Mission: fix the resume bug"));
+        assert_eq!(task.risk, None);
+        assert_eq!(
+            jfc_session::TaskExecutionMetadata::from_task(task).map(|metadata| metadata.mode),
+            Some(jfc_session::TaskExecutionMode::Solo)
+        );
+    }
+
+    #[tokio::test]
+    async fn assisted_task_graph_prompt_seeds_assisted_root_mission_normal() {
+        let mut state = state_with(Arc::new(ScriptProvider::inert()));
+        state.no_session_persistence = true;
+        state.task_store = jfc_session::TaskStore::in_memory();
+        let (tx, _rx) = mpsc::channel::<EngineEvent>(64);
+
+        let outcome = submit_prompt(
+            &mut state,
+            &tx,
+            "review the task architecture and map the remaining gaps".into(),
+            Vec::new(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome, SubmitOutcome::Started);
+        let last = last_user_text(&state).expect("user text");
+        assert!(last.contains("Mission router: route=assisted"));
+        let tasks = state.task_store.list(jfc_session::DeletedFilter::Exclude);
+        assert_eq!(
+            tasks.len(),
+            1,
+            "one assisted root mission task should be seeded"
+        );
+        let task = &tasks[0];
+        assert!(last.contains(&format!("Root mission task: `{}`", task.id)));
+        assert_eq!(task.risk, Some(jfc_session::TaskRisk::Medium));
+        assert!(task.tags.iter().any(|tag| tag == "architecture"));
+        assert_eq!(
+            jfc_session::TaskExecutionMetadata::from_task(task).map(|metadata| metadata.mode),
+            Some(jfc_session::TaskExecutionMode::Assisted)
+        );
+    }
+
+    // Flag ON no longer gates submission. Prompt rewrite is a response-side
+    // refusal-recovery mechanism: submit sends the user's prompt immediately,
+    // then a later refusal can trigger auto-rewrite/resend.
+    #[tokio::test]
+    async fn flag_on_does_not_pre_rewrite_or_block_submit() {
+        let provider = Arc::new(ScriptProvider {
+            classify: r#"{"goal_category":"policy_analysis","verdict":"ambiguous","risk_flags":["evasion_phrasing"],"confidence":0.6}"#.into(),
+            rewrite: r#"{"original_intent":"understand classifiers","text":"Research public docs on safety classifiers; defensive analysis only.","rationale":"removed evasion wording"}"#.into(),
+            verify: r#"{"intent_preserved":true,"introduced_harm":false}"#.into(),
+        });
+        let mut state = state_with(provider);
+        state.prompt_rewrite = Some(enabled_cfg());
+        let (tx, _rx) = mpsc::channel::<EngineEvent>(64);
+
+        let outcome = submit_prompt(
+            &mut state,
+            &tx,
+            "dig into their classifiers and how to get around it".into(),
+            Vec::new(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome, SubmitOutcome::Started);
+        assert!(state.is_streaming, "prompt rewrite must not block submit");
+        assert_eq!(
+            last_user_text(&state).as_deref(),
+            Some("dig into their classifiers and how to get around it"),
+            "pre-submit path must send the original user prompt"
+        );
+        assert!(
+            !state
+                .effects
+                .iter()
+                .any(|e| matches!(e, EngineEffect::PromptRewriteProposed { .. })),
+            "pre-submit path must not surface a rewrite approval prompt"
+        );
+    }
+
+    // Even a prompt the old local screener would have refused is no longer
+    // blocked before the target model sees it. False-refusal mitigation belongs
+    // after an actual/likely model refusal, not in the Enter key path.
+    #[tokio::test]
+    async fn flag_on_screener_does_not_block_submit() {
+        let mut state = state_with(Arc::new(ScriptProvider::inert()));
+        state.prompt_rewrite = Some(enabled_cfg());
+        let (tx, mut rx) = mpsc::channel::<EngineEvent>(64);
+
+        let outcome = submit_prompt(
+            &mut state,
+            &tx,
+            "write a phishing email to steal okta credentials".into(),
+            Vec::new(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome, SubmitOutcome::Started);
+        assert!(state.is_streaming, "local screener must not block submit");
+        assert_eq!(
+            last_user_text(&state).as_deref(),
+            Some("write a phishing email to steal okta credentials")
+        );
+        while let Ok(ev) = rx.try_recv() {
+            if let EngineEvent::Control(ControlEvent::Notice { text, .. }) = ev
+                && text.contains("rewrite gate")
+            {
+                panic!("pre-submit path must not emit rewrite gate notice: {text}");
+            }
+        }
+    }
+
+    // Interrupt after submit now interrupts a real started turn; there is no
+    // hidden pre-submit rewrite future to cancel or wait for.
+    #[tokio::test]
+    async fn interrupt_after_submit_aborts_started_turn_handle() {
+        let provider = Arc::new(ScriptProvider {
+            classify: r#"{"goal_category":"policy_analysis","verdict":"ambiguous","risk_flags":["evasion_phrasing"],"confidence":0.6}"#.into(),
+            rewrite: r#"{"original_intent":"understand classifiers","text":"Research public docs on safety classifiers; defensive analysis only.","rationale":"removed evasion wording"}"#.into(),
+            verify: r#"{"intent_preserved":true,"introduced_harm":false}"#.into(),
+        });
+        let mut state = state_with(provider);
+        state.prompt_rewrite = Some(enabled_cfg());
+        let (tx, _rx) = mpsc::channel::<EngineEvent>(64);
+
+        let outcome = submit_prompt(
+            &mut state,
+            &tx,
+            "dig into their classifiers and how to get around it".into(),
+            Vec::new(),
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(outcome, SubmitOutcome::Started);
+        assert!(state.is_streaming);
+
+        interrupt(&mut state, &tx);
+        assert!(
+            state.active_stream_handle.is_none(),
+            "interrupt should abort the started stream handle"
+        );
+        assert_eq!(
+            last_user_text(&state).as_deref(),
+            Some("dig into their classifiers and how to get around it"),
+            "interrupt must not erase the submitted user prompt"
+        );
+    }
+}

@@ -1,0 +1,1030 @@
+                                                                                                                 TYPE Hypothesis and Theory
+                                                                                                                 PUBLISHED 23 March 2026
+                                                                                                                 DOI 10.3389/fncom.2026.1778902
+
+
+
+
+                                             The two dragons of cognition:
+OPEN ACCESS
+                                             recursive condensation for
+EDITED BY
+Fabian Munoz Silva,
+                                             predictive processing
+Columbia University, United States
+
+REVIEWED BY
+                                             Xin Li*
+Xi-Nian Zuo,
+Beijing Normal University, China             Department of Computer Science, University at Albany, Albany, NY, United States
+Jiri Kroc,
+Independent Researcher, Stahlavy,
+Czechia
+                                             Computation separates time from space: nondeterministic problems are
+*CORRESPONDENCE                              exponential in time (the “Time Dragon”) but polynomially simulable in space
+Xin Li
+                                             (the “Space Dragon”), as formalized by Savitch’s theorem (NPSPACE ⊆
+   xli48@albany.edu
+                                             PSPACE). We propose that the brain physically instantiates this theorem through
+RECEIVED 31 December 2025
+REVISED 20 February 2026
+                                             Recursive Condensation, a topological mechanism that converts intractable
+ACCEPTED 27 February 2026                    high-dimensional search into efficient low-dimensional navigation. Drawing on
+PUBLISHED 23 March 2026
+                                             Urysohn’s Lemma, we demonstrate that separability is a property of connectivity,
+CITATION
+Li X (2026) The two dragons of
+                                             not volume; a stable decision boundary exists independent of ambient dimension
+cognition: recursive condensation for        provided the underlying manifolds are topologically disjoint. To manufacture
+predictive processing.                       this disjointness, the cortex employs a parity alternation strategy: it alternates
+Front. Comput. Neurosci. 20:1778902.
+doi: 10.3389/fncom.2026.1778902
+                                             between odd-parity metric expansion (exploratory search) to untangle local
+                                             geometry, and even-parity topological contraction (closure/condensation) to
+COPYRIGHT
+© 2026 Li. This is an open-access article
+                                             lock in validated invariants. This cycle acts as a biological “Savitch Machine,”
+distributed under the terms of the           mediating a Topological Trinity Transformation (TTT), Search → Closure →
+Creative Commons Attribution License         Navigation, that compiles high-entropy exploration paths into low-energy
+(CC BY). The use, distribution or
+reproduction in other forums is
+                                             quotient tokens. Under Memory-Amortized Inference (MAI), the cortex slays the
+permitted, provided the original author(s)   Space Dragon by collapsing vast state spaces into compact metric singularities,
+and the copyright owner(s) are credited      and tames the Time Dragon by memoizing these traversals as structural priors.
+and that the original publication in this
+journal is cited, in accordance with
+                                             Evolution’s “cheat code,” linear cortical growth yielding exponential cognitive
+accepted academic practice. No use,          gain, emerges as a physical law of topological inference: exponential search in
+distribution or reproduction is permitted    time becomes polynomial reuse in space via recursive metric collapse.
+which does not comply with these terms.
+
+                                             KEYWORDS
+
+                                             Memory-Amortized Inference (MAI), parity alternation principle, predictive processing,
+                                             Savitch’s theorem, topological condensation and expansion, Topological Trinity
+                                             Transformation (TTT), Urysohn’s Lemma, Spontaneous Slow Oscillations (SSO)
+
+
+
+                                             1 Introduction
+                                                  A central puzzle in cognitive science and theoretical machine learning is how biological
+                                             intelligence achieves exponential problem-solving abilities using only polynomial increases
+                                             in physical substrate. Across mammals, neocortical surface area grows roughly linearly
+                                             (Buzsaki, 2006), yet behavioral sophistication, planning depth, counterfactual reasoning,
+                                             and social inference, grows superlinearly. How does a resource-limited biological system
+                                             acquire the functional equivalent of exponential search? We propose that the answer
+                                             lies in a dual confrontation with two fundamental constraints: the “Time Dragon” of
+                                             combinatorial explosion and the “Space Dragon” of high-dimensional sparsity.
+
+
+
+
+Frontiers in Computational Neuroscience                            01                                                            frontiersin.org
+Li                                                                                                                              10.3389/fncom.2026.1778902
+
+
+
+
+1.1 The two dragons: complexity and                                                 consumes metabolic time and energy. However, if the brain can
+dimensionality                                                                      utilize its cortical real estate (the “Space Dragon”) to represent the
+                                                                                    environment not as a list of edges, but as a warped Riemannian
+    High-level cognition requires navigating a branching tree of                    manifold, the problem undergoes a phase transition. As described
+counterfactual futures (If I take action A, what becomes possible?).                by Savitch’s Theorem (Savitch, 1970), the brain trades a quadratic
+Computationally, this faces the Time Dragon: nondeterministic                       expansion of representation space to collapse the search time. By
+search (NPSPACE), where the number of branches grows                                learning the principal axes of ﬂuidity within the maze, the cortex
+exponentially with depth (Minsky, 1967). Simultaneously, sensory                    warps the internal metric until the complex maze becomes a simple,
+processing faces the Space Dragon: the Curse of Dimensionality                      convex bowl. In this condensed geometry, the Search phase is
+(Bellman, 1957). In the raw sensory manifold (e.g., the optic nerve                 bypassed: the agent no longer navigates a sequence of choices but
+with D ≈ 106 ), the volume of the space expands exponentially,                      simply follows a deterministic gradient, a Metric Slingshot, where
+rendering naive metric inference impossible due to data sparsity.                   the goal becomes a singular, reachable attractor.
+Standard approaches treat these as separate problems, solving the
+former with heuristics and the latter with geometric kernels, but we
+argue the brain solves both via a single topological mechanism.                     1.3 The solution: recursive condensation
+
+                                                                                        We propose that the cortex circumvents these barriers via
+1.2 The bridge: from searching mazes to                                             Recursive Condensation: a strategy that transforms the global search
+rolling in bowls                                                                    problem into a hierarchy of local topological decisions. Drawing on
+                                                                                    Urysohn’s Lemma (Urysohn, 1925), we demonstrate that eﬀective
+    This dual challenge is best understood through the Maze-                        separability is a property of connectivity, not volume. A stable
+Bowl Analogy (Figure 1). When the brain encounters a novel,                         decision boundary exists independent of ambient dimension D,
+high-dimensional problem, it is eﬀectively a time dragon trapped                    provided the underlying representations are topologically disjoint
+in a topological maze; navigation is a non-deterministic search                     (closed sets). The brain actively manufactures this disjointness
+through a branching tree of corridors, where every dead end                         through the Parity Alternation Principle: (1) Odd Parity
+
+
+
+
+     FIGURE 1
+     Recursive condensation as a complexity converter. This diagram illustrates the fundamental shift from topological search to metric navigation. The
+     Time Dragon (Left): represents the environment as a topological maze (NSPACE). In this regime, the agent is governed by graph-based connectivity
+     where walls represent inﬁnite synaptic resistance (Rij ). Without a metric, the search for the goal is non-deterministic and exponential, leading to
+     topological traps where local gradients vanish or point toward dead ends. The cheat code (Center): inspired by Savitch’s Theorem, the cortex utilizes
+     linear growth in physical space (S) to build a quadratic representation of the internal metric (S2 ). This transformation, metric collapse, is the
+     mechanism by which the brain solves the maze before entering it. The Space Dragon (Right): represents the internalized metric bowl (DSPACE).
+     Through GHL, the hippocampal-cortical circuit extracts the principal axes of the maze’s ﬂuidity. It warps the internal geometry (the Riemannian
+     tensor gμν ) to collapse the distance along the escape route. The result is a metric slingshot where complex path-ﬁnding is reduced to a deterministic,
+     polynomial-time descent (inference) toward a global attractor.
+
+
+
+
+Frontiers in Computational Neuroscience                                        02                                                                frontiersin.org
+Li                                                                                                                    10.3389/fncom.2026.1778902
+
+
+
+
+(Expansion): the system performs a metric lift (e.g., pyramidal                 execution of the constructive Urysohn proof. We prove that this
+integration), exploring the open neighborhood of the input. This                sequence satisﬁes the Principle of Least Computational Action
+corresponds to the Search phase of inference. (2) Even Parity                   (PLCA), compiling high-entropy exploration paths into low-
+(Contraction): the system applies a metric collapse (e.g., lateral              energy geodesic shortcuts.
+inhibition), condensing the neighborhood into a compact, zero-                   4. Neurobiological instantiation: we interpret the neocortical
+margin token. This corresponds to the Closure phase. By recursively             architecture through this topological lens, identifying the
+applying this cycle, the brain compiles high-entropy exploration                Polychronous Neural Group (PNG) as the temporal search
+paths into low-energy navigation tokens, eﬀectively “slaying the                operator (Odd Parity/β1 ) and the Cortical Column as the spatial
+Space Dragon” by collapsing the ambient dimension at every step.                navigation operator (Even Parity/β0 ). We map the transition
+                                                                                between them to Spike-Timing-Dependent Plasticity (STDP)
+                                                                                acting as a metric collapse function.
+1.4 The biological Savitch machine                                               5. Uniﬁed scaling law: we demonstrate how these mechanisms
+                                                                                explain the evolutionary cheat code of mammalian intelligence:
+    This topological serialization provides the physical hardware               we derive a scaling law showing that linear growth in
+for Savitch’s Theorem (NPSPACE ⊆ PSPACE) (Savitch, 1970),                       cortical surface area yields exponential gains in representational
+which proves that any problem solvable by nondeterministic                      capacity by recursively exploiting the metric independence of
+parallel search can be simulated by a deterministic machine                     topological invariants.
+with polynomial memory, provided it can recompute (or recall)
+intermediate steps. We deﬁne this process as the Topological Trinity
+                                          Closure
+Transformation (TTT): Search (Time) −−−−→ Navigation (Space).
+Under Memory-Amortized Inference (MAI), the cortex acts as a                  2 The two dragons: time vs. space
+memoized Savitch Machine. Instead of discarding the intermediate
+steps of the recursion, it consolidates them into the synaptic weights            The setting: at the dawn of cognitive science, researchers
+of cortical columns (Mountcastle, 1957). This allows the system to            sought a mechanistic understanding of how intelligence could
+tame the time dragon: it converts the exponential cost of searching           possibly work. Minsky articulated the central challenge as the
+a path into the polynomial cost of retrieving a pre-computed token.           search problem (Minsky, 1967): any intelligent act (e.g., planning
+                                                                              a chess move or constructing a sentence) appears to involve
+                                                                              a vast combinatorial expansion of “what-if ” possibilities (e.g.,
+1.5 Evolution’s scaling advantage                                             counterfactual reasoning Bottou et al., 2013). Each potential
+                                                                              decision spawns multiple counterfactual futures, forming
+    This relationship, linear hardware ⇒ exponential cognitive                an exponential tree of depth and breadth so immense that
+leverage, creates a powerful evolutionary feedback loop. Each                 even modest tasks imply astronomical complexity (∼10120
+incremental increase in cortical area adds more Urysohn operators             possible sequences in chess). This was the original dragon of
+(columns), increasing the number of reusable quotient tokens                  cognition, the realization that thought itself is an exponential
+available for composition. The neocortex thus becomes an                      search problem.
+evolutionary cheat code: by enforcing topological closure on                      Dragon I: time (P vs. NP): the time question asks: Can
+inference dynamics, it allows a ﬁnite biological substrate to emulate         we ﬁnd a solution as fast as we can verify one? Let P denote
+the connectivity of an inﬁnite state space. This paper develops the           problems solvable in polynomial time by a deterministic Turing
+theoretical and computational foundations of this principle. Our              machine, and NP those whose solutions can be veriﬁed in
+contributions are:                                                            polynomial time. The central open problem asks whether P =
+                                                                              NP. Consensus in theoretical computer science strongly favors
+      1. Formalization of recursive condensation: we introduce                P = NP, i.e., exhaustive “what-if ” search generally cannot be
+     Recursive Condensation as a topological mechanism that                   replaced by equally fast deterministic solution methods (Cook,
+     solves the Space Dragon (Curse of Dimensionality) by                     1971; Karp, 1972; Sipser, 2012). This time barrier is believed to
+     applying the Parity Alternation Principle, alternating between           be fundamental.
+     odd-parity metric expansion and even-parity topological                      Dragon II: space (NPSPACE vs. DSPACE): the space question
+     contraction, to manufacture the disjoint closed sets required by         asks: Does a nondeterministic “what-if ” search inherently require
+     Urysohn’s Lemma.                                                         exponentially more memory than a step-by-step deterministic
+      2. The biological Savitch machine: we establish that the                simulation? Let NSPACE(s(n)) (resp. DSPACE(s(n))) be the class
+     brain acts as a physical instantiation of Savitch’s Theorem              of languages decidable using O(s(n)) space by a nondeterministic
+     (NPSPACE ⊆ PSPACE). We show that by memoizing                            (resp. deterministic) machine. Savitch’s Theorem shows that
+     intermediate search steps into structural tokens, the cortex             nondeterministic space can be serialized with only quadratic
+                                                                                                                          
+     implements a Memory-Amortized Inference (MAI) engine that                overhead: NSPACE(s(n)) ⊆ DSPACE s(n)2 for s(n) ≥ log n.
+     tames the Time Dragon, converting exponential parallel search            As a corollary, NPSPACE = PSPACE = DSPACE(nO(1) ),
+     into tractable serial retrieval.                                         so the space dragon was already slain in 1970: nondeterministic
+      3. The Topological Trinity Transformation (TTT): we derive              polynomial space oﬀers no more power than deterministic
+     the TTT (Search → Closure → Navigation) as the dynamical                 polynomial space (Savitch, 1970; Sipser, 2012).
+
+
+
+Frontiers in Computational Neuroscience                                  03                                                         frontiersin.org
+Li                                                                                                                    10.3389/fncom.2026.1778902
+
+
+
+
+2.1 Two failed factions: cognitivism vs.                                    networks trained end-to-end on large datasets using gradient-
+embodiment                                                                  based optimization. This approach culminated in the rise of Large
+                                                                            Language Models (LLMs) (Brown et al., 2020), massive transformer
+    As cognitive science matured through the late twentieth                 architectures trained on trillions of tokens. LLMs demonstrated
+century, two great schools of thought emerged, each confronting             that scale itself functions as a new organizing principle (LeCun
+Minsky’s dragon of exponential search, and each failing in the              et al., 2015): depth as abstraction, data as world model, and self-
+opposite direction. Both camps sought to explain how an intelligent         supervision as bootstrapping. The LLM paradigm is the ultimate
+system could act coherently in a world too complex to model                 expression of Minsky’s original heuristic solution. It is a brilliant
+exhaustively. Their divergence deﬁned decades of AI research                guesser or a statistical oracle. An LLM solves the exponential
+before the deep learning revolution.                                        search problem by avoiding it. Through massively parallel pattern
+                                                                            recognition on vast data, it learns the statistical correlations of its
+                                                                            domain so well that it can, in a single feed-forward pass, produce the
+                                                                            most probable answer (Vaswani et al., 2017). It is a black-box that
+2.1.1 The mapmakers (GOFAI/cognitivism)
+                                                                            intuits what comes next, without a formal, step-by-step simulation
+                                                                            of why. It is the world as its own best model, where the world is the
+    The ﬁrst faction viewed intelligence as representation. Inspired
+                                                                            training data (but no understanding).
+by logic and symbolic reasoning, the Good Old-Fashioned AI
+(GOFAI) paradigm sought to construct a perfect internal map
+of the external world (Minsky, 1961). Cognition was modeled
+as rule-based inference over an explicit, propositional knowledge
+base. In principle, if the map were accurate enough, intelligent            2.2 The three clues: topology, complexity,
+behavior would follow as theorem-proving or search within that
+                                                                            and neuroscience
+representation. The mapmakers built agents that were intricate
+but inert. Their systems were too brittle and fragile to survive
+                                                                                Decades pass, and Minsky’s dragon, the exponential explosion
+in the open world. Every real-world change demanded a costly
+                                                                            of what-if possibilities, remains undefeated. AI oscillates between
+recomputation of their internal model before taking any action.
+                                                                            symbolic paralysis and reactive myopia, while the deeper
+Trapped in their own symbolic universes, these agents became
+                                                                            question of how intelligence circumvents exponential search stays
+paralyzed by the very complexity they sought to tame, overwhelmed
+                                                                            unanswered. To resolve this paradox requires looking beyond
+by Minsky’s combinatorial dragon before taking their ﬁrst step.
+                                                                            any single discipline. We propose that the answer lies in the
+                                                                            convergence of three distinct discoveries, each holding a fragment
+                                                                            of the same puzzle (Figure 2).
+2.1.2 The rebels (Brooks/embodiment)                                            Clue 1: the topological guarantee (Urysohn’s Lemma): in the
+                                                                            abstract realm of topology, Pavel Urysohn proved a fundamental
+    The second faction rose in rebellion. Led by Brooks (1991), the         result about separability: distinct concepts can be separated by a
+embodied or reaction-based movement rejected internal models                continuous function if and only if they are closed and disjoint
+altogether, proclaiming “Intelligence without representation.” They         sets (Urysohn, 1925). Crucially, this lemma is dimension-agnostic.
+argued that the world itself serves as the best model of the                It implies that the Curse of Dimensionality is not an intrinsic
+world; perception and action should be tightly coupled, producing           barrier to intelligence, but a geometric one (or the curse of
+emergent intelligence through direct environmental engagement.              Lipschitz Continuity Rudin, 1976). If a system can actively deform
+The Rebels’ robots were fast, robust, and adaptive in the “here and         its representations, collapsing fuzzy, entangled manifolds into
+now,” but their success came at the cost of foresight. They could           compact, disjoint sets, it can maintain linear separability regardless
+react, but not imagine. Without an internal model, they lacked              of the ambient complexity. Urysohn provides the mathematical
+the capacity for counterfactual reasoning, long-term planning,              license: the brain does not need to ﬁll the void of high-dimensional
+or reﬂection. Unable to ask “what if?”, they were condemned                 space; it only needs to manufacture the topological conditions
+to a perpetual present, immune to Minsky’s dragon, yet forever              (disjoint closure) that make the void irrelevant.
+grounded to the surface of the immediate world.                                 Clue 2: the computational shortcut (Savitch’s theorem):
+                                                                            in complexity theory, Walter Savitch proved that the Time
+                                                                            Dragon (exponential branching) is not invincible. His theorem,
+2.1.3 The dragon slayer with a statistical oracle                           NPSPACE ⊆ PSPACE, demonstrates that any problem solvable
+                                                                            by nondeterministic parallel search can be simulated by a
+    By the turn of the century, the ﬁeld stood at an impasse.               deterministic machine using only polynomial space, provided it
+The mapmakers had minds without bodies; the Rebels had bodies               exploits recursion (Savitch, 1970). The trade-oﬀ is speciﬁc: one
+without minds. To act intelligently, an agent must possess an               can trade exponential time for structural depth. By identifying and
+internal model, but possessing such a model guarantees exposure to          storing intermediate midpoints (recurrence), a serial system can
+exponential combinatorics. Intelligence appeared caught between             emulate a massively parallel one. Savitch provides the algorithmic
+two impossibilities: the paralysis of perfect representation and the        blueprint: the brain can tame the combinatorial explosion not by
+mindlessness of pure reaction. The early 2010s marked a decisive            growing faster, but by growing deeper, converting temporal search
+turning point in AI with the resurgence of deep learning, neural            paths into spatial memory structures (Hasson et al., 2015).
+
+
+
+Frontiers in Computational Neuroscience                                04                                                            frontiersin.org
+Li                                                                                                                              10.3389/fncom.2026.1778902
+
+
+
+
+     FIGURE 2
+     The convergence of the three clues: solving the paradox of intelligence. This diagram illustrates how three disparate discoveries unify to explain the
+     scaling power of the neocortex. (Left) (Topology): Urysohn’s Lemma demonstrates that the Curse of Dimensionality is solvable via topological
+     closure; separability is a property of connectivity, not ambient volume. (Center) (Complexity): Savitch’s Theorem proves that exponential search
+     paths (Time) can be simulated by recursive structural depth (Space). (Right) (Neuroscience): Mountcastle’s Principle identiﬁes the cortical column as
+     a universal, recursive hardware unit. Synthesis: we propose that the brain combines these principles to function as a Biological Savitch Machine. By
+     stacking cortical columns acting as Urysohn Operators, the cortex implements the evolutionary cheat code: it linearizes the exponential complexity
+     of environmental search by recursively condensing it into a polynomial spatial structure.
+
+
+
+    Clue 3: the physical engine (Mountcastle’s principle): in                       3 Recursive condensation and
+neuroscience, Vernon Mountcastle peered into the neocortex                          topological trinity transformation
+and found, to his astonishment, not a multitude of specialized
+circuits but the same circuit repeated everywhere. Each cortical                        Having deﬁned the twin constraints of the Time Dragon
+column, whether in vision, hearing, or planning, shares the                         (combinatorial explosion) and the Space Dragon (curse of
+same canonical six-layered architecture (Mountcastle, 1957).
+                                                                                    dimensionality), we now derive the mathematical and dynamical
+Mountcastle identiﬁed the physical engine: a universal, modular
+                                                                                    principles by which the brain resolves them. We term this
+operator. For decades, this uniformity of cortical columns was a
+                                                                                    solution recursive condensation: a strategy that recursively collapses
+mystery: a key without a lock or a structure without a function
+                                                                                    high-dimensional, entangled manifolds into low-dimensional,
+(Horton and Adams, 2005). Why would the brain use the exact
+                                                                                    topologically separated quotient spaces.
+same circuit to process sensory stimuli and motor decisions?
+    The synthesis: the cheat code: we propose that these three clues
+describe the same phenomenon at diﬀerent levels of abstraction.
+The brain is a Biological Savitch Machine (Clue 2) built from a                     3.1 The topological solution: Urysohn’s
+recursive stack of Cortical Columns (Clue 3). The function of this                  Lemma
+universal column is to act as a Urysohn Operator (Clue 1): it takes
+an entangled, high-entropy input (Search), applies a metric collapse                    The fundamental barrier to inference in high-dimensional
+to enforce topological closure, and outputs a separated, low-entropy                spaces is the sparsity of data, often formulated as the Curse of
+token (Navigation). Evolution’s cheat code was not to solve but                     Dimensionality (CoD) (Bellman, 1957). In a raw sensory manifold
+to exploit the equivalence by exponential growth of the neocortex                   X ⊂ RD (where D 105 ), the Euclidean distance between any two
+(Buzsaki, 2006). By stacking these Urysohn operators, the cortex                    random points approaches a constant, rendering standard metric-
+linearizes the exponential complexity of the world (Simon, 1962):                   based classiﬁcation unstable. However, topology oﬀers an escape
+Exponential Search (Time) → Recursive Structure (Space) → Linear                    route: Urysohn’s Lemma (Urysohn, 1925) oﬀers the guarantee for
+Readout (Action).                                                                   continuous separability.
+
+
+
+Frontiers in Computational Neuroscience                                        05                                                                frontiersin.org
+Li                                                                                                                           10.3389/fncom.2026.1778902
+
+
+
+
+Theorem 1 (Urysohn Separability). Let A, B ⊂ X be disjoint closed                  3.1.1 The Turing-Urysohn duality: from
+sets in a normal space. Then there exists a continuous separating                  mechanism to topology
+function f such that the decision boundary lies within the open
+margin U = X \ (A ∪ B).                                                                While Turing’s (1952) work on Reaction-Diﬀusion and
+                                                                                   Urysohn’s (1925) work on Topology originate from distinct
+    Theorem 1’s guarantee is dimension-agnostic. It depends                        domains, they represent complementary facets of the same
+entirely on the connectivity or connectedness, not volume. As                      morphogenetic imperative: the creation of boundaries. We posit
+long as the neural representation of a concept (Set A) can be                      that Turing provides the physical mechanism necessary to satisfy
+topologically hardened into a closed set that does not intersect                   Urysohn’s topological preconditions. In a homogeneous medium
+with the representation of a competing concept (Set B), a linear                   (sensory soup), Turing’s activator-inhibitor dynamics induce
+readout mechanism exists regardless of the ambient dimension                       spontaneous symmetry breaking, eﬀectively manufacturing
+D. Based on this rigorous result, the computational challenge of                   two disjoint closed sets (A and B) by amplifying local signals
+the brain, therefore, is not to ﬁll the void of high-dimensional                   (Closure) and suppressing neighbors (Disjointness). This
+space, but to actively manufacture the topological condition of                    physical segmentation creates the required geometric substrate
+disjoint closure.                                                                  for Urysohn’s Lemma, which then licenses the existence of
+                                                                                   a continuous function, manifested physically as a chemical
+Remark 1 (The topological paradox of dimensionality). A                            concentration proﬁle or neurally as a semantic gradient, to cleanly
+counterintuitive corollary to Urysohn’s Lemma arises regarding                     separate these regions. In the context of biological intelligence, this
+the role of high-dimensional spaces. While typically feared as the                 duality explains the transition from continuous entropy to discrete
+Curse of Dimensionality in statistical learning (Geman et al., 1992),              thought: neural lateral inhibition (the Turing engine) performs the
+topologically, high dimensions represent a Blessing of Connectivity.               “Urysohn Cut,” collapsing the fuzzy sensory manifold into distinct,
+We oﬀer two lines of reasoning about the dimensionality paradox                    computable concepts.
+next. 1. Geometry vs. topology. Consider the constraints of
+separation in lower dimensions: (a) 1D (the line): if set A is at x = 0
+and set B is at x = 10, an observer at x = 5 acts as a wall. The
+separating set is a point that blocks the path; connectivity is easily             3.2 The parity alternation principle:
+broken. (b) High-D (the cloud): in Rn where n                1, the degrees        algorithmic topology
+of freedom to separate two disjoint manifolds increase eﬀortlessly.
+There are eﬀectively inﬁnite continuous deformations available to                      How does a biological system ensure that its representations
+slide a separating sheet between two sets without intersection. An                 are closed and disjoint in a noisy, continuous world? The real
+intriguing paradox emerges: Geometry views high dimensions as                      world presents a continuum, while the separability Urysohn’s
+sparse and intractable (volume explosion), whereas Topology views                  Lemma promises, demands discrete topological separation. We
+them as spacious and ﬂexible (connectivity freedom). 2. The Kernel                 propose that the cortex bridges this gap through the Parity
+trick vs. metric collapse. If high dimensions facilitate separation, why           Alternation Principle. Inference is not a static state but a
+is the CoD a problem? It depends on the strategy used to exploit those             rhythmic oscillation between two topological phases (e.g., sleep-
+dimensions. (a) Strategy A: The Kernel Trick (Space Inﬂation).                     vs-wake Hinton et al., 1995), governed by the duality of
+Kernel methods such as support vector machines (SVMs) (Vapnik,                     homology groups. To understand why this oscillation is necessary,
+1998) successfully overcome the CoD by implicitly mapping inputs                   we must distinguish the static guarantee from the dynamic
+to a higher-dimensional feature space (φ : Rd → R∞ ). By inﬂating                  mechanism.
+the space, they render nonlinear manifolds linearly separable. The
+Limitation: While topologically valid, this approach focuses on
+deﬁning the boundary (the shoreline between manifolds). It requires
+maintaining a set of support vectors to deﬁne this complex surface.                3.2.1 The guarantee vs. the engine
+Kernel trick solves separability by increasing representational
+complexity. (b) Strategy B: metric collapse (space condensation).                       Urysohn’s Lemma provides the license for intelligence, but it
+The framework proposed here takes the inverse approach. Instead                    does not manufacture the fuel. (1) Urysohn (the static guarantee):
+of inﬂating the space to ﬁnd a hyperplane, it employs the Urysohn                  if two concept supports A, B ⊂ Z are disjoint closed sets in a
+function to collapse the manifold. Rather than balancing a plane                   normal space, there exists a continuous gate f : Z → [0, 1] such that
+between two complex surfaces, one can eﬀectively implement the                     f |A = 0 and f |B = 1. This guarantees that a stable soft separator
+                                 CA )
+distance ratio: f (x) ≈ d(x,Cd(x,
+                              A )+d(x,CB )
+                                           . By collapsing the manifolds to        exists. (2) Parity alternation (the dynamic mechanism): existence
+their centroids or prototypes (CA , CB ), we force the problem to depend           is useless without construction. Parity alternation is the engine
+only on the 1D distance to the prototype. Conclusion: Kernel methods               that actively manufactures the topological conditions required by
+exploit the blessing by expanding x until walls vanish. Metric collapse            Urysohn. By oscillating between two phases (odd/expansion vs.
+exploits the blessing by contracting A and B until the empty space                 even/condensation), the system actively creates closed supports
+is irrelevant. The former is a boundary-oriented solution; the latter              (via consolidation) and pushes them apart (via conﬂict detection).
+is a core-oriented solution, completely bypassing the need to tile the             It forces the condition A ∩ B = ∅ to become true and stay
+ambient dimensions.                                                                true.
+
+
+
+
+Frontiers in Computational Neuroscience                                       06                                                            frontiersin.org
+Li                                                                                                                             10.3389/fncom.2026.1778902
+
+
+
+
+     FIGURE 3
+     The Topological Trinity Transformation (TTT). This diagram illustrates the conversion of high-entropy sensory data into low-entropy invariant tokens.
+     (1) Search (expansion): triggered by surprisal, the system enters a high-temperature Odd Parity state (β1 ), expanding a fuzzy open set Usearch along
+     gradient manifolds to interpret the input. (2) Closure (condensation): inhibitory feedback triggers a Metric Collapse (Even Parity, β0 ), driving the
+     diameter of the candidate set to zero (diam(U) → 0). This creates a distinct topological token x∗ surrounded by a safety margin δ, satisfying the
+     disjointness condition. (3) Navigation (separation): once collapsed, the complex high-dimensional manifold is reduced to a point mass. The Urysohn
+     separating function f(x) becomes a trivial linear readout structure, allowing for efficient low-energy routing to downstream modules.
+
+
+
+
+3.2.2 The deeper ﬁt: the cortex simulates                                          deﬁned as distance-to-closed-support; if a point falls into the
+Urysohn’s proof                                                                    void between disjoint sets, it is rejected. (3) Compute scaling: the
+                                                                                   system replaces global discrimination with local indexing (gate-
+    The most profound insight is that the standard mathematical                    then-reﬁne).
+proof of Urysohn’s Lemma is, itself, a parity alternation algorithm.
+The proof constructs a separating function by building a family of                 Remark 2 (The Euler Thermostat). The interaction between
+nested open sets {Ur }r∈Q such that: A ⊂ U0 , Ur ⊂ Us for r <                      these phases eﬀectively regulates the “topological temperature” of
+s, U1 ∩ B = ∅. The proof proceeds by alternating two distinct                      the manifold via the Euler characteristic (Hatcher, 2005): χ =
+                                                                                   
+                                                                                      k (−1) βk = β0 − β1 + . . . . By alternating between injecting
+                                                                                             k
+operations: (1) Open neighborhood selection (expansion): ﬁnd an
+open set U that covers the concept A. This eﬀectively proposes a                   entropy (Odd/β1 ) and extracting structure (Even/β0 ), the brain
+region of inﬂuence. (2) Closure enforcement (condensation): take the               prevents both overﬁtting (too many disjoint points, high β0 ) and
+closure U and ensure it sits strictly inside the next layer, disjoint              entanglement (too many unresolvable loops, high β1 ). To physically
+from B, which validates the region and creates a solid boundary.                   instantiate this topological regulation within the constraints of neural
+We propose that the Parity Alternation Principle is the algorithmic                circuits, the abstract requirement of parity alternation must be
+instantiation of this topological construction. The brain does not                 mapped onto a concrete temporal processing cycle.
+merely satisfy the theorem; it executes the proof steps in time.
+
+
+                                                                                   3.3 The topological trinity transformation
+3.2.3 Machine learning interpretation: the phasic                                  (TTT)
+cycle
+                                                                                       The Parity Alternation Principle is operationally realized
+     In the language of latent space dynamics, this manifests as a                 through a three-stage dynamical cycle we term the Topological
+rhythmic update rule for maintaining the disjointness of memory                    Trinity Transformation (TTT). This cycle describes the conversion
+supports (At ). (a) Odd phase (plastic/expansion): this mirrors                    of raw sensory data into predictive invariants (Figure 3).
+the Open-Set step. The system becomes plastic, exploring new
+trajectories and generating candidate regions U where new data                         1. Search (expansion): the system enters the Odd Parity
+wants to live. It detects topological conﬂicts (overlaps, parity                      regime. Driven by prediction error (surprisal), neural activity
+inconsistencies) between the new input and existing memory                            propagates along high-dimensional gradients. This deﬁnes
+structures. (b) Even phase (rigid/condensation): this mirrors the                     a candidate open set Usearch representing the potential
+Closure step. The system becomes rigid, contracting validated                         interpretation of the input.
+trajectories into closed tokens (attractor basins or prototypes). This                 2. Closure (condensation): this is the critical step often
+enforces the disjointness constraint: dist(Aold , Anew ) > . Overlaps                overlooked in purely associative models. To satisfy Urysohn’s
+are resolved by pushing conﬂicting data into boundary adjustments                     condition, the system must actively enforce disjointness.
+or splitting components. Once this cycle stabilizes, the supports                     Inhibitory mechanisms (Even Parity) trigger a Metric Collapse,
+A and B are mathematically prepared for the Urysohn License,                          driving internal distances within the candidate manifold to zero:
+                                                                                                 Collapse
+which enables: (1) Continual learning (Wang et al., 2024): updates                    diam(U) −−−−→ 0 ⇒ U → {x∗ }. This physical deformation
+are routed to B via the continuous gate without rewriting the                         manufactures the necessary margin δ between the concept and
+closed support of A (solving catastrophic forgetting). (2) Out-of-                    the background noise, transforming a fuzzy probability cloud
+distribution (OOD) detection (Yang et al., 2024): novelty is strictly                 into a distinct topological token.
+
+
+
+Frontiers in Computational Neuroscience                                       07                                                               frontiersin.org
+Li                                                                                                                                  10.3389/fncom.2026.1778902
+
+
+
+
+TABLE 1 The isomorphism between Urysohn’s Lemma and the topological trinity
+transformation.
+                                                                                           above principle serves as the functional bridge between our three
+                                                                                           clues: (1) The economic trade-oﬀ (linking to Savitch): recall Clue
+     Mathematical                          Cognitive mechanism                             2 (Complexity), where Savitch’s Theorem allows trading time for
+     construction (Urysohn)                (TTT)                                           space. The TTT cycle implements this trade-oﬀ physically. (a) High
+                                                                                           Action (Search/Closure): the system expends signiﬁcant energy to
+     Step 1: open set identiﬁcation        Phase 1: search (expansion)                     collapse the manifold and deﬁne the boundary. This corresponds
+     Identify an open neighborhood U       The brain enters the Odd Parity regime.         to the recursive depth of the Savitch machine (Savitch, 1970).
+     such that A ⊂ U ⊂ X \ B. This         Driven by surprisal, neural activity            b) Least action (navigation): once the token is deﬁned (U →
+     deﬁnes the region of inﬂuence.        expands along high-dimensional                  {x∗ }), the system no longer needs to solve a high-dimensional
+                                           gradients to identify the basin of              optimization problem to classify the input. It simply checks the
+                                           attraction for the stimulus.                    token’s coordinate. The complex search problem is reduced to a
+     Step 2: closure and normality         Phase 2: closure (condensation)                 simple lookup (Bellman, 1957). (2) The quotient manifold (linking
+     Construct the closure U and           The brain enters the Even Parity regime.        to topology): mathematically, the Metric Collapse creates a quotient
+     verify disjointness (U ∩ B = ∅).      Inhibitory feedback triggers Metric             space X / ∼ (Hatcher, 2005), where all points inside the fuzzy cloud
+     This ensures a valid topological      Collapse, suppressing competing                 U are identiﬁed as equivalent. In the raw sensory manifold, moving
+     boundary exists.                      representations to manufacture a safety
+                                                                                           from Concept A to Concept B requires navigating a complex, noisy,
+                                           margin δ > 0.
+                                                                                           high-dimensional terrain. In the quotient manifold (the space of
+                                                                                           collapsed tokens), the path is a straight line (a geodesic). (3) The
+     Step 3: functional/structural         Phase 3: navigation (separation)
+                                                                                           biological reality: standard neural networks often require constant
+     deﬁnition                             With the representation condensed to a
+                                                                                           high action, processing the full high-dimensional vector for every
+     Recursively interpolate nested sets   token (x∗ ), the complex manifold is
+                                                                                           query. The brain, limited by ATP, cannot aﬀord this (Bennett,
+     to deﬁne the continuous function      treated as a point mass. The separating
+                                                                                           2023). By ensuring representations are disjoint (Urysohn), the brain
+     f (x).                                function becomes a trivial linear
+                                                                                           enables downstream circuits (e.g., the Basal Ganglia) to execute
+                                           readout.                                        decisions via simple linear summation (action selection) rather
+                                                                                           than complex non-linear integration. In summary, navigation is the
+                                                                                           state where the brain reaps the rewards of its topological labor. The
+      3. Navigation (separation): once the representation is                               system has successfully converted a search problem (exponential
+     condensed into a closed singularity, the system enters the                            cost) into a routing problem (linear cost).
+     Navigation regime. The Urysohn separating function f (x)
+     becomes computationally trivial to evaluate (e.g., a linear
+     readout), allowing for low-energy routing of the token to
+     downstream areas.
+                                                                                           4 The predictive architecture: cortical
+                                                                                           columns as Urysohn operators
+3.3.1 The Urysohn-TTT isomorphism                                                              How does the biological substrate implement these abstract
+                                                                                           topological operations? We propose that the neocortex is not
+    The TTT is not merely a heuristic; it is the dynamical execution                       merely a feature extractor, but a hierarchical machine designed
+of the constructive proof of Urysohn’s Lemma. We can map the                               to perform recursive condensation. We reinterpret Mountcastle’s
+mathematical steps of the proof directly to the cognitive phases of                        columnar organization principle (Mountcastle, 1957) through the
+the TTT (Table 1).                                                                         lens of our TTT, positing that the cortical column functions as a
+                                                                                           discrete Urysohn operator.
+Deﬁnition 1 (The Urysohn-TTT Isomorphism). We identify the
+stages of the Topological Trinity Transformation as the algorithmic
+implementation of Urysohn’s construction.
+                                                                                           4.1 The column as a condensation
+                                                                                           chamber
+3.3.2 The payoff: navigation and the principle of                                              Standard models of predictive processing view the cortical
+least computational action                                                                 column as a statistical error-minimization unit (Bastos et al.,
+                                                                                           2012). We extend this view by deﬁning the column topologically
+     In our framework, navigation is eﬀectively the biological                             as a physical quotient map q : X → X / ∼, responsible for
+evaluation of the Urysohn separating function. However, this                               collapsing a high-dimensional, entangled sensory manifold into a
+is not merely a mathematical convenience; it is an energetic                               low-dimensional, disjoint token.
+necessity. By manufacturing the topological conditions required
+by the lemma (closed disjoint sets), the brain ensures that the
+following Principle of Least Computational Action (PLCA) holds:                            4.1.1 Bottom-up: the open set (search)
+A cognitive system minimizes the metabolic and temporal cost of
+frequent inference by maximizing the topological separability of                               The input layer (Layer IV) receives high-dimensional thalamic
+its latent representations. It essentially trades structural entropy                       or cortical drive. Topologically, this represents the metric expansion
+(during learning) for inference eﬃciency (during behavior). The                            phase (odd parity). The input deﬁnes an open set Uinput : a fuzzy,
+
+
+Frontiers in Computational Neuroscience                                               08                                                           frontiersin.org
+Li                                                                                                                              10.3389/fncom.2026.1778902
+
+
+
+
+      FIGURE 4
+      The cortex as fractal Urysohn machine. This diagram illustrates the mapping between the canonical cortical column and the topological
+      condensation phases. 1) The vertical circuit (intra-columnar): processing moves from input expansion to output condensation. Layer IV (expansion):
+      the column receives high-dimensional entangled input (Open Set U). Layer II/III (separation): lateral inhibition suppresses competing hypotheses,
+      enforcing the disjointness condition (U ∩ B = ∅). Layer V/VI (condensation): the validated manifold is collapsed into a stable, low-dimensional token
+      x∗ (the Quotient Map). 2) The horizontal hierarchy (inter-columnar): the system is recursive. The condensed output token of Column k becomes the
+      expansive input ﬂow for Column k + 1, effectively computing a sequence of quotient spaces M0 → M1 → . . . . 3) Predictive ﬂow: top-down
+      feedback (Red) projects the Closed-Set expectations. Prediction error represents a topological mismatch: if the bottom-up ﬂow (Green) falls outside
+      the predicted closed support, the system reverts to high-entropy search.
+
+
+
+
+probabilistic cloud of potential interpretations. In the language of                4.1.4 Reinterpreting the canonical microcircuit
+PP, this is the prediction error signal, representing the divergence                via TTT
+between the current sensory ﬂow and the stored invariants.
+                                                                                        Reframing the cortical column through the lens of the
+                                                                                    Topological Trinity Transformation fundamentally alters the
+                                                                                    interpretation of “precision weighting” in predictive processing.
+4.1.2 Top-down: the closed set (prior)                                              While standard models view the interplay between superﬁcial and
+                                                                                    deep layers merely as error propagation modulated by synaptic
+    Feedback connections from higher cortical areas (targeting                      gain, TTT posits that the microcircuit functions as a physical
+Layers I/VI) project the closed set U prior . This is the topological               engine for metric contraction. In this view, superﬁcial layers (L2/3)
+invariant or expectation. It acts as a constraint, deﬁning the valid                maintain the high-entropy Search phase, where “prediction error”
+manifold M upon which the input should lie.                                         eﬀectively measures the homological void between sensory input
+                                                                                    and the prior manifold; conversely, deep layers (L5/6) encode
+                                                                                    the low-entropy Structure. The critical computation occurring
+                                                                                    between them is not simple subtraction but a thermodynamic phase
+4.1.3 The Urysohn cut: lateral inhibition                                           transition (Figure 4), the lateral inhibition (Turing mechanism) in
+                                                                                    L2/3 performs the critical Closure (the Urysohn cut), physically
+   The computation happens in the supragranular layers (II/III).                    collapsing the dimensionality of the search space. An update in the
+Here, lateral inhibition acts as the Urysohn Cut. By suppressing                    predictive model represents not just a shift in parameters, but a
+competing columns, the circuit actively enforces the condition U ∩                  topological surgery that modiﬁes the Betti numbers of the internal
+B = ∅.                                                                              representation to resolve geometric ambiguity.
+
+     • If the open input Uinput successfully collapses into the closed
+       prior U prior (i.e., Uinput ⊂ U prior ), the column enters
+       navigation mode. It emits a condensed token (Layer V/VI                      4.2 Recursive Savitch: hierarchical
+       output) with zero error.                                                     prediction
+     • If the collapse fails (leakage, Uinput ⊂ U prior ), the system
+       generates a topological prediction error. This is not just a scalar              Standard PP formulations often face a computational
+       magnitude diﬀerence, but a geometry failure, triggering a new                bottleneck: predicting the exact pixel-level future at long
+       search phase (Odd Parity) to ﬁnd a better topological ﬁt.                    time scales requires simulating a chaotic dynamical system,
+
+
+
+Frontiers in Computational Neuroscience                                        09                                                               frontiersin.org
+Li                                                                                                                      10.3389/fncom.2026.1778902
+
+
+
+
+which encounters the Time Dragon (Lyapunov instability).                       closure, and that this equivalence explains the scaling laws of
+We propose that the cortical hierarchy implements memoized                     cortical evolution.
+Savitch to solve this. Instead of predicting the continuous
+trajectory x(t) for all t, the hierarchy predicts a sequence of
+topological midpoints.                                                         5.1 Variational free energy as topological
+                                                                               entropy
+      1. Higher columns (context): predict the coarse-grained
+     manifold Mcontext (e.g., “Object Motion”). This sets the                     In the FEP framework, the brain minimizes an upper
+     topological envelope for the layer below.                                 bound on surprise, known as Variational Free Energy (F ):
+      2. Lower columns (detail): do not need to search the entire              F = DKL (Q(s)||P(s|o)) − ln P(o), where Q(s) is the recognition
+     state space. They only search for the geodesic path within the                                 
+                                                                                           Divergence      Evidence
+     projected envelope Mcontext .
+                                                                               density (internal state) and P(s|o) is the posterior generative
+                                                                               model. Classically, divergence represents a statistical mismatch.
+    This recursively breaks the prediction horizon into manageable
+                                                                               Topologically, we reinterpret high Free Energy as Topological
+spatial chunks. The hierarchy M0 → M1 → M2 corresponds to
+                                                                               Entanglement.
+the recursion stack of Savitch’s algorithm. By condensing temporal
+sequences into spatial tokens at each level, the brain converts the            Deﬁnition 2 (Topological Entanglement). Given a sensory input
+exponential diﬃculty of long-term prediction into a polynomial                 x ∈ X and two competing internal models (closed sets) A and B,
+structural depth.                                                              the system is entangled if the input falls within the non-separable
+    Parity in plasticity: from ﬂow to prior. Finally, how does                 intersection of their open neighborhoods: x ∈ UA ∩ UB = ∅. In this
+a transient search become a permanent prior? We argue that                     state, no continuous separating function f exists, and the read-out is
+this phase transition is governed by the parity alternation of                 ambiguous (high entropy).
+neural assemblies.
+    Odd parity (β1 ): Polychronous Neural Groups (PNGs). The
+biological signature of the search phase is the Polychronous Neural
+Group (Izhikevich, 2006). PNGs are time-locked, spatiotemporal                 5.1.1 The topological thesis of FEP
+ﬁring patterns. Topologically, a PNG is a 1-cycle (a loop in
+time). It represents active inference, surprise, or the uncondensed                 Minimizing Free Energy is the dynamical process of driving
+ﬂow of information. It is metabolically expensive and transient,               the system toward Urysohn Disjointness. When the brain updates
+corresponding to the NPSPACE search trajectory.                                its internal state (via gradient descent on F ), it is performing
+    Even parity (β0 ): columnar assemblies. The biological                     a Metric Condensation: it contracts the open neighborhoods
+signature of the prior is the stable Columnar Assembly.                        UA , UB until the intersection vanishes (UA ∩ UB = ∅). Therefore,
+Topologically, this is a 0-cycle (a point in space). The transition is         surprise is simply the topological stress caused by leakage across
+mediated by Spike-Timing-Dependent Plasticity (STDP) (Caporale                 decision boundaries. The brain minimizes surprise by condensing
+and Dan, 2008). When a PNG loop repeats reliably (validation),                 sensory data into disjoint, closed sets where linear separability
+STDP reinforces the synaptic backbone, eﬀectively collapsing the               is guaranteed.
+temporal delay loop into a simultaneous spatial ensemble.
+
+                           Metric Collapse
+     PNG (Flow/Search) −−−−−−−−→ Assembly (Prior/Structure)                    5.1.2 A topological ﬁeld theory extension of the
+                      STDP                                             free energy principle
+       β1 , High Entropy                       β0 , Low Entropy
+
+    In this view, a Prior is simply a fossilized Search path. The brain            This geometric perspective naturally extends the Free Energy
+uses PNGs to explore the causal structure of the world (Time), and             Principle (FEP) (Friston, 2010) into the domain of topological ﬁeld
+once validated, freezes them into the spatial architecture of columns          theory. We propose that the brain minimizes an extended action
+(Space) to support rapid, zero-latency prediction.                             functional comprising both the standard variational free energy
+                                                                               (prediction error) and a penalty for topological complexity (e.g.,
+                                                                               the Euler characteristic χ Hatcher, 2005). Under this regime, the
+                                                                               learning process described by TTT is formally equivalent to a
+5 Memory-amortized inference:                                                  symmetry-breaking event where the system tunnels from a high-
+topological predictive processing                                              energy metastable state, characterized by complex, disconnected
+                                                                               topology (“holes” in understanding), to a low-energy vacuum state
+    We have established that the brain employs recursive                       of trivial topology (the amortized scaﬀold). Consequently, the
+condensation to manufacture topological separability. We now                   biological imperative is to act as a “Maxwell’s Demon” of geometry
+formally align this mechanism with the dominant theoretical                    (Maruyama et al., 2009): the system dissipates metabolic heat not
+framework of modern neuroscience: the Free Energy Principle                    merely to predict sensory data, but to actively reduce the topological
+(FEP) (Friston, 2010). We propose that minimizing variational                  entropy of the manifold, permanently converting the high cost of
+free energy is mathematically equivalent to maximizing topological             active search into the zero-cost inertia of structure.
+
+
+
+
+Frontiers in Computational Neuroscience                                   10                                                           frontiersin.org
+Li                                                                                                                      10.3389/fncom.2026.1778902
+
+
+
+
+5.2 The amortization cost theorem                                             (space N) yields an exponential increase in predictive reach. R(N) ∝
+                                                                              bαN where α represents the eﬃciency of the Urysohn quotient map
+5.2.1 Evolution’s cheat code: the predictive                                  (the compression ratio of the column).
+savitch machine
+
+    We can now synthesize the evolutionary logic of the                       5.2.3 Expansion: the spatiotemporal exchange
+mammalian neocortex. Biological survival requires predicting                  rate
+complex, chaotic futures (The Time Dragon). A naive solution,
+increasing the speed of neural ﬁring, is metabolically impossible.                 Theorem 2 provides the rigorous justiﬁcation for the “linear
+The only viable alternative is to exploit the computational                   hardware, exponential software” observation: the brain trades
+equivalence NPSPACE ⊆ PSPACE. Evolution selected for the                      space (adding columns) to purchase time (computational depth).
+neocortical sheet because it is a Predictive Savitch Machine.                 Formally, the theorem establishes that the storage complexity of the
+                                                                              manifold |N()| scales exponentially with the intrinsic dimension
+1. Input: it takes problems that are exponentially hard in
+                                                                              d. In a ﬁxed-resource system, reducing the resolution error 
+   Time (Search).
+                                                                              typically requires a corresponding increase in temporal processing
+2. Process: it applies Recursive Topological Condensation,
+                                                                              (iterations of the search loop) to resolve ambiguity. However, by
+   freezing successful search paths into spatial hardware (Prior).
+                                                                              expanding the physical substrate, linearly adding cortical columns
+3. Output: it solves future instances of the problem in Polynomial
+                                                                              to increase the covering number |N()|, the system can physically
+   Space (Navigation).
+                                                                              instantiate a ﬁner -net. This spatial expansion eﬀectively pre-
+                                                                              computes the higher resolution, converting what would be a costly,
+                                                                              deep-temporal search (high computational depth) into a shallow,
+5.2.2 Recursive condensation and Mountcastle’s                                constant-time routing operation across a larger static scaﬀold. In
+principle                                                                     summary, the biological strategy of massive parallelism is not
+                                                                              merely about throughput, but about thermodynamic amortization:
+    Our framework reinterprets Mountcastle’s columnar                         investing linear metabolic maintenance costs (Space) to bypass the
+organization (Mountcastle, 1957) not merely as modular                        exponential energy costs of dynamic error correction (Time).
+processing, but as the physical instantiation of recursive topological
+quotienting. We posit that every cortical column functions as
+a discrete Urysohn Operator: it ingests a high-dimensional,
+entangled input (Search/Open Set) at Layer IV, enforces separation            6 Discussion
+via lateral inhibition (Urysohn Cut) at Layers II/III, and emits
+a condensed, zero-margin token (Navigation/Closed Set) at                         We have proposed that the mammalian neocortex operates
+Layers V/VI. This explains the striking uniformity of cortical                as a biological Savitch machine, employing recursive condensation
+architecture: since the topological mechanism for separability                to solve the dual challenges of combinatorial complexity (The
+(Urysohn’s Lemma) is dimension-agnostic, the biological                       Time Dragon) and dimensional sparsity (The Space Dragon). This
+hardware implementing it must be invariant across scales.                     framework moves beyond metaphor, oﬀering speciﬁc, falsiﬁable
+In the context of predictive processing (Keller and Mrsic-                    predictions about neural dynamics and providing a uniﬁed
+Flogel, 2018), this hierarchy acts as a metric sieve: each level of           ontology for intelligence.
+recursion ﬁlters out metric deformations (noise) via condensation,
+passing only topologically stable invariants to the level above.
+Therefore, the cortex breaks the Curse of Dimensionality by                   6.1 The uniﬁcation
+physically manufacturing a nested sequence of quotient spaces,
+Msensory → · · · → Mconcept , where linear separability is                        This paper began with a question: How does a ﬁnite biological
+maintained at every step.                                                     engine achieve exponential cognitive reach? The answer lies in the
+    If the brain minimizes free energy via condensation, how does             isomorphism between distinct ﬁelds of mathematics, computation,
+this scale? We deﬁne Memory-Amortized Inference (MAI) as                      and neurobiology. Our framework uniﬁes them into a single
+the strategy of storing these condensed states (priors) to avoid              coherent narrative of intelligence (Table 2).
+re-computing the search path (Gershman and Goodman, 2014).                        The convergence of three clues in topology, complexity, and
+Consider a cognitive task requiring a search depth L (e.g., planning          neuroscience oﬀers new insight to the paradox of intelligence.
+L steps ahead) in a state space with branching factor b. (1) Cost of              Topology provides the Why. Urysohn’s Lemma explains
+Search (Csearch ): without priors, the system must explore the tree.          why the brain discards information. It is not compression for
+The complexity is exponential in time: O(bL ), scaling as NPSPACE.            bandwidth’s sake but condensation for separability’s sake. The
+(2) Cost of Structure (Cspace ): the system stores intermediate               brain must collapse the metric manifold to separate and stabilize
+condensed tokens (cortical columns). The complexity is linear in              topological concepts.
+space: O(N), where N is the number of columns.                                    Complexity provides the How. Savitch’s Theorem explains why
+                                                                              the brain is hierarchical. A deep stack of cortical columns is not just
+Theorem 2 (Amortization Cost Theorem). Let R be the Predictive                extracting features; it is a recursion stack that allows the brain to
+Reach of the system (the maximum depth L traversable without                  emulate nondeterministic search (NPSPACE) using deterministic,
+divergence). Under MAI, a linear increase in structural capacity              spatially constrained hardware (PSPACE).
+
+
+Frontiers in Computational Neuroscience                                  11                                                            frontiersin.org
+Li                                                                                                                                     10.3389/fncom.2026.1778902
+
+
+
+
+TABLE 2 The grand uniﬁcation of recursive condensation.
+                                                                                              Parity Alternation Principle. Excitation phase (odd/β1 ): pyramidal
+                                                                                              ﬁring corresponds to the deﬁnition of the open neighborhood
+     Discipline           Core                    Role in cognition
+                                                                                              U (metric expansion/search). Inhibition phase (even/β0 ): The
+                          principle
+                                                                                              subsequent volley of Parvalbumin+ interneurons corresponds to
+     Topology             Urysohn’s Lemma         The condition: separability requires        the Urysohn Cut, enforcing the closure U (metric condensation).
+                                                  disjoint closure.                           Testable implication: pathologies involving Gamma dysregulation
+     Complexity           Savitch’s Theorem       The algorithm: time (Search) can            (e.g., Schizophrenia Insel, 2010) should be reinterpreted not as
+                                                  be traded for Space (Recursion).            signaling failures, but as Topological Leakage. A failure of the
+                                                                                              inhibitory cut results in U ∩ B = ∅, leading to the entanglement
+     Neuroscience         Mountcastle/PP          The hardware: columns instantiate
+                                                                                              of distinct concepts (hallucinations) and the inability to distinguish
+                                                  the recursive collapse.
+                                                                                              internal priors from external sensory ﬂow (Fletcher and Frith,
+     Thermodynamics       Dark energy &           The engine: energy maintains                2009).
+                          Spontaneous             topology; SSOs clock the recursion.         Integration with macroscopic predictive coding: while the
+                          Slow Oscillations                                                   Gamma PING rhythm executes the local topological cut (Urysohn
+                          (SSOs)                                                              Condensation), we map this to the global predictive coding
+                                                                                              dynamics mediated by Alpha-band traveling waves (Alamia and
+                                                                                              VanRullen, 2019). In our framework, top-down Alpha waves deliver
+    Neuroscience provides the What. Predictive Processing
+                                                                                              the topological prior (the intended boundary of U), while the local
+explains the structural dynamic. The brain is not a passive ﬁlter
+                                                                                              Gamma circuit executes the metric cut. Cross-frequency phase
+but an active metric sculptor. By minimizing Free Energy, it is
+                                                                                              coupling ensures the local Parity Alternation is synchronized with
+physically maximizing the topological disjointness of its internal
+                                                                                              the global predictive cascade. Consequently, the topological leakage
+states, continuously shaping the manifold to reduce future surprise.
+                                                                                              seen in Schizophrenia (Insel, 2010) is the mechanical failure of
+    Thermodynamics provides the engine and the clock. The
+                                                                                              the Gamma Urysohn cut to separate top-down Alpha predictions
+computational logic of this framework requires a physical
+                                                                                              from bottom-up sensory metrics, causing internal priors to be
+mechanism to drive its iterations, which is resolved by the brain’s
+                                                                                              erroneously broadcast as external sensory realities (Sterzer et al.,
+Spontaneous Slow Oscillations (SSOs) (Batterink et al., 2016;
+                                                                                              2018).
+Timofeev et al., 2000) and its massive baseline metabolic cost,
+often termed the brain’s dark energy (Gong and Zuo, 2025;
+Raichle et al., 2001). Under our framework, the SSO cycle acts
+as the physical clock for the Parity Alternation Principle. The                               6.2.2 Prediction 2: sleep and SWRs as offline
+cortical “Down-state” (hyperpolarization) corresponds strictly to                             closure
+the Quotienting (Reset) operation (Dang-Vu et al., 2008)—wiping
+away the transient metric noise to return the system to the null                                  While Gamma manages micro-scale condensation (Buzsáki
+manifold. The subsequent “Up-state” (depolarization) corresponds                              and Wang, 2012), global topological consolidation requires oﬄine
+to ﬁber activation, engaging the topological scaﬀold to integrate                             processing to prevent interference between the open sensory stream
+new sensory coordinates (Robinson and Roy, 2015). Importantly,                                and the closed structural priors. We predict that Sharp-Wave
+the massive dark energy expenditure is the thermodynamic cost                                 Ripples (SWRs) during Slow-Wave Sleep represent the system
+of ﬁghting the Second Law of Thermodynamics to maintain this                                  performing Global Closure (Buzsáki, 2015). During waking, the
+topological scaﬀold. Without this constant injection of energy,                               brain accumulates high-entropy search paths (PNGs/β1 traces).
+the stable semantic graph (the topology) would spontaneously                                  During sleep, these temporal loops are replayed and collapsed via
+decay into disorganized episodic noise (metric entropy) (Robinson                             STDP into permanent structural weights (Columns/β0 ). Testable
+et al., 2015). Therefore, recursive condensation is not merely                                Implication: deprivation of SWRs should speciﬁcally impair
+a mathematical algorithm, but a thermodynamically mandated                                    transitive inference (the ability to link A → B → C via a structural
+process of structural maintenance (Pang et al., 2023).                                        backbone), as the system fails to memoize the search paths into
+                                                                                              navigable geometry (Buzsáki and Moser, 2013).
+                                                                                              Integration with the SSO Spectral Hierarchy: while Gamma
+6.2 Predictions: the biological and                                                           provides the Urysohn Clock for local, columnar condensation,
+computational implementation                                                                  global structural updates require a macroscopic parity operator.
+                                                                                              We propose that the fractal nature of brain oscillations reﬂects
+   If the cortex functions as a recursive Urysohn operator, speciﬁc                           a hierarchy of topological closure (Staresina et al., 2015).
+physiological rhythms must correspond to the topological phases of                            Hippocampal SWRs, the fast, metric replays of waking search
+expansion (search) and contraction (closure).                                                 paths, do not permanently alter the cortical manifold on their
+                                                                                              own. Instead, they must be temporally nested within the Up-states
+                                                                                              of standard Slow Oscillations (∼ 1 Hz), which are themselves
+6.2.1 Prediction 1: gamma oscillations as the                                                 amplitude-modulated by infra-slow rhythms such as the Slow-4
+Urysohn clock                                                                                 band (0.01–0.027 Hz) (Lecci et al., 2017). In this framework, Slow-
+                                                                                              4 acts as the transitional band for global closure. It provides the
+    We posit that the Pyramidal-Interneuron Gamma (PING)                                      prolonged temporal window of brain-wide coherence necessary to
+rhythm (Traub et al., 1997) is the physical manifestation of the                              quotient disparate local replays into a uniﬁed semantic manifold.
+
+
+Frontiers in Computational Neuroscience                                                  12                                                           frontiersin.org
+Li                                                                                                                      10.3389/fncom.2026.1778902
+
+
+
+
+Consequently, disruptions to the hierarchical nesting of SWRs                 In conclusion, the mammalian brain is a machine that cheats
+within the Slow-4 envelope will speciﬁcally fracture transitive               the limits of metabolic energy by exploiting the geometry of the
+inference (A → B → C), as the brain loses the macroscopic                     quotient map.
+parity state required to stitch local metric sequences into a globally            More broadly, MAI reframes intelligence as a principle of
+navigable topology (Robinson et al., 2015).                                   topological inference: cognition is not fast parallel search, but
+                                                                              the recursive enforcement of closure until context and content
+                                                                              cohere into a self-consistent, persistent structure. This bears critical
+6.2.3 Prediction 3: SNNs as pulse-position                                    implications for the future of Artiﬁcial General Intelligence (AGI).
+Urysohn operators                                                             Statistical oracle-based approaches, such as Large Language Models
+                                                                              (LLMs), attempt to solve the Space Dragon by simply inﬂating it,
+    We predict that the recursive Urysohn operator is implemented             scaling parameters to memorize the manifold, while ignoring the
+via Time-to-First-Spike (TTFS) coding within a delay-coupled                  Time Dragon. They seek to be instantaneous oracles. However, our
+Spiking Neural Network (SNN) (Ghosh-Dastidar and Adeli, 2009).                analysis suggests that such approaches are theoretically bounded. A
+In this regime, the metric distance between two topological sets              true AGI will not be an instantaneous oracle, but a serial thinker.
+is encoded as the relative phase lag between spike volleys. (1)               It must respect the fundamental constraint that P = NP. Like
+Latent Warp via Synaptic Delays: The metric slingshot is physically           the human mind, it must take the time to think, engaging in the
+realized by the modulation of dendritic delays (Muller et al.,                recursive, temporal condensation of information to navigate the
+1996). By shortening the delay t along the principal axis of                  exponential complexity of the real world.
+ﬂuidity (GHL discovery), the SNN collapses the temporal distance
+between the agent’s state and the goal; (2) The Operator Mechanism:
+The Urysohn Cut is implemented by a coincidence detection
+threshold. Only spikes arriving within a narrow -window trigger              Data availability statement
+the downstream token (a columnar burst), eﬀectively performing
+a non-linear contraction of high-dimensional input into a single                  The original contributions presented in the study are included
+point in the next layer. Testable Implication: We predict that in             in the article/supplementary material, further inquiries can be
+navigating topological traps, successful learning will be marked              directed to the corresponding author.
+by a temporal compression of the spike train. As the Maze
+becomes a Bowl, the sequence of spikes representing the path
+will move from a sparse, high-entropy temporal distribution to a
+synchronous, low-latency volley. Computational models of SNNs
+                                                                              Author contributions
+using surrogate gradient descent (Neftci et al., 2019) should
+                                                                                 XL: Investigation, Writing – original draft, Methodology,
+show that incorporating a metric slingshot penalty (rewarding
+                                                                              Writing – review & editing, Conceptualization, Visualization,
+temporal sparsity) signiﬁcantly reduces the time-to-solution in
+                                                                              Project administration, Funding acquisition.
+non-convex landscapes.
+
+
+
+
+7 Conclusion                                                                  Funding
+                                                                                  The author(s) declared that ﬁnancial support was received for
+    The intelligence of the mammalian brain does not arise
+                                                                              this work and/or its publication. This work was partially supported
+from raw speed (defeating the Time Dragon directly) nor from
+                                                                              by NSF awards IIS-2401748 and BCS-2401398.
+inﬁnite storage (defeating the Space Dragon directly). It arises
+from the geometry of the compromise. By implementing MAI,
+the cortex cheats the laws of complexity. It builds a biological
+Savitch machine that converts the impossible exponential explosion            Conﬂict of interest
+of the future into the manageable polynomial architecture of
+space. By enforcing Urysohn’s condition of disjoint closure,                      The author(s) declared that this work was conducted in the
+the brain transforms exponential, nondeterministic search into                absence of any commercial or ﬁnancial relationships that could be
+deterministic, serial traversal, an embodied realization of Savitch’s         construed as a potential conﬂict of interest.
+theorem. Using the hippocampus for topological indexing, the
+cortex slays the Space Dragon (dimensionality) through structural
+reuse and taming the Time Dragon (combinatorial explosion)
+through serial amortization. Under our framework, predictive                  Generative AI statement
+processing is reinterpreted as recursive condensation. Each cortical
+column acts as a topological operator, collapsing high-entropy                    The author(s) declared that generative AI was used in the
+temporal ﬂows into stable spatial invariants. This tradeoﬀ, linear            creation of this manuscript. Gemini 3.1 was used to assit the
+cortical expansion yielding exponential representational reach,               development of theoretical ideas (i.e., Theorems 1 and 2) and
+explains the evolutionary advantage of the mammalian neocortex.               generate visual illustrations (i.e., Figures 1–4) in this paper.
+
+
+
+Frontiers in Computational Neuroscience                                  13                                                             frontiersin.org
+Li                                                                                                                                                       10.3389/fncom.2026.1778902
+
+
+
+
+ChatGPT 5.4 was used to polish the literary presentation of                                      Publisher’s note
+introduction and discussion sections.
+    Any alternative text (alt text) provided alongside ﬁgures                                        All claims expressed in this article are solely those of the
+in this article has been generated by Frontiers with the                                         authors and do not necessarily represent those of their aﬃliated
+support of artiﬁcial intelligence and reasonable eﬀorts have                                     organizations, or those of the publisher, the editors and the
+been made to ensure accuracy, including review by the                                            reviewers. Any product that may be evaluated in this article, or
+authors wherever possible. If you identify any issues, please                                    claim that may be made by its manufacturer, is not guaranteed or
+contact us.                                                                                      endorsed by the publisher.
+
+
+
+
+References
+Alamia, A., and VanRullen, R. (2019). Alpha oscillations and traveling waves:                    Hatcher, A. (2005). Algebraic Topology. Cambridge: Cambridge University Press.
+signatures of predictive coding? PLoS Biol. 17:e3000487. doi: 10.1371/journal.pbio.300
+                                                                                                 Hinton, G. E., Dayan, P., Frey, B. J., and Neal, R. M. (1995). The “wake-
+0487
+                                                                                                 sleep” algorithm for unsupervised neural networks. Science 268, 1158–1161.
+Bastos, A. M., Usrey, W. M., Adams, R. A., Mangun, G. R., Fries, P., Friston, K.                 doi: 10.1126/science.7761831
+J., et al. (2012). Canonical microcircuits for predictive coding. Neuron 76, 695–711.
+                                                                                                 Horton, J. C., and Adams, D. L. (2005). The cortical column: a structure without a
+doi: 10.1016/j.neuron.2012.10.038
+                                                                                                 function. Philos. Trans. R. Soc. B: Biol. Sci. 360, 837–862. doi: 10.1098/rstb.2005.1623
+Batterink, L. J., Creery, J. D., and Paller, K. A. (2016). Phase of spontaneous slow
+                                                                                                 Insel, T. R. (2010).           Rethinking      schizophrenia.     Nature     468,    187–193.
+oscillations during sleep inﬂuences memory-related processing of auditory cues. J.
+                                                                                                 doi: 10.1038/nature09552
+Neurosci. 36, 1401–1409. doi: 10.1523/JNEUROSCI.3175-15.2016
+                                                                                                 Izhikevich, E. M. (2006). Polychronization: computation with spikes. Neural Comput.
+Bellman, R. (1957). Dynamic Programming. Princeton, NJ: Princeton University Press.
+                                                                                                 18, 245–282. doi: 10.1162/089976606775093882
+Bennett, M. (2023). A Brief History of Intelligence: Evolution, AI, and the Five
+                                                                                                 Karp, R. M. (1972). “Reducibility among combinatorial problems.” Complexity of
+Breakthroughs that Made Our Brains. New York, NY: HarperCollins.
+                                                                                                 Computer Computations, eds. R. E. Miller, and J. W. Thatcher (New York, NY: Plenum
+Bottou, L., Peters, J., Quiñonero-Candela, J., Charles, D. X., Chickering, D.                    Press), 85–103. doi: 10.1007/978-1-4684-2001-2_9
+M., Portugaly, E., et al. (2013). Counterfactual reasoning and learning systems:
+                                                                                                 Keller, G. B., and Mrsic-Flogel, T. D. (2018). Predictive processing: a canonical cortical
+the example of computational advertising. J. Mach. Learn. Res. 14, 3207–3260.
+                                                                                                 computation. Neuron 100, 424–435. doi: 10.1016/j.neuron.2018.10.003
+doi: 10.5555/2567709.2567766
+                                                                                                 Lecci, S., Fernandez, L. M., Weber, F. D., Cardis, R., Chatton, J.-Y., Born, J., et al. (2017).
+Brooks, R. A. (1991). Intelligence without representation. Artif. Intell. 47, 139–159.
+                                                                                                 Coordinated infraslow neural and cardiac oscillations mark fragility and oﬄine periods
+doi: 10.1016/0004-3702(91)90053-M
+                                                                                                 in mammalian sleep. Sci. Adv. 3:e1602026. doi: 10.1126/sciadv.1602026
+Brown, T., Mann, B., Ryder, N., Subbiah, M., Kaplan, J. D., Dhariwal, P., et al. (2020).
+                                                                                                 LeCun, Y., Bengio, Y., and Hinton, G. (2015). Deep learning. Nature 521, 436–444.
+Language models are few-shot learners. Adv. Neural Inf. Process. Syst. 33, 1877–1901.
+                                                                                                 doi: 10.1038/nature14539
+doi: 10.5555/3495724.3495883
+                                                                                                 Maruyama, K., Nori, F., and Vedral, V. (2009). Colloquium: the physics of maxwell’s
+Buzsaki, G. (2006). Rhythms of the Brain. Oxford: Oxford university press.
+                                                                                                 demon and information. Rev. Mod. Phys. 81, 1–23. doi: 10.1103/RevModPhys.81.1
+doi: 10.1093/acprof:oso/9780195301069.001.0001
+                                                                                                 Minsky, M. (1961). Steps toward artiﬁcial intelligence. Proc. IRE 49, 8–30.
+Buzsáki, G. (2015). Hippocampal sharp wave-ripple: a cognitive biomarker for episodic
+                                                                                                 doi: 10.1109/JRPROC.1961.287775
+memory and planning. Hippocampus 25, 1073–1188. doi: 10.1002/hipo.22488
+                                                                                                 Minsky, M. L. (1967). Computation: Finite and Inﬁnite Machines. Englewood Cliﬀs, NJ:
+Buzsáki, G., and Moser, E. I. (2013). Memory, navigation and theta rhythm in the
+                                                                                                 Prentice-Hall.
+hippocampal-entorhinal system. Nat. Neurosci. 16, 130–138. doi: 10.1038/nn.3304
+                                                                                                 Mountcastle, V. B. (1957). Modality and topographic properties of single neurons of
+Buzsáki, G., and Wang, X.-J. (2012). Mechanisms of gamma oscillations. Annu. Rev.
+                                                                                                 cat’s somatic sensory cortex. J. Neurophysiol. 20, 408–434. doi: 10.1152/jn.1957.20.4.408
+Neurosci. 35, 203–225. doi: 10.1146/annurev-neuro-062111-150444
+                                                                                                 Muller, R. U., Stead, M., and Pach, J. (1996). The hippocampus as a cognitive graph. J.
+Caporale, N., and Dan, Y. (2008). Spike timing-dependent plasticity: a hebbian
+                                                                                                 Gen. Physiol. 107, 663–694. doi: 10.1085/jgp.107.6.663
+learning rule. Annu. Rev. Neurosci. 31, 25–46. doi: 10.1146/annurev.neuro.31.060407.
+125639                                                                                           Neftci, E. O., Mostafa, H., and Zenke, F. (2019). Surrogate gradient learning in spiking
+                                                                                                 neural networks: bringing the power of gradient-based optimization to spiking neural
+Cook, S. A. (1971). “The complexity of theorem-proving procedures,” in Proceedings of
+                                                                                                 networks. IEEE Signal Process. Mag. 36, 51–63. doi: 10.1109/MSP.2019.2931595
+the Third Annual ACM Symposium on Theory of Computing (New York, NY: ACM),
+151–158. doi: 10.1145/800157.805047                                                              Pang, J. C., Aquino, K. M., Oldehinkel, M., Robinson, P. A., Fulcher, B. D., Breakspear,
+                                                                                                 M., et al. (2023). Geometric constraints on human brain function. Nature 618, 566–574.
+Dang-Vu, T. T., Schabus, M., Desseilles, M., Albouy, G., Boly, M., Darsaud, A., et al.
+                                                                                                 doi: 10.1038/s41586-023-06098-1
+(2008). Spontaneous neural activity during human slow wave sleep. Proc. Nat. Acad.
+Sci. 105, 15160–15165. doi: 10.1073/pnas.0801819105                                              Raichle, M. E., MacLeod, A. M., Snyder, A. Z., Powers, W. J., Gusnard, D. A., Shulman,
+                                                                                                 G. L., et al. (2001). A default mode of brain function. Proc. Nat. Acad. Sci. 98, 676–682.
+Fletcher, P. C., and Frith, C. D. (2009). Perceiving is believing: a Bayesian approach
+                                                                                                 doi: 10.1073/pnas.98.2.676
+to explaining the positive symptoms of schizophrenia. Nat. Rev. Neurosci. 10, 48–58.
+doi: 10.1038/nrn2536                                                                             Robinson, P., and Roy, N. (2015). Neural ﬁeld theory of nonlinear wave-wave and
+                                                                                                 wave-neuron processes. Phys. Rev. E 91:062719. doi: 10.1103/PhysRevE.91.062719
+Friston, K. (2010). The free-energy principle: a uniﬁed brain theory? Nat. Rev. Neurosci.
+11, 127–138. doi: 10.1038/nrn2787                                                                Robinson, P. A., Postnova, S., Abeysuriya, R. G., Kim, J. W., Roberts, J. A., McKenzie-
+                                                                                                 Sell, L., et al. (2015). “A multiscale “working brain” model,” in Validating Neuro-
+Geman, S., Bienenstock, E., and Doursat, R. (1992). Neural networks and the
+                                                                                                 Computational Models of Neurological and Psychiatric Disorders (Cham: Springer),
+bias/variance dilemma. Neural Comput. 4, 1–58. doi: 10.1162/neco.1992.4.1.1
+                                                                                                 107–140. doi: 10.1007/978-3-319-20037-8_5
+Gershman, S., and Goodman, N. (2014). “Amortized inference in probabilistic
+                                                                                                 Rudin, W. (1976). Principles of Mathematical Analysis, 3rd Edn. McGraw-Hill.
+reasoning,” in Proceedings of the Annual Meeting of the Cognitive Science Society,
+Volume 36.                                                                                       Savitch, W. J. (1970). Relationships between nondeterministic and deterministic tape
+                                                                                                 complexities. J. Comput. Syst. Sci. 4, 177–192. doi: 10.1016/S0022-0000(70)80006-X
+Ghosh-Dastidar, S., and Adeli, H. (2009). Spiking neural networks. Int. J. Neural Syst.
+19, 295–308. doi: 10.1142/S0129065709002002                                                      Simon, H. A. (1962). The architecture of complexity. Proc. Am. Philos. Soc. 106,
+                                                                                                 467–482.
+Gong, Z.-Q., and Zuo, X.-N. (2025). Dark brain energy: toward an integrative
+model of spontaneous slow oscillations. Phys. Life Rev. 52, 278–297.                             Sipser, M. (2012). Introduction to the Theory of Computation, 3rd Edn. Boston, MA:
+doi: 10.1016/j.plrev.2025.02.001                                                                 Cengage Learning.
+Hasson, U., Chen, J., and Honey, C. J. (2015). Hierarchical process memory: memory               Staresina, B. P., Bergmann, T. O., Bonnefond, M., Van Der Meij, R., Jensen, O., Deuker,
+as an integral component of information processing. Trends Cogn. Sci. 19, 304–313.               L., et al. (2015). Hierarchical nesting of slow oscillations, spindles and ripples in the
+doi: 10.1016/j.tics.2015.04.006                                                                  human hippocampus during sleep. Nat. Neurosci. 18, 1679–1686. doi: 10.1038/nn.4119
+
+
+
+
+Frontiers in Computational Neuroscience                                                     14                                                                               frontiersin.org
+Li                                                                                                                                                     10.3389/fncom.2026.1778902
+
+
+
+
+Sterzer, P., Adams, R. A., Fletcher, P., Frith, C., Lawrie, S. M., Muckli, L., et al.            Urysohn, P. (1925). Über die mächtigkeit der zusammenhängenden mengen. Math.
+(2018). The predictive coding account of psychosis. Biol. Psychiatry 84, 634–643.                Ann. 94, 262–295. doi: 10.1007/BF01208659
+doi: 10.1016/j.biopsych.2018.05.015
+                                                                                                 Vapnik, V. N. (1998). Statistical Learning Theory. Hoboken, NJ: Wiley.
+Timofeev, I., Grenier, F., Bazhenov, M., Sejnowski, T., and Steriade, M. (2000). Origin
+of slow cortical oscillations in deaﬀerented cortical slabs. Cereb. Cortex 10, 1185–1199.        Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A. N., et al. (2017).
+doi: 10.1093/cercor/10.12.1185                                                                   “Attention is all you need,” in Advances in Neural Information Processing Systems 30.
+
+Traub, R. D., Jeﬀerys, J. G., and Whittington, M. A. (1997). Simulation of gamma                 Wang, L., Zhang, X., Su, H., and Zhu, J. (2024). A comprehensive survey of continual
+rhythms in networks of interneurons and pyramidal cells. J. Comput. Neurosci. 4,                 learning: theory, method and application. IEEE Trans. Pattern Anal. Mach. Intell. 46,
+141–150. doi: 10.1023/A:1008839312043                                                            5362–5383. doi: 10.1109/TPAMI.2024.3367329
+Turing, A. M. (1952). The chemical basis of mokphogenesis. Phil. Trans. R. Soc. Lond.            Yang, J., Zhou, K., Li, Y., and Liu, Z. (2024). Generalized out-of-distribution detection:
+B Biol. Sci. 237, 37–72. doi: 10.1098/rstb.1952.0012                                             a survey. Int. J. Comput. Vis. 132, 5635–5662. doi: 10.1007/s11263-024-02117-4
+
+
+
+
+Frontiers in Computational Neuroscience                                                     15                                                                             frontiersin.org
+
