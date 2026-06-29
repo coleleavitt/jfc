@@ -54,7 +54,11 @@ const ANTHROPIC_VERSION: &str = "2023-06-01";
 // unconditionally to older models risks the API responding with
 // "unexpected value" beta errors that flip our cap-strip-and-retry path on
 // for no reason. Appended conditionally in `build_beta_header` below.
-const ANTHROPIC_BETA: &str = "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,prompt-caching-scope-2026-01-05,extended-cache-ttl-2025-04-11,output-128k-2025-02-19,context-management-2025-06-27,web-search-2025-03-05,structured-outputs-2025-12-15,advanced-tool-use-2025-11-20,tool-search-tool-2025-10-19,files-api-2025-04-14,cache-diagnosis-2026-04-07,effort-2025-11-24,environments-2025-11-01";
+const ANTHROPIC_BETA: &str = "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,output-128k-2025-02-19,web-search-2025-03-05,structured-outputs-2025-12-15,advanced-tool-use-2025-11-20,tool-search-tool-2025-10-19,files-api-2025-04-14,cache-diagnosis-2026-04-07,effort-2025-11-24,environments-2025-11-01";
+const PROMPT_CACHING_SCOPE_BETA: &str = "prompt-caching-scope-2026-01-05";
+const EXTENDED_CACHE_TTL_BETA: &str = "extended-cache-ttl-2025-04-11";
+const CONTEXT_MANAGEMENT_BETA: &str = "context-management-2025-06-27";
+const COMPACT_BETA: &str = "compact-2026-01-12";
 const NARRATION_SUMMARIES_BETA: &str = jfc_anthropic_sdk::beta::NARRATION_SUMMARIES;
 
 /// Whether `mid-conversation-system-2026-04-07` should be appended for `model`.
@@ -97,8 +101,9 @@ pub(crate) fn append_env_betas(header: &mut String) {
 /// gates them. A capability of `Some(false)` (confirmed unsupported) strips
 /// the token; `None` (untested) or `Some(true)` includes it. Mirrors opencode-
 /// anthropic-auth's GATED_BETAS / BLOCKED_BETAS handling at index.ts:678-728.
+const CONTEXT_1M_BETA: &str = "context-1m-2025-08-07";
 const GATED_BETAS: &[(&str, GatedCapability)] = &[
-    ("context-1m-2025-08-07", GatedCapability::Context1m),
+    (CONTEXT_1M_BETA, GatedCapability::Context1m),
     ("afk-mode-2026-01-31", GatedCapability::AfkMode),
 ];
 
@@ -109,9 +114,13 @@ enum GatedCapability {
 }
 
 impl GatedCapability {
-    fn is_disabled(self, caps: &super::anthropic_accounts::AccountCapabilities) -> bool {
+    fn is_disabled(
+        self,
+        caps: &super::anthropic_accounts::AccountCapabilities,
+        model_supports_long_context: bool,
+    ) -> bool {
         match self {
-            Self::Context1m => caps.context1m == Some(false),
+            Self::Context1m => caps.context1m == Some(false) || !model_supports_long_context,
             Self::AfkMode => caps.afk_mode == Some(false),
         }
     }
@@ -123,6 +132,7 @@ impl GatedCapability {
 /// caller asked for the feature *and* the account hasn't been marked
 /// `Some(false)` on the corresponding capability.
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 fn build_beta_header(
     caps: &super::anthropic_accounts::AccountCapabilities,
     fast_mode: bool,
@@ -132,10 +142,56 @@ fn build_beta_header(
     strict_tool_schemas: bool,
     narration_summaries: bool,
     thinking_token_count: bool,
+    server_side_compaction: bool,
     custom_betas: &[String],
     model: &str,
 ) -> String {
+    build_beta_header_with_cache_flags(
+        caps,
+        fast_mode,
+        task_budget,
+        advisor_tool,
+        eager_input_streaming,
+        strict_tool_schemas,
+        narration_summaries,
+        thinking_token_count,
+        server_side_compaction,
+        true,
+        false,
+        custom_betas,
+        model,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_beta_header_with_cache_flags(
+    caps: &super::anthropic_accounts::AccountCapabilities,
+    fast_mode: bool,
+    task_budget: bool,
+    advisor_tool: bool,
+    eager_input_streaming: bool,
+    strict_tool_schemas: bool,
+    narration_summaries: bool,
+    thinking_token_count: bool,
+    server_side_compaction: bool,
+    prompt_caching_scope: bool,
+    extended_cache_ttl: bool,
+    custom_betas: &[String],
+    model: &str,
+) -> String {
+    let model_supports_context_management =
+        super::anthropic_models::model_supports_context_management(model);
+    let model_supports_long_context =
+        super::anthropic_models::model_supports_long_context_beta(model);
     let mut header = ANTHROPIC_BETA.to_owned();
+    if prompt_caching_scope {
+        header.push(',');
+        header.push_str(PROMPT_CACHING_SCOPE_BETA);
+    }
+    if extended_cache_ttl {
+        header.push(',');
+        header.push_str(EXTENDED_CACHE_TTL_BETA);
+    }
     if mid_conversation_system_enabled(model) {
         header.push_str(",mid-conversation-system-2026-04-07");
     }
@@ -145,8 +201,12 @@ fn build_beta_header(
         header.push(',');
         header.push_str(CONTEXT_HINT_BETA);
     }
+    if model_supports_context_management {
+        header.push(',');
+        header.push_str(CONTEXT_MANAGEMENT_BETA);
+    }
     for (token, cap) in GATED_BETAS {
-        if !cap.is_disabled(caps) {
+        if !cap.is_disabled(caps, model_supports_long_context) {
             header.push(',');
             header.push_str(token);
         }
@@ -172,6 +232,10 @@ fn build_beta_header(
     }
     if thinking_token_count {
         header.push_str(",thinking-token-count-2026-05-13");
+    }
+    if server_side_compaction && model_supports_context_management {
+        header.push(',');
+        header.push_str(COMPACT_BETA);
     }
     for beta in custom_betas {
         let beta = beta.trim();
@@ -841,6 +905,24 @@ impl<'de> Deserialize<'de> for OAuthProfile {
     }
 }
 
+/// Which account(s) have served a given session, tracked so extended-thinking
+/// conversations stay pinned to the account that minted their (account-bound)
+/// `thinking`/`redacted_thinking` blocks.
+#[derive(Default, Clone)]
+struct SessionAccounts {
+    /// Last account that successfully served this session (the affinity target).
+    last: Option<String>,
+    /// Every account that has served this session. When this holds more than
+    /// the serving account, the history carries account-foreign thinking blocks
+    /// and they must be stripped before sending (else a deterministic
+    /// "thinking blocks cannot be modified" 400 + strip-induced refusal).
+    served: std::collections::HashSet<String>,
+}
+
+/// Cap on tracked sessions so a long-lived process can't grow the affinity map
+/// without bound. Cleared wholesale when exceeded (affinity is best-effort).
+const SESSION_AFFINITY_CAP: usize = 512;
+
 pub struct AnthropicOAuthProvider {
     client: reqwest::Client,
     store_path: PathBuf,
@@ -849,6 +931,11 @@ pub struct AnthropicOAuthProvider {
     /// Multi-account rotation manager. Lazy-initialized on first use so
     /// constructing the provider stays sync (and infallible).
     manager: tokio::sync::OnceCell<super::anthropic_accounts::AccountManager>,
+    /// Per-session account affinity (`session_id` → accounts that served it).
+    /// Keeps a thinking-bearing conversation on one account so its account-bound
+    /// thinking blocks stay valid; drives the proactive foreign-thinking strip
+    /// once a session has crossed accounts.
+    session_accounts: Arc<std::sync::Mutex<std::collections::HashMap<String, SessionAccounts>>>,
 }
 
 /// How many times [`AnthropicOAuthProvider::stream`] / `complete` will rotate
@@ -898,7 +985,27 @@ impl AnthropicOAuthProvider {
             token: Arc::new(RwLock::new(None)),
             profile: Arc::new(RwLock::new(None)),
             manager: tokio::sync::OnceCell::new(),
+            session_accounts: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         }
+    }
+
+    /// Record that `account` successfully served `session_id`, for session
+    /// account affinity. Bounded: the map is cleared wholesale past
+    /// [`SESSION_AFFINITY_CAP`] distinct sessions (affinity is best-effort, so a
+    /// rare reset just costs one extra reactive strip).
+    fn record_session_account(&self, session_id: Option<&str>, account: &str) {
+        let Some(sid) = session_id else {
+            return;
+        };
+        let Ok(mut map) = self.session_accounts.lock() else {
+            return;
+        };
+        if map.len() > SESSION_AFFINITY_CAP && !map.contains_key(sid) {
+            map.clear();
+        }
+        let entry = map.entry(sid.to_owned()).or_default();
+        entry.last = Some(account.to_owned());
+        entry.served.insert(account.to_owned());
     }
 
     /// Lazily initialize and return a reference to the account manager.
@@ -1751,6 +1858,8 @@ fn build_body(
     billing_header_text: &str,
 ) -> Value {
     let has_thinking = opts.adaptive_thinking || opts.thinking_budget.is_some();
+    let model_supports_context_management =
+        super::anthropic_models::model_supports_context_management(opts.model.as_str());
 
     let mut body = json!({
         "model": opts.model,
@@ -1782,12 +1891,25 @@ fn build_body(
         thinking["display"] = json!(opts.thinking_display.as_deref().unwrap_or("summarized"));
         body["thinking"] = thinking;
     }
-    // context_management: clear old thinking blocks from context to save space.
-    // Only sent when thinking is enabled (cli.js v143 RI4 function).
-    if has_thinking {
-        body["context_management"] = json!({
-            "edits": [{ "type": "clear_thinking_20251015", "keep": "all" }]
-        });
+    // context_management edits. Two independent edits, assembled into one array:
+    //   1. `clear_thinking_20251015` — drop stale thinking blocks (only with
+    //      thinking on; cli.js v143 RI4).
+    //   2. `compact_20260112` — SERVER-side compaction of old turns BEFORE they
+    //      reach the model. This is the non-blocking primary compaction path:
+    //      Anthropic reduces the window API-side with zero client concurrency,
+    //      so the user's input stream is never held back behind a local
+    //      summarization round-trip. It requires the separate
+    //      `compact-2026-01-12` beta, appended in `build_beta_header` only
+    //      when this edit is enabled.
+    let mut edits: Vec<Value> = Vec::new();
+    if has_thinking && model_supports_context_management {
+        edits.push(json!({ "type": "clear_thinking_20251015", "keep": "all" }));
+    }
+    if opts.server_side_compaction && model_supports_context_management {
+        edits.push(json!({ "type": "compact_20260112" }));
+    }
+    if !edits.is_empty() {
+        body["context_management"] = json!({ "edits": edits });
     }
     {
         let mut oc = serde_json::Map::new();
@@ -1863,6 +1985,7 @@ impl Provider for AnthropicOAuthProvider {
     }
 
     async fn fetch_models(&self) -> anyhow::Result<Vec<ModelInfo>> {
+        let _linkscope_fetch = linkscope::phase("provider.anthropic_oauth.fetch_models");
         // The embedded Claude Code OAuth catalog owns the picker layout (alias
         // rows, curated order/names) and is authoritative for OAuth-only entries
         // the public catalog may omit. But it goes stale the moment Anthropic
@@ -1903,6 +2026,21 @@ impl Provider for AnthropicOAuthProvider {
         messages: Vec<ProviderMessage>,
         options: &StreamOptions,
     ) -> anyhow::Result<EventStream> {
+        let message_count = usize_to_u64_saturating(messages.len());
+        let _linkscope_stream = linkscope::phase("provider.anthropic_oauth.stream");
+        if linkscope::is_enabled() {
+            linkscope::event_fields(
+                "provider.anthropic_oauth.stream.start",
+                [
+                    linkscope::TraceField::text("model", options.model.to_string()),
+                    linkscope::TraceField::count("messages", message_count),
+                    linkscope::TraceField::count(
+                        "tools",
+                        usize_to_u64_saturating(options.tools.len()),
+                    ),
+                ],
+            );
+        }
         // Account-independent body construction (billing header, attestation,
         // user-agent) is hoisted outside the rotation loop — these don't
         // change between accounts.
@@ -1953,6 +2091,9 @@ impl Provider for AnthropicOAuthProvider {
         let want_strict_tool_schemas = options.strict_tool_schemas;
         let want_narration_summaries = options.narration_summaries;
         let want_thinking_token_count = options.thinking_token_count;
+        let want_server_side_compaction = options.server_side_compaction;
+        let want_prompt_caching_scope = options.prompt_caching_scope;
+        let want_extended_cache_ttl = sse::has_cache_control_ttl(&body_value);
         let custom_betas = options.custom_betas.clone();
 
         // Two nested loops:
@@ -1977,12 +2118,33 @@ impl Provider for AnthropicOAuthProvider {
         // fires at most once — mirrors Claude 2.1.177's `onError` latches.
         let mut recovery_latches = crate::anthropic_recovery::RecoveryLatches::default();
 
+        // Session account affinity. `thinking`/`redacted_thinking` blocks are
+        // account-bound; replaying them under a different account 400s
+        // ("blocks cannot be modified") and the reactive strip that follows
+        // induces blank refusals. Snapshot which account(s) have served this
+        // session so we can (a) prefer the minting account and (b) proactively
+        // strip foreign thinking blocks once the session has crossed accounts.
+        let session_id = options.session_id.clone();
+        let body_has_thinking = crate::anthropic_recovery::body_has_thinking_blocks(&body_value);
+        let (preferred_account, prior_served_accounts) = match session_id.as_deref() {
+            Some(sid) => self
+                .session_accounts
+                .lock()
+                .ok()
+                .and_then(|m| m.get(sid).cloned())
+                .map(|s| (s.last, s.served))
+                .unwrap_or_default(),
+            None => (None, std::collections::HashSet::new()),
+        };
+
         'outer: loop {
             let mut tried: std::collections::HashSet<String> = std::collections::HashSet::new();
             let mut hit_rate_limit_this_round = false;
 
             for attempt in 0..ROTATION_MAX_ATTEMPTS {
-                let Some((account, request_guard)) = mgr.acquire_next_excluding(&tried).await
+                let Some((account, request_guard)) = mgr
+                    .acquire_next_preferring(&tried, preferred_account.as_deref())
+                    .await
                 else {
                     // No account is usable RIGHT NOW. This can happen when the
                     // disk store already knows every enabled account is cooling
@@ -2000,6 +2162,44 @@ impl Provider for AnthropicOAuthProvider {
                     break;
                 };
                 tried.insert(account.name.clone());
+
+                // Proactive cross-account thinking strip. If a *different*
+                // account has already served this session, the history carries
+                // account-foreign `thinking`/`redacted_thinking` blocks that
+                // this account rejects with a deterministic "blocks cannot be
+                // modified" 400 — after which the reactive strip frequently
+                // induces a blank refusal. Strip them up-front (once per turn),
+                // skipping the wasted billed 400 round-trip. The reactive
+                // recovery stays as the safety net.
+                if body_has_thinking
+                    && !recovery_latches.thinking_signature_stripped
+                    && prior_served_accounts
+                        .iter()
+                        .any(|served| served != &account.name)
+                {
+                    let mut patched: Value = serde_json::from_str(&body_str)?;
+                    if crate::anthropic_recovery::strip_thinking_blocks(&mut patched) {
+                        recovery_latches.thinking_signature_stripped = true;
+                        body_str = serde_json::to_string(&patched)?;
+                        effective_body = {
+                            #[cfg(feature = "anthropic-oauth-sensitive")]
+                            {
+                                compute_body_attestation(&body_str)
+                            }
+                            #[cfg(not(feature = "anthropic-oauth-sensitive"))]
+                            {
+                                body_str.clone()
+                            }
+                        };
+                        tracing::warn!(
+                            target: "jfc::provider::anthropic_oauth::rotation",
+                            account = %account.name,
+                            prior_accounts = ?prior_served_accounts,
+                            "cross-account continuation — proactively stripped account-foreign \
+                             thinking blocks before send (avoids the thinking-immutable 400)"
+                        );
+                    }
+                }
 
                 let access_token = match self
                     .get_access_token_for(
@@ -2030,7 +2230,7 @@ impl Provider for AnthropicOAuthProvider {
                     .capabilities_for(&account.name)
                     .await
                     .unwrap_or_default();
-                let beta_header = build_beta_header(
+                let beta_header = build_beta_header_with_cache_flags(
                     &caps,
                     fast_mode,
                     want_task_budget,
@@ -2039,6 +2239,9 @@ impl Provider for AnthropicOAuthProvider {
                     want_strict_tool_schemas,
                     want_narration_summaries,
                     want_thinking_token_count,
+                    want_server_side_compaction,
+                    want_prompt_caching_scope,
+                    want_extended_cache_ttl,
                     &custom_betas,
                     &options.model,
                 );
@@ -2108,6 +2311,9 @@ impl Provider for AnthropicOAuthProvider {
                         // Best-effort telemetry persistence — never block the
                         // success path on disk I/O failure.
                         mgr.record_routing_state(&account.name, &rl_info).await;
+                        // Pin this session to the serving account so its
+                        // extended-thinking blocks stay account-valid next turn.
+                        self.record_session_account(session_id.as_deref(), &account.name);
                         let stream = sse::into_event_stream(resp);
                         let stream = wrap_with_usage_recording(
                             stream,
@@ -2145,7 +2351,7 @@ impl Provider for AnthropicOAuthProvider {
                                 .map(|d| d.as_millis() as u64)
                                 .unwrap_or(0),
                             claim = ?rl_info.claim,
-                            body_preview = %&body[..body.len().min(200)],
+                            body_preview = %&body[..body.len().min(1500)],
                             "rate-limited — rotating"
                         );
                         last_err = Some(anyhow::anyhow!(
@@ -2216,7 +2422,7 @@ impl Provider for AnthropicOAuthProvider {
                                 target: "jfc::provider::anthropic_oauth::rotation",
                                 account = %account.name,
                                 status = %status,
-                                body_preview = %&body[..body.len().min(200)],
+                                body_preview = %&body[..body.len().min(1500)],
                                 "account-level failure — rotating"
                             );
                             // Last-resort fallback: a server error (5xx) that
@@ -2265,7 +2471,7 @@ impl Provider for AnthropicOAuthProvider {
                         tracing::warn!(
                             target: "jfc::provider::anthropic_oauth",
                             status = %status,
-                            body_preview = %&body[..body.len().min(200)],
+                            body_preview = %&body[..body.len().min(1500)],
                             "permanent API error — checking for capability strip"
                         );
                         if status.as_u16() == 400
@@ -2313,6 +2519,39 @@ impl Provider for AnthropicOAuthProvider {
                                 &mut recovery_latches,
                             );
                             if let crate::anthropic_recovery::RecoveryAction::Retry(kind) = action {
+                                // Diagnostic: the thinking-immutable 400 fires on
+                                // ~every continuation in multi-account sessions.
+                                // Log the FULL error body + the named block's
+                                // shape (types/lengths only, no thinking text) so
+                                // the exact constraint and offending block are
+                                // visible. `body_str` still holds the pre-strip
+                                // request here (reassigned below), so re-parse it.
+                                if kind
+                                    == crate::anthropic_recovery::RetryKind::ThinkingSignatureStrip
+                                    && let Ok(orig) = serde_json::from_str::<Value>(&body_str)
+                                {
+                                    let path =
+                                        crate::anthropic_recovery::parse_message_content_path(
+                                            &body,
+                                        );
+                                    let blocks = path
+                                        .and_then(|(m, c)| {
+                                            crate::anthropic_recovery::summarize_message_block_types(
+                                                &orig,
+                                                m,
+                                                Some(c),
+                                            )
+                                        })
+                                        .unwrap_or_else(|| "<no content path in error>".to_owned());
+                                    tracing::warn!(
+                                        target: "jfc::provider::anthropic_oauth::rotation",
+                                        account = %account.name,
+                                        named_block = ?path,
+                                        offending_blocks = %blocks,
+                                        error_body = %body,
+                                        "thinking-immutable 400 — outbound block structure (diagnostic)"
+                                    );
+                                }
                                 let patched_str = serde_json::to_string(&patched)?;
                                 body_str = patched_str.clone();
                                 effective_body = {
@@ -2483,6 +2722,23 @@ impl Provider for AnthropicOAuthProvider {
         messages: Vec<ProviderMessage>,
         options: &StreamOptions,
     ) -> anyhow::Result<CompletionResponse> {
+        let _linkscope_complete = linkscope::phase("provider.anthropic_oauth.complete");
+        if linkscope::is_enabled() {
+            linkscope::event_fields(
+                "provider.anthropic_oauth.complete.start",
+                [
+                    linkscope::TraceField::text("model", options.model.to_string()),
+                    linkscope::TraceField::count(
+                        "messages",
+                        usize_to_u64_saturating(messages.len()),
+                    ),
+                    linkscope::TraceField::count(
+                        "tools",
+                        usize_to_u64_saturating(options.tools.len()),
+                    ),
+                ],
+            );
+        }
         let version = fetch_cli_version(&self.client).await;
 
         let first_user_text = messages
@@ -2536,6 +2792,9 @@ impl Provider for AnthropicOAuthProvider {
         let want_strict_tool_schemas = options.strict_tool_schemas;
         let want_narration_summaries = options.narration_summaries;
         let want_thinking_token_count = options.thinking_token_count;
+        let want_server_side_compaction = options.server_side_compaction;
+        let want_prompt_caching_scope = options.prompt_caching_scope;
+        let want_extended_cache_ttl = sse::has_cache_control_ttl(&body_value);
         let custom_betas = options.custom_betas.clone();
         let mgr = self.account_manager().await?;
         let total_wait_started = std::time::Instant::now();
@@ -2584,7 +2843,7 @@ impl Provider for AnthropicOAuthProvider {
                     .capabilities_for(&account.name)
                     .await
                     .unwrap_or_default();
-                let beta_header_complete = build_beta_header(
+                let beta_header_complete = build_beta_header_with_cache_flags(
                     &caps,
                     fast_mode,
                     want_task_budget,
@@ -2593,6 +2852,9 @@ impl Provider for AnthropicOAuthProvider {
                     want_strict_tool_schemas,
                     want_narration_summaries,
                     want_thinking_token_count,
+                    want_server_side_compaction,
+                    want_prompt_caching_scope,
+                    want_extended_cache_ttl,
                     &custom_betas,
                     &options.model,
                 );
@@ -2864,6 +3126,10 @@ impl Provider for AnthropicOAuthProvider {
     }
 }
 
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
+}
+
 /// Test convention follows RTCA DO-178B §6.4.2: every requirement is exercised by at
 /// least one **normal range** test (valid inputs / equivalence classes / boundary values
 /// / allowed state transitions) and one **robustness** test (invalid values / abnormal
@@ -3044,6 +3310,63 @@ mod tests {
     fn build_body_thinking_absent_when_no_budget() {
         let body = build_body(vec![make_user_msg("hi")], &opts("m"), TEST_BH);
         assert!(body.get("thinking").is_none());
+    }
+
+    // Normal: with server-side compaction on (the default) and no thinking, the
+    // body carries exactly the compact_20260112 context-management edit — the
+    // non-blocking server compaction path.
+    #[test]
+    fn build_body_server_side_compaction_edit_present_normal() {
+        let body = build_body(vec![make_user_msg("hi")], &opts("claude-opus-4-7"), TEST_BH);
+        let edits = body["context_management"]["edits"]
+            .as_array()
+            .expect("edits array");
+        assert!(
+            edits.iter().any(|e| e["type"] == "compact_20260112"),
+            "expected compact_20260112 edit, got {edits:?}"
+        );
+    }
+
+    #[test]
+    fn build_body_omits_context_management_for_haiku_compaction_regression() {
+        let body = build_body(
+            vec![make_user_msg("hi")],
+            &opts("claude-haiku-4-5-20251001"),
+            TEST_BH,
+        );
+        assert!(
+            body.get("context_management").is_none(),
+            "haiku must not receive compact_20260112 edits, got {:?}",
+            body.get("context_management")
+        );
+    }
+
+    // Robust: when server-side compaction is disabled AND thinking is off, no
+    // context_management block is emitted at all (no empty edits array).
+    #[test]
+    fn build_body_no_context_management_when_all_edits_disabled_robust() {
+        let mut o = opts("m");
+        o.server_side_compaction = false;
+        let body = build_body(vec![make_user_msg("hi")], &o, TEST_BH);
+        assert!(
+            body.get("context_management").is_none(),
+            "no edits → context_management must be absent, got {:?}",
+            body.get("context_management")
+        );
+    }
+
+    // Robust: with thinking enabled and server compaction off, only the
+    // clear_thinking edit is present (the two edits are independent).
+    #[test]
+    fn build_body_thinking_edit_independent_of_server_compaction_robust() {
+        let mut o = opts("claude-sonnet-4-6").thinking(4096);
+        o.server_side_compaction = false;
+        let body = build_body(vec![make_user_msg("hi")], &o, TEST_BH);
+        let edits = body["context_management"]["edits"]
+            .as_array()
+            .expect("edits array");
+        assert!(edits.iter().any(|e| e["type"] == "clear_thinking_20251015"));
+        assert!(!edits.iter().any(|e| e["type"] == "compact_20260112"));
     }
 
     #[test]
@@ -3313,7 +3636,6 @@ mod tests {
             "claude-code-20250219",
             "oauth-2025-04-20",
             "interleaved-thinking-2025-05-14",
-            "prompt-caching-scope-2026-01-05",
             "output-128k-2025-02-19",
             "structured-outputs-2025-12-15",
             "files-api-2025-04-14",
@@ -3334,10 +3656,88 @@ mod tests {
     }
 
     #[test]
+    fn anthropic_beta_does_not_include_context_management_base_regression() {
+        assert!(
+            !ANTHROPIC_BETA.contains("context-management-2025-06-27"),
+            "context-management must be model-gated, not always-on"
+        );
+    }
+
+    #[test]
+    fn anthropic_beta_does_not_include_cache_scope_betas_regression() {
+        assert!(!ANTHROPIC_BETA.contains(PROMPT_CACHING_SCOPE_BETA));
+        assert!(!ANTHROPIC_BETA.contains(EXTENDED_CACHE_TTL_BETA));
+    }
+
+    #[test]
+    fn build_beta_header_includes_prompt_caching_scope_by_default_normal() {
+        let caps = super::super::anthropic_accounts::AccountCapabilities::default();
+        let header = build_beta_header(
+            &caps,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            &[],
+            "claude-opus-4-7",
+        );
+        assert!(header.contains(PROMPT_CACHING_SCOPE_BETA));
+        assert!(!header.contains(EXTENDED_CACHE_TTL_BETA));
+    }
+
+    #[test]
+    fn build_beta_header_omits_prompt_caching_scope_when_disabled_robust() {
+        let caps = super::super::anthropic_accounts::AccountCapabilities::default();
+        let header = build_beta_header_with_cache_flags(
+            &caps,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            &[],
+            "claude-opus-4-7",
+        );
+        assert!(!header.contains(PROMPT_CACHING_SCOPE_BETA));
+    }
+
+    #[test]
+    fn build_beta_header_includes_extended_cache_ttl_for_ttl_body_normal() {
+        let caps = super::super::anthropic_accounts::AccountCapabilities::default();
+        let header = build_beta_header_with_cache_flags(
+            &caps,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            true,
+            true,
+            &[],
+            "claude-opus-4-7",
+        );
+        assert!(header.contains(PROMPT_CACHING_SCOPE_BETA));
+        assert!(header.contains(EXTENDED_CACHE_TTL_BETA));
+    }
+
+    #[test]
     fn build_beta_header_appends_redacted_thinking_when_requested_normal() {
         let caps = super::super::anthropic_accounts::AccountCapabilities::default();
         let header = build_beta_header(
             &caps,
+            false,
             false,
             false,
             false,
@@ -3363,6 +3763,7 @@ mod tests {
             false,
             false,
             false,
+            false,
             &[],
             "claude-opus-4-7",
         );
@@ -3371,6 +3772,26 @@ mod tests {
         assert!(!header.contains("fast-mode"));
         assert!(!header.contains("task-budgets"));
         assert!(!header.contains("advisor-tool"));
+    }
+
+    #[test]
+    fn build_beta_header_omits_context1m_for_haiku_regression() {
+        let caps = super::super::anthropic_accounts::AccountCapabilities::default();
+        let header = build_beta_header(
+            &caps,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            &[],
+            "claude-haiku-4-5-20251001",
+        );
+        assert!(!header.contains("context-1m-2025-08-07"));
+        assert!(header.contains("afk-mode-2026-01-31"));
     }
 
     #[test]
@@ -3383,6 +3804,7 @@ mod tests {
             &caps,
             true,
             true,
+            false,
             false,
             false,
             false,
@@ -3412,6 +3834,7 @@ mod tests {
             false,
             false,
             false,
+            false,
             &[],
             "claude-opus-4-7",
         );
@@ -3431,6 +3854,7 @@ mod tests {
                 false,
                 false,
                 false,
+                false,
                 &[],
                 "claude-opus-4-7"
             )
@@ -3442,6 +3866,7 @@ mod tests {
                 false,
                 false,
                 true,
+                false,
                 false,
                 false,
                 false,
@@ -3465,6 +3890,7 @@ mod tests {
             true,
             false,
             false,
+            false,
             &["custom-beta-2099-01-01".to_owned()],
             "claude-opus-4-7",
         );
@@ -3485,6 +3911,7 @@ mod tests {
             false,
             true,
             false,
+            false,
             &[],
             "claude-opus-4-7",
         );
@@ -3496,6 +3923,7 @@ mod tests {
         let caps = super::super::anthropic_accounts::AccountCapabilities::default();
         let header = build_beta_header(
             &caps,
+            false,
             false,
             false,
             false,
@@ -3521,10 +3949,70 @@ mod tests {
             false,
             false,
             true,
+            false,
             &[],
             "claude-opus-4-7",
         );
         assert!(header.contains("thinking-token-count-2026-05-13"));
+    }
+
+    #[test]
+    fn build_beta_header_includes_compaction_beta_when_enabled_normal() {
+        let caps = super::super::anthropic_accounts::AccountCapabilities::default();
+        let header = build_beta_header(
+            &caps,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            true,
+            &[],
+            "claude-opus-4-7",
+        );
+        assert!(header.contains("context-management-2025-06-27"));
+        assert_eq!(header.matches(COMPACT_BETA).count(), 1);
+    }
+
+    #[test]
+    fn build_beta_header_omits_context_management_for_haiku_compaction_regression() {
+        let caps = super::super::anthropic_accounts::AccountCapabilities::default();
+        let header = build_beta_header(
+            &caps,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            true,
+            &[],
+            "claude-haiku-4-5-20251001",
+        );
+        assert!(!header.contains("context-management-2025-06-27"));
+        assert!(!header.contains(COMPACT_BETA));
+    }
+
+    #[test]
+    fn build_beta_header_omits_compaction_beta_when_disabled_robust() {
+        let caps = super::super::anthropic_accounts::AccountCapabilities::default();
+        let header = build_beta_header(
+            &caps,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            &[],
+            "claude-opus-4-7",
+        );
+        assert!(!header.contains(COMPACT_BETA));
     }
 
     // ── mid_conversation_system gating ─────────────────────────────────────
@@ -3569,6 +4057,7 @@ mod tests {
             false,
             false,
             false,
+            false,
             &[],
             "claude-opus-4-8",
         );
@@ -3583,6 +4072,7 @@ mod tests {
         let caps = super::super::anthropic_accounts::AccountCapabilities::default();
         let header = build_beta_header(
             &caps,
+            false,
             false,
             false,
             false,
@@ -4166,6 +4656,7 @@ mod tests {
             token: Arc::new(RwLock::new(None)),
             profile: Arc::new(RwLock::new(None)),
             manager: tokio::sync::OnceCell::new(),
+            session_accounts: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         };
         assert!(p.has_usable_config());
     }
@@ -4181,6 +4672,7 @@ mod tests {
             token: Arc::new(RwLock::new(None)),
             profile: Arc::new(RwLock::new(None)),
             manager: tokio::sync::OnceCell::new(),
+            session_accounts: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         };
         assert!(!p.has_usable_config());
     }
@@ -4199,6 +4691,7 @@ mod tests {
             token: Arc::new(RwLock::new(None)),
             profile: Arc::new(RwLock::new(None)),
             manager: tokio::sync::OnceCell::new(),
+            session_accounts: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         };
         assert!(!p.has_usable_config());
     }

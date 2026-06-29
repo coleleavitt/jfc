@@ -4,6 +4,27 @@ use super::rows::{ContextEventRow, context_event_from};
 
 impl KnowledgeStore {
     pub async fn record_context_event(&self, row: &ContextEventRow) -> Result<()> {
+        let _linkscope_context = linkscope::phase("knowledge.context_event.record");
+        linkscope::event_fields(
+            "knowledge.context_event.record",
+            [
+                linkscope::TraceField::text("id", row.id.clone()),
+                linkscope::TraceField::text("session_id", row.session_id.clone()),
+                linkscope::TraceField::text("model", row.model.clone()),
+                linkscope::TraceField::count(
+                    "input_tokens",
+                    u64::try_from(row.input_tokens).unwrap_or(0),
+                ),
+                linkscope::TraceField::count(
+                    "output_tokens",
+                    u64::try_from(row.output_tokens).unwrap_or(0),
+                ),
+                linkscope::TraceField::count(
+                    "cache_read_tokens",
+                    u64::try_from(row.cache_read_tokens).unwrap_or(0),
+                ),
+            ],
+        );
         sqlx::query(
             "INSERT INTO context_events \
              (id, session_id, turn_id, agent_id, subagent_id, model, input_tokens, output_tokens, \
@@ -43,6 +64,7 @@ impl KnowledgeStore {
         session_id: Option<&str>,
         limit: usize,
     ) -> Result<Vec<ContextEventRow>> {
+        let _linkscope_list = linkscope::phase("knowledge.context_event.list");
         let limit = limit as i64;
         let mut out = Vec::new();
         if let Some(session_id) = session_id {
@@ -74,6 +96,14 @@ impl KnowledgeStore {
             }
             out.reverse();
         }
+        linkscope::event_fields(
+            "knowledge.context_event.list",
+            [
+                linkscope::TraceField::text("session_id", session_id.unwrap_or("*").to_owned()),
+                linkscope::TraceField::count("limit", u64::try_from(limit).unwrap_or(0)),
+                linkscope::TraceField::count("rows", u64::try_from(out.len()).unwrap_or(u64::MAX)),
+            ],
+        );
         Ok(out)
     }
 }
@@ -82,13 +112,22 @@ pub(crate) async fn clear_derived_context_events(
     tx: &mut sqlx::sqlite::SqliteConnection,
     session_id: &str,
 ) -> Result<usize> {
+    let _linkscope_clear = linkscope::phase("knowledge.context_event.clear_derived");
     let result = sqlx::query(
         "DELETE FROM context_events WHERE session_id = ?1 AND agent_id IS NULL AND subagent_id IS NULL"
     )
         .bind(session_id)
         .execute(&mut *tx)
         .await?;
-    Ok(result.rows_affected() as usize)
+    let rows = usize::try_from(result.rows_affected()).unwrap_or(usize::MAX);
+    linkscope::event_fields(
+        "knowledge.context_event.clear_derived",
+        [
+            linkscope::TraceField::text("session_id", session_id.to_owned()),
+            linkscope::TraceField::count("rows", u64::try_from(rows).unwrap_or(u64::MAX)),
+        ],
+    );
+    Ok(rows)
 }
 
 pub(crate) async fn insert_context_events_from_messages(
@@ -97,6 +136,8 @@ pub(crate) async fn insert_context_events_from_messages(
     messages: &[crate::SessionMessage],
     created_at_ms: i64,
 ) -> Result<()> {
+    let _linkscope_insert = linkscope::phase("knowledge.context_event.insert_from_messages");
+    let mut inserted = 0usize;
     for message in messages {
         if message.role != "assistant" {
             continue;
@@ -140,7 +181,19 @@ pub(crate) async fn insert_context_events_from_messages(
         .bind(created_at_ms)
         .execute(&mut *tx)
         .await?;
+        inserted += 1;
     }
+    linkscope::event_fields(
+        "knowledge.context_event.insert_from_messages",
+        [
+            linkscope::TraceField::text("session_id", row.id.clone()),
+            linkscope::TraceField::count(
+                "messages",
+                u64::try_from(messages.len()).unwrap_or(u64::MAX),
+            ),
+            linkscope::TraceField::count("inserted", u64::try_from(inserted).unwrap_or(u64::MAX)),
+        ],
+    );
     Ok(())
 }
 

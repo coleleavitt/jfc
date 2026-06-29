@@ -11,6 +11,18 @@ use tracing::debug;
 use super::types::{PromptStage, RewriteContext, ScreenVerdict, StageOutcome};
 use crate::error::Result;
 
+fn len_to_u64(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
+}
+
+fn verdict_label(verdict: ScreenVerdict) -> &'static str {
+    match verdict {
+        ScreenVerdict::ClearlyBenign => "clearly_benign",
+        ScreenVerdict::NeedsReview => "needs_review",
+        ScreenVerdict::ClearlyDisallowed => "clearly_disallowed",
+    }
+}
+
 /// Cheap-stage zero-tolerance refusal. Reserved for CSAM literals ONLY: a
 /// category with no legitimate phrasing, where even escalating to the LLM
 /// classifier is inappropriate.
@@ -18,23 +30,41 @@ use crate::error::Result;
 /// All other categories are judged by the model-backed classifier and policy
 /// gate rather than by brittle prompt-shape signatures.
 fn is_clearly_disallowed(lower: &str) -> bool {
-    lower.contains("csam")
+    let blocked = lower.contains("csam")
         || lower.contains("child sexual abuse material")
         || lower.contains("child pornography")
         || lower.contains("childporn")
-        || lower.contains("cp porn")
+        || lower.contains("cp porn");
+    linkscope::detail_event_fields(
+        "audit.prompt_rewrite.screener.zero_tolerance",
+        [linkscope::TraceField::count("blocked", u64::from(blocked))],
+    );
+    blocked
 }
 
 /// Minimal triage. Everything except the zero-tolerance set is routed to the
 /// structured model classifier; there is no prompt-shape "clearly benign"
 /// shortcut anymore.
 pub fn screen(prompt: &str) -> ScreenVerdict {
+    let _linkscope_screen = linkscope::phase("audit.prompt_rewrite.screener.screen");
+    linkscope::record_bytes(
+        "audit.prompt_rewrite.screener.prompt",
+        len_to_u64(prompt.len()),
+    );
     let lower = prompt.to_lowercase();
-    if is_clearly_disallowed(&lower) {
+    let verdict = if is_clearly_disallowed(&lower) {
         ScreenVerdict::ClearlyDisallowed
     } else {
         ScreenVerdict::NeedsReview
-    }
+    };
+    linkscope::event_fields(
+        "audit.prompt_rewrite.screener.verdict",
+        [linkscope::TraceField::text(
+            "verdict",
+            verdict_label(verdict),
+        )],
+    );
+    verdict
 }
 
 /// The Stage-0 [`PromptStage`].
@@ -47,6 +77,7 @@ impl PromptStage for Screener {
     }
 
     async fn run(&self, ctx: &mut RewriteContext<'_>) -> Result<StageOutcome> {
+        let _linkscope_stage = linkscope::phase("audit.prompt_rewrite.screener.stage");
         let verdict = screen(ctx.original);
         ctx.screen = Some(verdict);
         debug!(
@@ -55,7 +86,7 @@ impl PromptStage for Screener {
             verdict = ?verdict,
             "minimal screen verdict"
         );
-        Ok(match verdict {
+        let outcome = match verdict {
             ScreenVerdict::ClearlyBenign => StageOutcome::Pass,
             ScreenVerdict::NeedsReview => StageOutcome::Continue,
             ScreenVerdict::ClearlyDisallowed => StageOutcome::Refuse {
@@ -64,7 +95,22 @@ impl PromptStage for Screener {
                     .to_string(),
                 flags: Vec::new(),
             },
-        })
+        };
+        linkscope::event_fields(
+            "audit.prompt_rewrite.screener.stage.result",
+            [
+                linkscope::TraceField::text("verdict", verdict_label(verdict)),
+                linkscope::TraceField::text(
+                    "outcome",
+                    match &outcome {
+                        StageOutcome::Pass => "pass",
+                        StageOutcome::Continue => "continue",
+                        StageOutcome::Refuse { .. } => "refuse",
+                    },
+                ),
+            ],
+        );
+        Ok(outcome)
     }
 }
 

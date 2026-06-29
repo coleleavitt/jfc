@@ -49,8 +49,9 @@ pub struct SpawnConfig {
 impl SpawnConfig {
     /// Minimal solo-agent config: a prompt and a working directory.
     pub fn solo(prompt: impl Into<String>, cwd: impl Into<PathBuf>) -> Self {
+        let _linkscope_config = linkscope::phase("agent.spawn_config.solo");
         let prompt = prompt.into();
-        Self {
+        let config = Self {
             role: AgentRole::Solo,
             description: prompt.chars().take(80).collect(),
             prompt,
@@ -60,38 +61,80 @@ impl SpawnConfig {
             max_tokens: None,
             detached: false,
             id: None,
-        }
+        };
+        trace_spawn_config("agent.spawn_config.solo.detail", &config);
+        config
     }
 
     /// Builder: attach a role.
     pub fn with_role(mut self, role: AgentRole) -> Self {
+        let _linkscope_config = linkscope::phase("agent.spawn_config.with_role");
         self.role = role;
+        trace_spawn_config("agent.spawn_config.with_role.detail", &self);
         self
     }
 
     /// Builder: set the model.
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
+        let _linkscope_config = linkscope::phase("agent.spawn_config.with_model");
         self.model = Some(model.into());
+        trace_spawn_config("agent.spawn_config.with_model.detail", &self);
         self
     }
 
     /// Builder: set the provider.
     pub fn with_provider(mut self, provider: impl Into<String>) -> Self {
+        let _linkscope_config = linkscope::phase("agent.spawn_config.with_provider");
         self.provider = Some(provider.into());
+        trace_spawn_config("agent.spawn_config.with_provider.detail", &self);
         self
     }
 
     /// Builder: request a specific pre-assigned identity.
     pub fn with_id(mut self, id: AgentId) -> Self {
+        let _linkscope_config = linkscope::phase("agent.spawn_config.with_id");
         self.id = Some(id);
+        trace_spawn_config("agent.spawn_config.with_id.detail", &self);
         self
     }
 
     /// Builder: mark this agent as detached (runs in a separate process).
     pub fn detached(mut self) -> Self {
+        let _linkscope_config = linkscope::phase("agent.spawn_config.detached");
         self.detached = true;
+        trace_spawn_config("agent.spawn_config.detached.detail", &self);
         self
     }
+}
+
+fn trace_spawn_config(label: &'static str, config: &SpawnConfig) {
+    linkscope::record_items("agent.spawn_config", 1);
+    if !linkscope::trace_detail_enabled() {
+        return;
+    }
+    linkscope::detail_event_fields(
+        label,
+        [
+            linkscope::TraceField::text("role", config.role.label()),
+            linkscope::TraceField::bytes(
+                "prompt_bytes",
+                usize_to_u64_saturating(config.prompt.len()),
+            ),
+            linkscope::TraceField::bytes(
+                "cwd_bytes",
+                usize_to_u64_saturating(config.cwd.as_os_str().as_encoded_bytes().len()),
+            ),
+            linkscope::TraceField::count("has_provider", u64::from(config.provider.is_some())),
+            linkscope::TraceField::count("has_model", u64::from(config.model.is_some())),
+            linkscope::TraceField::count("has_id", u64::from(config.id.is_some())),
+            linkscope::TraceField::count("detached", u64::from(config.detached)),
+            linkscope::TraceField::count("has_max_tokens", u64::from(config.max_tokens.is_some())),
+        ],
+    );
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 /// Errors a registry can return.
@@ -180,5 +223,26 @@ mod tests {
         let long = "a".repeat(200);
         let cfg = SpawnConfig::solo(long, "/tmp");
         assert_eq!(cfg.description.len(), 80);
+    }
+
+    #[test]
+    fn spawn_config_trace_records_shape_without_prompt_payload_normal() {
+        linkscope::trace_detail_enable();
+        let cfg = SpawnConfig::solo("private spawn prompt", "/private/path")
+            .with_provider("private-provider")
+            .with_model("private-model")
+            .with_id(AgentId::named("private-agent"))
+            .detached();
+        assert!(cfg.detached);
+
+        let snapshot = linkscope::snapshot();
+        let rendered = format!("{snapshot:?}");
+        assert!(rendered.contains("agent.spawn_config.solo.detail"));
+        assert!(rendered.contains("agent.spawn_config.detached.detail"));
+        assert!(rendered.contains("prompt_bytes"));
+        assert!(!rendered.contains("private spawn prompt"));
+        assert!(!rendered.contains("private-provider"));
+        assert!(!rendered.contains("private-model"));
+        assert!(!rendered.contains("/private/path"));
     }
 }

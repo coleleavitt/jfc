@@ -62,3 +62,53 @@ pub(crate) fn count_cache_control_breakpoints(value: &Value) -> usize {
         _ => 0,
     }
 }
+
+pub(crate) fn has_cache_control_ttl(value: &Value) -> bool {
+    match value {
+        Value::Object(map) => {
+            map.get("cache_control")
+                .and_then(Value::as_object)
+                .and_then(|cache| cache.get("ttl"))
+                .is_some()
+                || map.values().any(has_cache_control_ttl)
+        }
+        Value::Array(items) => items.iter().any(has_cache_control_ttl),
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn has_cache_control_ttl_detects_nested_ttl_normal() {
+        let body = json!({
+            "system": [{
+                "type": "text",
+                "text": "stable",
+                "cache_control": { "type": "ephemeral", "ttl": "1h" }
+            }]
+        });
+
+        assert!(has_cache_control_ttl(&body));
+    }
+
+    #[test]
+    fn has_cache_control_ttl_ignores_plain_breakpoints_robust() {
+        let body = json!({
+            "messages": [{
+                "role": "user",
+                "content": [{
+                    "type": "text",
+                    "text": "hi",
+                    "cache_control": { "type": "ephemeral" }
+                }]
+            }]
+        });
+
+        assert!(!has_cache_control_ttl(&body));
+    }
+}

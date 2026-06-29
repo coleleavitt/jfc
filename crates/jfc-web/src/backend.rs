@@ -380,6 +380,11 @@ pub trait SearchBackend: Send + Sync {
 /// Deduplication uses union-find: two results are the same if they share ANY
 /// identifier (DOI, arXiv ID, or normalized URL).
 pub fn merge_rrf(results: Vec<Vec<SearchResult>>, k: f64, max_results: usize) -> Vec<SearchResult> {
+    let _linkscope_merge = linkscope::phase("web.merge_rrf");
+    linkscope::record_items(
+        "web.merge_rrf.groups",
+        usize_to_u64_saturating(results.len()),
+    );
     use std::collections::HashMap;
 
     // Union-find: map each key to a canonical group ID
@@ -445,11 +450,16 @@ pub fn merge_rrf(results: Vec<Vec<SearchResult>>, k: f64, max_results: usize) ->
     final_results.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
     // Take top results
-    final_results
+    let merged = final_results
         .into_iter()
         .take(max_results)
         .map(|(_, r)| r)
-        .collect()
+        .collect::<Vec<_>>();
+    linkscope::record_items(
+        "web.merge_rrf.results",
+        usize_to_u64_saturating(merged.len()),
+    );
+    merged
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -458,6 +468,11 @@ pub fn merge_rrf(results: Vec<Vec<SearchResult>>, k: f64, max_results: usize) ->
 
 /// Format merged results as a readable string.
 pub fn format_results(query: &str, results: &[SearchResult], sources: &[BackendId]) -> String {
+    let _linkscope_format = linkscope::phase("web.format_results");
+    linkscope::record_items(
+        "web.format_results.results",
+        usize_to_u64_saturating(results.len()),
+    );
     let source_names: Vec<_> = sources.iter().map(|b| b.name()).collect();
     let mut out = format!(
         "Search: \"{}\" — {} results from {}\n\n",
@@ -485,6 +500,10 @@ pub fn format_results(query: &str, results: &[SearchResult], sources: &[BackendI
     }
 
     out
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

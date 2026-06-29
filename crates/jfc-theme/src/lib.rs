@@ -6,6 +6,8 @@
 
 use ratatui::style::{Color, Modifier, Style};
 
+mod trace;
+
 /// Linear blend of two colors. `bg_weight` is the share of `bg` in the result
 /// (so `1.0` returns `bg`, `0.0` returns `fg`). Only meaningful for `Rgb`
 /// colors; for named/indexed colors it returns `fg` unchanged.
@@ -18,6 +20,14 @@ fn blend(fg: Color, bg: Color, bg_weight: f32) -> Color {
         }
         _ => fg,
     }
+}
+
+fn bool_to_u64(value: bool) -> u64 {
+    u64::from(value)
+}
+
+fn len_to_u64(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 #[derive(Clone, Copy)]
@@ -226,10 +236,45 @@ impl Theme {
     /// `Modifier::REVERSED`, which swaps fg/bg per cell and fragments visually
     /// over syntax-highlighted text. Mirrors Claude Code's `selectionBg`.
     pub fn selection_bg(&self) -> Color {
+        linkscope::detail_event_fields(
+            "theme.selection_bg",
+            [
+                linkscope::TraceField::count(
+                    "accent_rgb",
+                    bool_to_u64(matches!(self.accent, Color::Rgb(_, _, _))),
+                ),
+                linkscope::TraceField::count(
+                    "bg_rgb",
+                    bool_to_u64(matches!(self.bg, Color::Rgb(_, _, _))),
+                ),
+            ],
+        );
         blend(self.accent, self.bg, 0.72)
     }
 
     fn with_cached_styles(mut self) -> Self {
+        let _linkscope_cached = linkscope::phase("theme.with_cached_styles");
+        linkscope::detail_event_fields(
+            "theme.with_cached_styles.slots",
+            [
+                linkscope::TraceField::count(
+                    "bg_rgb",
+                    bool_to_u64(matches!(self.bg, Color::Rgb(_, _, _))),
+                ),
+                linkscope::TraceField::count(
+                    "surface_rgb",
+                    bool_to_u64(matches!(self.surface, Color::Rgb(_, _, _))),
+                ),
+                linkscope::TraceField::count(
+                    "accent_rgb",
+                    bool_to_u64(matches!(self.accent, Color::Rgb(_, _, _))),
+                ),
+                linkscope::TraceField::count(
+                    "warning_rgb",
+                    bool_to_u64(matches!(self.warning, Color::Rgb(_, _, _))),
+                ),
+            ],
+        );
         // Derive the semantic status tokens from existing slots so every
         // bundled theme stays coherent automatically. `accent_secondary` is
         // the accent pulled ~45% toward muted — present but calm, for activity
@@ -249,12 +294,14 @@ impl Theme {
         self.style_text_primary_bold = Style::default()
             .fg(self.text_primary)
             .add_modifier(Modifier::BOLD);
+        trace::record_cached_palette(&self);
         self
     }
 
     /// Claude Code-style dark theme, mapped from the deobfuscated
     /// 2.1.177 dark truecolor tokens onto JFC's semantic slots.
     pub fn claude() -> Self {
+        trace::record_theme_constructor("claude");
         Self {
             bg: Color::Rgb(0, 0, 0),
             surface: Color::Rgb(0, 0, 0),
@@ -294,6 +341,7 @@ impl Theme {
 
     /// Default dark theme — high-contrast indigo/blue accents.
     pub fn dark() -> Self {
+        trace::record_theme_constructor("dark");
         Self {
             bg: Color::Rgb(15, 15, 20),
             surface: Color::Rgb(25, 25, 35),
@@ -334,6 +382,7 @@ impl Theme {
     /// Light theme — soft cream background with conservative accents.
     /// Tuned for daytime use; contrast meets WCAG AA on body text.
     pub fn light() -> Self {
+        trace::record_theme_constructor("light");
         Self {
             bg: Color::Rgb(250, 248, 244),
             surface: Color::Rgb(240, 236, 230),
@@ -374,6 +423,7 @@ impl Theme {
     /// Solarized dark — Ethan Schoonover's palette, mapped onto our
     /// theme slots. Beloved by terminal users for low eye-strain.
     pub fn solarized_dark() -> Self {
+        trace::record_theme_constructor("solarized");
         Self {
             bg: Color::Rgb(0, 43, 54),
             surface: Color::Rgb(7, 54, 66),
@@ -415,6 +465,7 @@ impl Theme {
     /// the syntect theme jfc bundles via `two-face`, so prose and
     /// fenced code share a coherent look.
     pub fn catppuccin() -> Self {
+        trace::record_theme_constructor("catppuccin");
         Self {
             bg: Color::Rgb(30, 30, 46),                // Base
             surface: Color::Rgb(49, 50, 68),           // Surface0
@@ -455,6 +506,7 @@ impl Theme {
     /// Tokyo Night — folke/tokyonight.nvim. Cool indigo background
     /// with violet/blue accents; popular for low eye-strain night work.
     pub fn tokyo_night() -> Self {
+        trace::record_theme_constructor("tokyo-night");
         Self {
             bg: Color::Rgb(26, 27, 38),
             surface: Color::Rgb(22, 22, 30),
@@ -495,6 +547,7 @@ impl Theme {
     /// Dracula — dracula/dracula. Vivid violet/pink/cyan on dark
     /// charcoal; arguably the most-recognizable dark palette.
     pub fn dracula() -> Self {
+        trace::record_theme_constructor("dracula");
         Self {
             bg: Color::Rgb(40, 42, 54),
             surface: Color::Rgb(44, 46, 62),
@@ -535,6 +588,7 @@ impl Theme {
     /// Nord — arcticicestudio/nord. Cold polar palette with subdued
     /// frost accents — strong for daytime use under bright lighting.
     pub fn nord() -> Self {
+        trace::record_theme_constructor("nord");
         Self {
             bg: Color::Rgb(46, 52, 64),                // nord0
             surface: Color::Rgb(59, 66, 82),           // nord1
@@ -580,6 +634,7 @@ impl Theme {
     /// Gruvbox Dark — morhetz/gruvbox. Warm retro greys with
     /// orange/yellow accents; cherished by old-school terminal users.
     pub fn gruvbox_dark() -> Self {
+        trace::record_theme_constructor("gruvbox");
         Self {
             bg: Color::Rgb(40, 40, 40),                // bg0
             surface: Color::Rgb(60, 56, 54),           // bg1
@@ -620,6 +675,7 @@ impl Theme {
     /// Monokai — TextMate's classic. Hot pink keywords, lime strings,
     /// cyan accent on black-coffee bg.
     pub fn monokai() -> Self {
+        trace::record_theme_constructor("monokai");
         Self {
             bg: Color::Rgb(39, 40, 34),
             surface: Color::Rgb(45, 46, 37),
@@ -660,6 +716,7 @@ impl Theme {
     /// Ayu Dark — ayu-theme/ayu. Deep navy with electric cyan and
     /// orange-yellow accents. Sister to Tokyo Night with warmer code.
     pub fn ayu_dark() -> Self {
+        trace::record_theme_constructor("ayu");
         Self {
             bg: Color::Rgb(10, 14, 20),
             surface: Color::Rgb(15, 20, 25),
@@ -700,6 +757,7 @@ impl Theme {
     /// Rose Pine — rose-pine/rose-pine. Soft mauve/foam/rose
     /// pastels on a deep purple-grey bg. Gentle on the eyes.
     pub fn rose_pine() -> Self {
+        trace::record_theme_constructor("rose-pine");
         Self {
             bg: Color::Rgb(25, 23, 36),             // base
             surface: Color::Rgb(31, 29, 46),        // surface
@@ -740,6 +798,7 @@ impl Theme {
     /// One Dark — Atom's flagship. Slate background with cool blue
     /// accent and warm orange numbers; balanced for full-day work.
     pub fn one_dark() -> Self {
+        trace::record_theme_constructor("one-dark");
         Self {
             bg: Color::Rgb(40, 44, 52),
             surface: Color::Rgb(33, 37, 43),
@@ -781,6 +840,7 @@ impl Theme {
     /// with GitHub's official accent palette. Excellent for daytime
     /// office work or sharing screenshots.
     pub fn github_light() -> Self {
+        trace::record_theme_constructor("github-light");
         Self {
             bg: Color::Rgb(255, 255, 255),
             surface: Color::Rgb(246, 248, 250),
@@ -822,6 +882,7 @@ impl Theme {
     /// with vivid magenta/lavender accents; inspired by the Neovim
     /// colorscheme at github.com/Shadorain/shadotheme.
     pub fn shadotheme() -> Self {
+        trace::record_theme_constructor("shadotheme");
         Self {
             bg: Color::Rgb(17, 17, 25),                // #111119 — Normal bg
             surface: Color::Rgb(27, 27, 41),           // #1b1b29 — CursorLine
@@ -864,7 +925,31 @@ impl Theme {
     /// and accepts aliases (`solarized` ↔ `solarized-dark`,
     /// `catppuccin` ↔ `catppuccin-mocha`, `tokyo` ↔ `tokyo-night`).
     pub fn by_name(name: &str) -> Option<Self> {
-        match Self::choice_by_name(name)?.name {
+        let _linkscope_theme = linkscope::phase("theme.by_name");
+        let requested_bytes = len_to_u64(name.trim().len());
+        let choice = match Self::choice_by_name(name) {
+            Some(choice) => choice,
+            None => {
+                linkscope::event_fields(
+                    "theme.by_name.result",
+                    [
+                        linkscope::TraceField::bytes("requested_bytes", requested_bytes),
+                        linkscope::TraceField::text("status", "miss"),
+                    ],
+                );
+                return None;
+            }
+        };
+        linkscope::event_fields(
+            "theme.by_name.result",
+            [
+                linkscope::TraceField::bytes("requested_bytes", requested_bytes),
+                linkscope::TraceField::text("canonical", choice.name),
+                linkscope::TraceField::text("status", "hit"),
+            ],
+        );
+        linkscope::record_items("theme.by_name.hit", 1);
+        match choice.name {
             "claude" => Some(Self::claude()),
             "dark" => Some(Self::dark()),
             "light" => Some(Self::light()),
@@ -887,23 +972,54 @@ impl Theme {
     /// Canonical names for `/theme` listing. Aliases are NOT included
     /// — users see one entry per visually distinct palette.
     pub fn available_names() -> &'static [&'static str] {
+        trace::record_theme_catalog(
+            "theme.available_names",
+            AVAILABLE_THEME_NAMES.len(),
+            THEME_CHOICES
+                .iter()
+                .map(|choice| choice.aliases.len())
+                .sum(),
+        );
         AVAILABLE_THEME_NAMES
     }
 
     pub fn choices() -> &'static [ThemeChoice] {
+        trace::record_theme_catalog(
+            "theme.choices",
+            THEME_CHOICES.len(),
+            THEME_CHOICES
+                .iter()
+                .map(|choice| choice.aliases.len())
+                .sum(),
+        );
         THEME_CHOICES
     }
 
     pub fn choice_by_name(name: &str) -> Option<&'static ThemeChoice> {
+        let _linkscope_choice = linkscope::phase("theme.choice_by_name");
         let normalized = name.trim().to_ascii_lowercase();
-        THEME_CHOICES.iter().find(|choice| {
+        let choice = THEME_CHOICES.iter().find(|choice| {
             choice.name == normalized || choice.aliases.iter().any(|alias| *alias == normalized)
-        })
+        });
+        if choice.is_some() {
+            linkscope::record_items("theme.choice.hit", 1);
+        } else {
+            linkscope::record_items("theme.choice.miss", 1);
+        }
+        linkscope::event_fields(
+            "theme.choice.result",
+            [
+                linkscope::TraceField::bytes("normalized_bytes", len_to_u64(normalized.len())),
+                linkscope::TraceField::count("hit", bool_to_u64(choice.is_some())),
+            ],
+        );
+        choice
     }
 }
 
 impl Theme {
     pub fn claude_ui_tokens(&self) -> ClaudeUiTokens {
+        let _linkscope_tokens = linkscope::phase("theme.claude_ui_tokens");
         let is_claude_dark = matches!(
             (self.bg, self.user_bubble_bg, self.border),
             (
@@ -911,6 +1027,13 @@ impl Theme {
                 Color::Rgb(55, 55, 55),
                 Color::Rgb(136, 136, 136)
             )
+        );
+        linkscope::detail_event_fields(
+            "theme.claude_ui_tokens.mode",
+            [linkscope::TraceField::count(
+                "claude_dark_exact",
+                bool_to_u64(is_claude_dark),
+            )],
         );
         if is_claude_dark {
             return ClaudeUiTokens {
@@ -940,54 +1063,69 @@ impl Theme {
     }
 
     pub fn base(&self) -> Style {
+        trace::record_style_accessor("base");
         Style::default().fg(self.text_primary).bg(self.bg)
     }
     pub fn surface(&self) -> Style {
+        trace::record_style_accessor("surface");
         Style::default().bg(self.surface)
     }
     pub fn border(&self) -> Style {
+        trace::record_style_accessor("border");
         Style::default().fg(self.border)
     }
     pub fn muted(&self) -> Style {
+        trace::record_style_accessor("muted");
         Style::default().fg(self.text_muted)
     }
     pub fn accent(&self) -> Style {
+        trace::record_style_accessor("accent");
         Style::default().fg(self.accent)
     }
     pub fn bold(&self) -> Style {
+        trace::record_style_accessor("bold");
         Style::default()
             .fg(self.text_primary)
             .add_modifier(Modifier::BOLD)
     }
     pub fn italic(&self) -> Style {
+        trace::record_style_accessor("italic");
         Style::default()
             .fg(self.text_primary)
             .add_modifier(Modifier::ITALIC)
     }
     pub fn success(&self) -> Style {
+        trace::record_style_accessor("success");
         Style::default().fg(self.success)
     }
     pub fn warning(&self) -> Style {
+        trace::record_style_accessor("warning");
         Style::default().fg(self.warning)
     }
     pub fn error(&self) -> Style {
+        trace::record_style_accessor("error");
         Style::default().fg(self.error)
     }
     pub fn code_block(&self) -> Style {
+        trace::record_style_accessor("code_block");
         Style::default().fg(self.code_fg).bg(self.code_bg)
     }
     pub fn inline_code(&self) -> Style {
+        trace::record_style_accessor("inline_code");
         Style::default().fg(self.code_string)
     }
     pub fn reasoning(&self) -> Style {
+        trace::record_style_accessor("reasoning");
         Style::default().fg(self.reasoning_fg).bg(self.reasoning_bg)
     }
     pub fn user_label(&self) -> Style {
+        trace::record_style_accessor("user_label");
         Style::default()
             .fg(self.accent)
             .add_modifier(Modifier::BOLD)
     }
     pub fn asst_label(&self) -> Style {
+        trace::record_style_accessor("asst_label");
         Style::default()
             .fg(self.text_secondary)
             .add_modifier(Modifier::BOLD)
@@ -1333,6 +1471,41 @@ mod tests {
         let names = Theme::available_names();
         assert!(!names.contains(&"solarized-dark"));
         assert!(!names.contains(&"catppuccin-mocha"));
+    }
+
+    #[test]
+    fn theme_trace_records_catalog_constructor_and_accessor_shape_normal() {
+        linkscope::trace_detail_enable();
+        let theme = Theme::dark();
+        let _style = theme.base();
+        let _names = Theme::available_names();
+
+        let snapshot = linkscope::snapshot();
+        let rendered = format!("{snapshot:?}");
+        assert!(rendered.contains("theme.constructor"));
+        assert!(rendered.contains("dark"));
+        assert!(rendered.contains("theme.palette.shape"));
+        assert!(rendered.contains("rgb_slots"));
+        assert!(rendered.contains("theme.style.accessor"));
+        assert!(rendered.contains("base"));
+        assert!(rendered.contains("theme.available_names"));
+        assert!(rendered.contains("aliases"));
+    }
+
+    #[test]
+    fn theme_lookup_trace_records_shape_without_requested_payload_robust() {
+        linkscope::trace_detail_enable();
+        assert!(Theme::by_name("private-theme-name").is_none());
+        assert!(Theme::by_name("private-theme-alias").is_none());
+
+        let snapshot = linkscope::snapshot();
+        let rendered = format!("{snapshot:?}");
+        assert!(rendered.contains("theme.by_name.result"));
+        assert!(rendered.contains("requested_bytes"));
+        assert!(rendered.contains("normalized_bytes"));
+        assert!(rendered.contains("miss"));
+        assert!(!rendered.contains("private-theme-name"));
+        assert!(!rendered.contains("private-theme-alias"));
     }
 
     // ─── Style helpers (impl block 2) ─────────────────────────────────────

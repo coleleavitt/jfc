@@ -49,6 +49,8 @@ pub(crate) const AGENT_ALLOWED_SLASH_COMMANDS: &[&str] = &[
     "claude-md",
     "dump-context",
     "debug-context",
+    "ctx-reduce",
+    "context-reduce",
     "memory",
     "mem",
     "task-list",
@@ -698,7 +700,15 @@ mod tests {
 
     #[test]
     fn slash_command_allowlist_permits_productive_commands_normal() {
-        for c in ["research", "review", "commit", "workflow", "diff", "plan"] {
+        for c in [
+            "research",
+            "review",
+            "commit",
+            "workflow",
+            "diff",
+            "plan",
+            "ctx-reduce",
+        ] {
             assert!(slash_command_is_agent_allowed(c), "{c} should be allowed");
         }
         // Leading slash is tolerated.

@@ -1,4 +1,5 @@
 use super::{RsiDefinitionRef, promote_rsi_definition, rollback_rsi_definition};
+use crate::rsi_curator::ApplyToStore;
 use crate::rsi_curator::{
     CandidateKind, CandidateStatus, RsiCurator, RsiCuratorConfig, RsiOutcome, RsiPromotionPolicy,
     RsiToolStep, RsiTrace,

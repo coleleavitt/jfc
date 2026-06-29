@@ -10,6 +10,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
+linkscope = { workspace = true }
 serde = { workspace = true }
 
 [dev-dependencies]

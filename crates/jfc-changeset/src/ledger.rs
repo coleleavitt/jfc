@@ -158,6 +158,7 @@ pub struct LedgerStore {
 impl LedgerStore {
     /// Open (or create) the ledger under a project root.
     pub fn open_project(root: impl AsRef<Path>) -> Result<Self> {
+        let _linkscope_open = linkscope::phase("changeset.ledger.open_project");
         let dir = root.as_ref().join(".jfc").join("audit");
         fs::create_dir_all(&dir)
             .map_err(|e| ChangeSetError::io(e, format!("creating {}", dir.display())))?;
@@ -176,6 +177,7 @@ impl LedgerStore {
     /// Append one event under an exclusive lock. Append-only: never rewrites
     /// existing lines, so a concurrent reader sees a consistent prefix.
     pub fn append(&self, event: &LedgerEvent) -> Result<()> {
+        let _linkscope_append = linkscope::phase("changeset.ledger.append");
         let lock = OpenOptions::new()
             .create(true)
             .write(true)
@@ -194,6 +196,7 @@ impl LedgerStore {
     }
 
     fn append_locked(&self, event: &LedgerEvent) -> Result<()> {
+        let _linkscope_append = linkscope::phase("changeset.ledger.append_locked");
         let mut file = OpenOptions::new()
             .create(true)
             .append(true)
@@ -202,12 +205,17 @@ impl LedgerStore {
         let json =
             serde_json::to_string(event).map_err(|e| ChangeSetError::serde(e, "encoding event"))?;
         writeln!(file, "{json}").map_err(|e| ChangeSetError::io(e, "writing event line"))?;
+        linkscope::record_bytes(
+            "changeset.ledger.append.bytes",
+            usize_to_u64_saturating(json.len()),
+        );
         Ok(())
     }
 
     /// Read all events matching `filter`, oldest first. Corrupt lines are
     /// skipped with a warning rather than aborting the read.
     pub fn query(&self, filter: &LedgerFilter) -> Result<Vec<LedgerEvent>> {
+        let _linkscope_query = linkscope::phase("changeset.ledger.query");
         let file = File::open(&self.events_path)
             .map_err(|e| ChangeSetError::io(e, "opening runtime.jsonl for query"))?;
         let mut out = Vec::new();
@@ -220,12 +228,23 @@ impl LedgerStore {
             match serde_json::from_str::<LedgerEvent>(trimmed) {
                 Ok(ev) if filter.matches(&ev) => out.push(ev),
                 Ok(_) => {}
-                Err(e) => warn!(line = n, error = %e, "skipping corrupt ledger line"),
+                Err(e) => {
+                    linkscope::record_items("changeset.ledger.corrupt_line", 1);
+                    warn!(line = n, error = %e, "skipping corrupt ledger line");
+                }
             }
         }
+        linkscope::record_items(
+            "changeset.ledger.query.rows",
+            usize_to_u64_saturating(out.len()),
+        );
         debug!(count = out.len(), "queried ledger events");
         Ok(out)
     }
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]

@@ -172,6 +172,17 @@ pub async fn prepare_stream_request(
     // compaction won't emit the hint.
     base.context_hint_tokens_saved = overrides.context_hint_tokens_saved;
 
+    // Server-side compaction (the non-blocking primary path): let Anthropic
+    // reduce old turns API-side before they reach the model, so the user's
+    // input never stalls behind a local summarization round-trip. Defaults on
+    // in StreamOptions::new; cleared only when the user disables auto-compaction
+    // or opts out of the server path specifically.
+    {
+        let cfg = crate::config::load_arc();
+        base.server_side_compaction =
+            cfg.auto_compact_enabled && cfg.server_side_compaction_enabled;
+    }
+
     let mut opts = thinking_mode.apply_to(base);
     opts = crate::exploration::apply_to_stream_options(
         opts,
@@ -198,6 +209,20 @@ pub async fn prepare_stream_request(
         max_output_tokens = ?request_pressure.max_output_tokens,
         "resolved request context pressure"
     );
+    let context_pressure_nudge = request_pressure.context_pressure_nudge();
+    if let Some(nudge) = context_pressure_nudge {
+        tracing::warn!(
+            target: "jfc::stream::ctx_reduce",
+            nudge = nudge.kind.label(),
+            level = ?nudge.level,
+            raw_tokens = nudge.raw_tokens,
+            effective_tokens = nudge.effective_tokens,
+            window_tokens = nudge.window_tokens,
+            threshold_tokens = nudge.threshold_tokens,
+            reclaim_floor_tokens = nudge.reclaim_floor_tokens,
+            "request context pressure crossed ctx_reduce nudge threshold"
+        );
+    }
     // Log the resolved request params after per-model clamping so every spawn's
     // actual reasoning_effort, max_tokens, and thinking mode are observable.
     // Critical for experiments comparing model tiers / effort levels — the
@@ -241,6 +266,7 @@ pub async fn prepare_stream_request(
                 selected_model_info.as_ref(),
             )),
             context_budget: Some(request_budget),
+            context_pressure_nudge,
             provider_history_archive_recall_ids: project_context
                 .provider_history_archive_recall_ids,
             rsi_prompt_sections: rsi_runtime.prompt_sections,

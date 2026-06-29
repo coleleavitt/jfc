@@ -4,6 +4,7 @@ use std::net::IpAddr;
 use reqwest::header::{ACCEPT, USER_AGENT};
 use serde::Deserialize;
 
+use super::super::trace;
 use super::config::discovery_enabled;
 use super::response::FourGetResponse;
 
@@ -15,21 +16,26 @@ pub async fn discover_instances(
     seeds: Vec<String>,
     limit: usize,
 ) -> Vec<String> {
+    let _linkscope_discover = linkscope::phase("web.backend.fourget.discover");
     let mut instances = Vec::new();
     let mut seen = HashSet::new();
     let mut fetched = HashSet::new();
     let mut frontier = push_instances(seeds, &mut seen, &mut instances, limit);
+    trace::count("web.backend.fourget.discovery.seeds", instances.len());
     if !discovery_enabled() {
+        linkscope::record_items("web.backend.fourget.discovery.disabled", 1);
         return instances;
     }
 
     while !frontier.is_empty() && instances.len() < limit {
+        let _linkscope_round = linkscope::phase("web.backend.fourget.discovery_round");
         let current = frontier;
         frontier = Vec::new();
         let to_fetch: Vec<_> = current
             .into_iter()
             .filter(|instance| fetched.insert(instance.clone()))
             .collect();
+        trace::count("web.backend.fourget.discovery.fetches", to_fetch.len());
         let responses = futures::future::join_all(
             to_fetch
                 .iter()
@@ -59,6 +65,7 @@ pub async fn fetch_page(
     scraper: &str,
     next_page: Option<&str>,
 ) -> Result<FourGetResponse, String> {
+    let _linkscope_fetch = linkscope::phase("web.backend.fourget.fetch_page");
     let url = format!("{}/api/v1/web", instance.trim_end_matches('/'));
     let request = client
         .get(url)
@@ -71,6 +78,10 @@ pub async fn fetch_page(
         .await
         .map_err(|e| format!("request failed: {e}"))?;
     let status = response.status();
+    linkscope::record_items(
+        "web.backend.fourget.http_status",
+        u64::from(status.as_u16()),
+    );
     response
         .json()
         .await
@@ -92,6 +103,7 @@ async fn fetch_ami4get(
     client: &reqwest::Client,
     instance: &str,
 ) -> Result<Ami4GetResponse, String> {
+    let _linkscope_fetch = linkscope::phase("web.backend.fourget.ami4get");
     let origin = instance.trim_end_matches('/').to_owned();
     let response = client
         .get(format!("{origin}/ami4get"))
@@ -101,6 +113,10 @@ async fn fetch_ami4get(
         .await
         .map_err(|e| format!("{origin}: /ami4get request failed: {e}"))?;
     let status = response.status();
+    linkscope::record_items(
+        "web.backend.fourget.ami4get_status",
+        u64::from(status.as_u16()),
+    );
     let mut parsed: Ami4GetResponse = response
         .json()
         .await
@@ -115,6 +131,7 @@ fn push_instances(
     instances: &mut Vec<String>,
     limit: usize,
 ) -> Vec<String> {
+    let _linkscope_push = linkscope::phase("web.backend.fourget.push_instances");
     let mut added = Vec::new();
     for candidate in candidates {
         let Some(instance) = normalize_public_instance(&candidate) else {
@@ -123,6 +140,8 @@ fn push_instances(
         if seen.insert(instance.clone()) {
             added.push(instance.clone());
             instances.push(instance);
+        } else {
+            linkscope::record_items("web.backend.fourget.instance_duplicate", 1);
         }
         if instances.len() >= limit {
             break;
@@ -206,61 +225,4 @@ struct Ami4GetServer {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn push_instances_dedups_and_strips_trailing_slash_normal() {
-        let mut seen = HashSet::new();
-        let mut instances = Vec::new();
-
-        let added = push_instances(
-            vec![
-                "https://4get.example/".into(),
-                "https://4get.example".into(),
-                "http://ignored.example".into(),
-            ],
-            &mut seen,
-            &mut instances,
-            10,
-        );
-
-        assert_eq!(instances, vec!["https://4get.example"]);
-        assert_eq!(added, vec!["https://4get.example"]);
-    }
-
-    #[test]
-    fn push_instances_rejects_non_public_roots_regression() {
-        let mut seen = HashSet::new();
-        let mut instances = Vec::new();
-
-        let added = push_instances(
-            vec![
-                "http://4get.example".into(),
-                "https://127.0.0.1".into(),
-                "https://10.0.0.4".into(),
-                "https://metadata.google.internal".into(),
-                "https://4get.example/path".into(),
-                "https://4get.example?q=x".into(),
-                "https://user:pass@4get.example".into(),
-                "https://4get.example:8443/".into(),
-            ],
-            &mut seen,
-            &mut instances,
-            10,
-        );
-
-        assert_eq!(instances, vec!["https://4get.example:8443"]);
-        assert_eq!(added, vec!["https://4get.example:8443"]);
-    }
-
-    #[test]
-    fn next_page_params_keep_original_scraper_normal() {
-        let params = page_params("rust", "yandex", Some("yandex_w1.key"));
-
-        assert_eq!(
-            params,
-            vec![("npt", "yandex_w1.key"), ("scraper", "yandex")]
-        );
-    }
-}
+mod tests;

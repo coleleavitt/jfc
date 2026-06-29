@@ -4,7 +4,12 @@ use crate::{PluginErrorPhase, PluginHost, PluginHostError, PluginStatusKind, hoo
 
 impl PluginHost {
     pub fn activate_all(&mut self) -> Result<(), PluginHostError> {
+        let _linkscope_activate = linkscope::phase("plugin_host.activate_all");
         let candidates = self.activation_candidates();
+        linkscope::record_items(
+            "plugin_host.activation_candidates",
+            u64::try_from(candidates.len()).unwrap_or(u64::MAX),
+        );
         for plugin_id in candidates {
             self.activate_plugin_key(&plugin_id)?;
         }
@@ -12,6 +17,14 @@ impl PluginHost {
     }
 
     pub fn enable_plugin(&mut self, plugin_id: &PluginId) -> Result<(), PluginHostError> {
+        let _linkscope_enable = linkscope::phase("plugin_host.enable_plugin");
+        linkscope::event_fields(
+            "plugin_host.enable_plugin",
+            [linkscope::TraceField::text(
+                "plugin_id",
+                plugin_id.as_str().to_owned(),
+            )],
+        );
         let key = plugin_id.as_str();
         let entry = self.entry_mut(key)?;
         if entry.status != PluginStatusKind::Disabled {
@@ -22,6 +35,14 @@ impl PluginHost {
     }
 
     pub fn disable_plugin(&mut self, plugin_id: &PluginId) -> Result<(), PluginHostError> {
+        let _linkscope_disable = linkscope::phase("plugin_host.disable_plugin");
+        linkscope::event_fields(
+            "plugin_host.disable_plugin",
+            [linkscope::TraceField::text(
+                "plugin_id",
+                plugin_id.as_str().to_owned(),
+            )],
+        );
         let key = plugin_id.as_str();
         let should_finalize = self.entry(key)?.status == PluginStatusKind::Active;
         if should_finalize {
@@ -47,6 +68,7 @@ impl PluginHost {
     }
 
     pub fn shutdown(&mut self) -> Result<(), PluginHostError> {
+        let _linkscope_shutdown = linkscope::phase("plugin_host.shutdown");
         let mut active = self
             .plugins
             .iter()
@@ -54,6 +76,10 @@ impl PluginHost {
             .map(|(id, entry)| (entry.activation_sort_key(), id.clone()))
             .collect::<Vec<_>>();
         active.sort_by(|left, right| right.0.cmp(&left.0));
+        linkscope::record_items(
+            "plugin_host.shutdown.active",
+            u64::try_from(active.len()).unwrap_or(u64::MAX),
+        );
 
         for (_, plugin_id) in active {
             self.finalize_plugin(&plugin_id)?;
@@ -79,6 +105,11 @@ impl PluginHost {
     }
 
     pub(crate) fn activate_plugin_key(&mut self, key: &str) -> Result<(), PluginHostError> {
+        let _linkscope_activate = linkscope::phase("plugin_host.activate_plugin");
+        linkscope::event_fields(
+            "plugin_host.activate_plugin",
+            [linkscope::TraceField::text("plugin_id", key.to_owned())],
+        );
         let activation = {
             let entry = self.entry(key)?;
             if entry.status != PluginStatusKind::Registered {
@@ -107,15 +138,38 @@ impl PluginHost {
         key: &str,
         activation: crate::PluginActivation,
     ) -> Result<(), PluginHostError> {
+        let _linkscope_finish = linkscope::phase("plugin_host.finish_activation");
         let (plugin_id, activation_order) = {
             let entry = self.entry(key)?;
             (entry.plugin_id.clone(), entry.plugin.activation_order())
         };
+        linkscope::event_fields(
+            "plugin_host.finish_activation.descriptors",
+            [
+                linkscope::TraceField::text("plugin_id", plugin_id.as_str().to_owned()),
+                linkscope::TraceField::count(
+                    "hooks",
+                    u64::try_from(activation.hooks.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::count(
+                    "tools",
+                    u64::try_from(activation.tool_descriptors.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::count(
+                    "commands",
+                    u64::try_from(activation.command_descriptors.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::count(
+                    "ui_panels",
+                    u64::try_from(activation.ui_panel_descriptors.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         let activation_sequence = self.next_activation_sequence;
         self.next_activation_sequence = self.next_activation_sequence.saturating_add(1);
         let hooks = self.activate_hooks(
             activation.hooks,
-            plugin_id.clone(),
+            plugin_id,
             activation_order,
             activation_sequence,
         );
@@ -166,6 +220,7 @@ impl PluginHost {
     }
 
     fn activation_candidates(&self) -> Vec<String> {
+        let _linkscope_candidates = linkscope::phase("plugin_host.activation_candidates");
         let mut candidates = self
             .plugins
             .iter()
@@ -177,9 +232,20 @@ impl PluginHost {
     }
 
     fn finalize_plugin(&mut self, key: &str) -> Result<(), PluginHostError> {
+        let _linkscope_finalize = linkscope::phase("plugin_host.finalize_plugin");
         let finalizers = std::mem::take(&mut self.entry_mut(key)?.finalizers);
         let plugin_id = self.entry(key)?.plugin_id.clone();
         let mut first_error = None;
+        linkscope::event_fields(
+            "plugin_host.finalize_plugin",
+            [
+                linkscope::TraceField::text("plugin_id", plugin_id.as_str().to_owned()),
+                linkscope::TraceField::count(
+                    "finalizers",
+                    u64::try_from(finalizers.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
 
         for finalizer in finalizers.into_iter().rev() {
             if let Err(error) = finalizer() {

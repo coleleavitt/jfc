@@ -60,8 +60,21 @@ impl TrustScore {
 
     /// Record a success (+5, clamped to 100).
     pub fn record_success(&mut self, reason: &str) {
+        let _linkscope_success = linkscope::phase("economy.trust_score.record_success");
+        let before = self.score;
         let delta = 5i8;
         self.score = self.score.saturating_add(5).min(100);
+        linkscope::event_fields(
+            "economy.trust_score.record_success",
+            [
+                linkscope::TraceField::count("before", u64::from(before)),
+                linkscope::TraceField::count("after", u64::from(self.score)),
+                linkscope::TraceField::bytes(
+                    "reason_bytes",
+                    u64::try_from(reason.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         self.history.push(TrustChange {
             timestamp_ms: now_ms(),
             delta,
@@ -72,8 +85,21 @@ impl TrustScore {
 
     /// Record a failure (-15, clamped to 0).
     pub fn record_failure(&mut self, reason: &str) {
+        let _linkscope_failure = linkscope::phase("economy.trust_score.record_failure");
+        let before = self.score;
         let delta = -15i8;
         self.score = self.score.saturating_sub(15);
+        linkscope::event_fields(
+            "economy.trust_score.record_failure",
+            [
+                linkscope::TraceField::count("before", u64::from(before)),
+                linkscope::TraceField::count("after", u64::from(self.score)),
+                linkscope::TraceField::bytes(
+                    "reason_bytes",
+                    u64::try_from(reason.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         self.history.push(TrustChange {
             timestamp_ms: now_ms(),
             delta,
@@ -84,8 +110,22 @@ impl TrustScore {
 
     /// Record a custom penalty (for charter violations).
     pub fn record_penalty(&mut self, amount: u8, reason: &str) {
+        let _linkscope_penalty = linkscope::phase("economy.trust_score.record_penalty");
+        let before = self.score;
         let delta = -(amount as i8);
         self.score = self.score.saturating_sub(amount);
+        linkscope::event_fields(
+            "economy.trust_score.record_penalty",
+            [
+                linkscope::TraceField::count("before", u64::from(before)),
+                linkscope::TraceField::count("after", u64::from(self.score)),
+                linkscope::TraceField::count("amount", u64::from(amount)),
+                linkscope::TraceField::bytes(
+                    "reason_bytes",
+                    u64::try_from(reason.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         self.history.push(TrustChange {
             timestamp_ms: now_ms(),
             delta,
@@ -119,7 +159,19 @@ impl TrustRegistry {
 
     /// Register a new agent (starts at 50).
     pub fn register(&mut self, agent_id: AgentId) {
+        let _linkscope_register = linkscope::phase("economy.trust_registry.register");
+        let existed = self.scores.contains_key(&agent_id);
         self.scores.entry(agent_id).or_insert_with(TrustScore::new);
+        linkscope::event_fields(
+            "economy.trust_registry.register",
+            [
+                linkscope::TraceField::count("existed", u64::from(existed)),
+                linkscope::TraceField::count(
+                    "agents",
+                    u64::try_from(self.scores.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
     }
 
     /// Get trust score for agent.
@@ -167,7 +219,9 @@ fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
-        .as_millis() as u64
+        .as_millis()
+        .try_into()
+        .unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]

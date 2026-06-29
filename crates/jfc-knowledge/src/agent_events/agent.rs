@@ -7,6 +7,24 @@ use super::rows::{
 
 impl KnowledgeStore {
     pub async fn upsert_agent_session(&self, row: &AgentSessionRow) -> Result<()> {
+        let _linkscope_upsert = linkscope::phase("knowledge.agent_session.upsert");
+        linkscope::event_fields(
+            "knowledge.agent_session.upsert",
+            [
+                linkscope::TraceField::text("id", row.id.clone()),
+                linkscope::TraceField::text("status", row.status.clone()),
+                linkscope::TraceField::count(
+                    "has_parent",
+                    u64::from(row.parent_session_id.is_some()),
+                ),
+                linkscope::TraceField::count(
+                    "budget_tokens",
+                    row.budget_tokens
+                        .and_then(|value| u64::try_from(value).ok())
+                        .unwrap_or(0),
+                ),
+            ],
+        );
         sqlx::query(
             "INSERT INTO agent_sessions \
              (id, parent_session_id, role, model, status, budget_tokens, task_id, team_id, \
@@ -66,6 +84,19 @@ impl KnowledgeStore {
     }
 
     pub async fn record_agent_event(&self, row: &AgentEventRow) -> Result<()> {
+        let _linkscope_event = linkscope::phase("knowledge.agent_event.record");
+        linkscope::event_fields(
+            "knowledge.agent_event.record",
+            [
+                linkscope::TraceField::text("id", row.id.clone()),
+                linkscope::TraceField::text("session_id", row.session_id.clone()),
+                linkscope::TraceField::text("kind", row.kind.clone()),
+                linkscope::TraceField::bytes(
+                    "content_bytes",
+                    u64::try_from(row.content.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         sqlx::query(
             "INSERT INTO agent_events \
              (id, session_id, from_agent, to_agent, kind, content, turn_id, causal_parent_id, \
@@ -91,6 +122,7 @@ impl KnowledgeStore {
         session_id: &str,
         limit: usize,
     ) -> Result<Vec<AgentEventRow>> {
+        let _linkscope_list = linkscope::phase("knowledge.agent_event.list");
         let rows = sqlx::query(
             "SELECT id, session_id, from_agent, to_agent, kind, content, turn_id, \
                     causal_parent_id, created_at_ms \
@@ -104,10 +136,31 @@ impl KnowledgeStore {
         for row in rows {
             out.push(agent_event_from(&row)?);
         }
+        linkscope::event_fields(
+            "knowledge.agent_event.list",
+            [
+                linkscope::TraceField::text("session_id", session_id.to_owned()),
+                linkscope::TraceField::count("limit", u64::try_from(limit).unwrap_or(u64::MAX)),
+                linkscope::TraceField::count("rows", u64::try_from(out.len()).unwrap_or(u64::MAX)),
+            ],
+        );
         Ok(out)
     }
 
     pub async fn enqueue_agent_mailbox(&self, row: &AgentMailboxRow) -> Result<()> {
+        let _linkscope_mailbox = linkscope::phase("knowledge.agent_mailbox.enqueue");
+        linkscope::event_fields(
+            "knowledge.agent_mailbox.enqueue",
+            [
+                linkscope::TraceField::text("id", row.id.clone()),
+                linkscope::TraceField::text("to_agent", row.to_agent.clone()),
+                linkscope::TraceField::count("priority", u64::try_from(row.priority).unwrap_or(0)),
+                linkscope::TraceField::bytes(
+                    "content_bytes",
+                    u64::try_from(row.content.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         sqlx::query(
             "INSERT INTO agent_mailbox \
              (id, to_agent, from_agent, thread_id, task_id, priority, content, read_at_ms, \
@@ -134,6 +187,7 @@ impl KnowledgeStore {
         to_agent: &str,
         unread_only: bool,
     ) -> Result<Vec<AgentMailboxRow>> {
+        let _linkscope_list = linkscope::phase("knowledge.agent_mailbox.list");
         let sql = if unread_only {
             "SELECT id, to_agent, from_agent, thread_id, task_id, priority, content, \
                     read_at_ms, summarized_at_ms, created_at_ms \
@@ -153,10 +207,19 @@ impl KnowledgeStore {
         for row in rows {
             out.push(agent_mailbox_from(&row)?);
         }
+        linkscope::event_fields(
+            "knowledge.agent_mailbox.list",
+            [
+                linkscope::TraceField::text("to_agent", to_agent.to_owned()),
+                linkscope::TraceField::count("unread_only", u64::from(unread_only)),
+                linkscope::TraceField::count("rows", u64::try_from(out.len()).unwrap_or(u64::MAX)),
+            ],
+        );
         Ok(out)
     }
 
     pub async fn mark_agent_mailbox_read(&self, id: &str) -> Result<usize> {
+        let _linkscope_mark = linkscope::phase("knowledge.agent_mailbox.mark_read");
         let result = sqlx::query(
             "UPDATE agent_mailbox SET read_at_ms = ?2 WHERE id = ?1 AND read_at_ms IS NULL",
         )
@@ -164,7 +227,15 @@ impl KnowledgeStore {
         .bind(record::now_ms())
         .execute(&self.pool)
         .await?;
-        Ok(result.rows_affected() as usize)
+        let rows = usize::try_from(result.rows_affected()).unwrap_or(usize::MAX);
+        linkscope::event_fields(
+            "knowledge.agent_mailbox.mark_read",
+            [
+                linkscope::TraceField::text("id", id.to_owned()),
+                linkscope::TraceField::count("rows", u64::try_from(rows).unwrap_or(u64::MAX)),
+            ],
+        );
+        Ok(rows)
     }
 
     pub async fn mark_all_agent_mailbox_read(&self, to_agent: &str) -> Result<usize> {
@@ -175,7 +246,8 @@ impl KnowledgeStore {
         .bind(record::now_ms())
         .execute(&self.pool)
         .await?;
-        Ok(result.rows_affected() as usize)
+        let rows = usize::try_from(result.rows_affected()).unwrap_or(usize::MAX);
+        Ok(rows)
     }
 
     pub async fn clear_agent_mailbox(&self, to_agent: &str) -> Result<usize> {
@@ -183,6 +255,7 @@ impl KnowledgeStore {
             .bind(to_agent)
             .execute(&self.pool)
             .await?;
-        Ok(result.rows_affected() as usize)
+        let rows = usize::try_from(result.rows_affected()).unwrap_or(usize::MAX);
+        Ok(rows)
     }
 }

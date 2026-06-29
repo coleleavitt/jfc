@@ -125,8 +125,14 @@ pub struct BridgeProviderStreamOptions {
 
 impl BridgeProviderStreamOptions {
     pub fn new(model: impl Into<String>) -> Self {
+        let _linkscope_options = linkscope::phase("plugin_sdk.provider_bridge.stream_options.new");
+        let model = model.into();
+        linkscope::event_fields(
+            "plugin_sdk.provider_bridge.stream_options.new",
+            [linkscope::TraceField::text("model", model.clone())],
+        );
         Self {
-            model: model.into(),
+            model,
             system: None,
             max_tokens: 8192,
             tools: Vec::new(),

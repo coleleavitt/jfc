@@ -82,6 +82,8 @@ impl ToolRuntime for BuiltinToolRuntime {
     }
 
     async fn dispatch(&self, request: ToolRuntimeRequest<'_>) -> Option<ExecutionResult> {
+        let _linkscope_runtime = linkscope::phase("tool.runtime.dispatch");
+        linkscope::record_items("tool.runtime.dispatch", 1);
         match (request.kind, request.input) {
             (
                 ToolKind::Read,
@@ -199,6 +201,22 @@ async fn execute_tool_inner(
     runtime_tool_id: Option<String>,
     tool_runtime: Option<Arc<dyn ToolRuntime>>,
 ) -> ExecutionResult {
+    let tool_name = kind.api_name();
+    let _linkscope_tool = linkscope::phase("tool.dispatch");
+    linkscope::record_items("tool.dispatch", 1);
+    if linkscope::is_enabled() {
+        linkscope::event_fields(
+            "tool.dispatch.start",
+            [
+                linkscope::TraceField::text("kind", tool_name),
+                linkscope::TraceField::count(
+                    "has_runtime_id",
+                    bool_to_u64(runtime_tool_id.is_some()),
+                ),
+                linkscope::TraceField::count("has_team", bool_to_u64(active_team_name.is_some())),
+            ],
+        );
+    }
     #[cfg(feature = "hooks")]
     {
         // Hook integration point: BeforeToolDispatch
@@ -1947,6 +1965,10 @@ fn mcp_dispatch_error_metadata(error: &crate::mcp::DispatchError) -> (ToolErrorC
             crate::mcp::RequestError::Service(_) => (ToolErrorCategory::Business, false),
         },
     }
+}
+
+const fn bool_to_u64(value: bool) -> u64 {
+    if value { 1 } else { 0 }
 }
 
 #[cfg(test)]

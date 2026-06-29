@@ -4,8 +4,8 @@ use std::process::{Command, Stdio};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    RsiCurator, RsiCuratorConfig, RsiCuratorJob, RsiLoopSandboxPlan, RsiPromotionPolicy,
-    RsiSandboxEnforcement, RsiTrace,
+    ApplyToStore, RsiCurator, RsiCuratorConfig, RsiCuratorJob, RsiLoopSandboxPlan,
+    RsiPromotionPolicy, RsiSandboxEnforcement, RsiTrace,
 };
 use crate::LearnError;
 
@@ -31,6 +31,22 @@ pub struct RsiWorkerOutput {
 }
 
 pub fn run_rsi_worker_job(job: &RsiCuratorJob) -> Result<RsiWorkerOutput, LearnError> {
+    let _linkscope_job = linkscope::phase("learn.rsi_worker.run_job");
+    linkscope::event_fields(
+        "learn.rsi_worker.run_job",
+        [
+            linkscope::TraceField::count(
+                "traces",
+                u64::try_from(job.traces.len()).unwrap_or(u64::MAX),
+            ),
+            linkscope::TraceField::count("has_worker", u64::from(job.worker.is_some())),
+            linkscope::TraceField::count(
+                "has_sandbox",
+                u64::from(job.sandbox_enforcement.is_some()),
+            ),
+            linkscope::TraceField::count("has_project_key", u64::from(job.project_key.is_some())),
+        ],
+    );
     let Some(worker) = &job.worker else {
         return Err(LearnError::ContractViolation {
             message: "RSI worker config missing".to_owned(),
@@ -56,15 +72,42 @@ pub fn run_rsi_worker_job(job: &RsiCuratorJob) -> Result<RsiWorkerOutput, LearnE
 }
 
 pub async fn run_rsi_worker_file(input: &Path, output: &Path) -> Result<(), LearnError> {
+    let _linkscope_file = linkscope::phase("learn.rsi_worker.run_file");
+    linkscope::event_fields(
+        "learn.rsi_worker.run_file",
+        [
+            linkscope::TraceField::text("input", input.display().to_string()),
+            linkscope::TraceField::text("output", output.display().to_string()),
+        ],
+    );
     let raw = std::fs::read(input)?;
+    linkscope::record_bytes(
+        "learn.rsi_worker.input_bytes",
+        u64::try_from(raw.len()).unwrap_or(u64::MAX),
+    );
     let input = serde_json::from_slice::<RsiWorkerInput>(&raw)?;
     let output_body = run_worker_input(input).await?;
     let raw_output = serde_json::to_vec_pretty(&output_body)?;
+    linkscope::record_bytes(
+        "learn.rsi_worker.output_bytes",
+        u64::try_from(raw_output.len()).unwrap_or(u64::MAX),
+    );
     std::fs::write(output, raw_output)?;
     Ok(())
 }
 
 async fn run_worker_input(input: RsiWorkerInput) -> Result<RsiWorkerOutput, LearnError> {
+    let _linkscope_input = linkscope::phase("learn.rsi_worker.run_input");
+    linkscope::event_fields(
+        "learn.rsi_worker.run_input",
+        [
+            linkscope::TraceField::count(
+                "traces",
+                u64::try_from(input.traces.len()).unwrap_or(u64::MAX),
+            ),
+            linkscope::TraceField::count("project_key", u64::from(input.project_key.is_some())),
+        ],
+    );
     let curator = RsiCurator::new(input.config, input.promotion_policy);
     let mut report = curator.run(&input.traces)?;
     report.experiment_job.external_worker_sandbox =
@@ -75,6 +118,20 @@ async fn run_worker_input(input: RsiWorkerInput) -> Result<RsiWorkerOutput, Lear
     } else {
         report.len()
     };
+    linkscope::event_fields(
+        "learn.rsi_worker.run_input.result",
+        [
+            linkscope::TraceField::count("actions", u64::try_from(actions).unwrap_or(u64::MAX)),
+            linkscope::TraceField::count(
+                "traces_scored",
+                u64::try_from(report.traces_scored).unwrap_or(u64::MAX),
+            ),
+            linkscope::TraceField::count(
+                "candidates_seen",
+                u64::try_from(report.candidates.len()).unwrap_or(u64::MAX),
+            ),
+        ],
+    );
     Ok(RsiWorkerOutput {
         actions,
         traces_scored: report.traces_scored,
@@ -86,32 +143,67 @@ fn run_bwrap_worker(
     worker: &RsiCuratorWorkerConfig,
     input: &RsiWorkerInput,
 ) -> Result<RsiWorkerOutput, LearnError> {
+    let _linkscope_bwrap = linkscope::phase("learn.rsi_worker.run_bwrap");
+    linkscope::event_fields(
+        "learn.rsi_worker.run_bwrap",
+        [
+            linkscope::TraceField::text("binary", worker.binary.display().to_string()),
+            linkscope::TraceField::text("cwd", worker.cwd.display().to_string()),
+            linkscope::TraceField::count(
+                "traces",
+                u64::try_from(input.traces.len()).unwrap_or(u64::MAX),
+            ),
+        ],
+    );
     let dir = worker.cwd.join(".jfc").join("rsi-worker");
     std::fs::create_dir_all(&dir)?;
     let nonce = uuid::Uuid::new_v4();
     let input_path = dir.join(format!("{nonce}.input.json"));
     let output_path = dir.join(format!("{nonce}.output.json"));
-    std::fs::write(&input_path, serde_json::to_vec_pretty(input)?)?;
+    let raw_input = serde_json::to_vec_pretty(input)?;
+    linkscope::record_bytes(
+        "learn.rsi_worker.bwrap_input_bytes",
+        u64::try_from(raw_input.len()).unwrap_or(u64::MAX),
+    );
+    std::fs::write(&input_path, raw_input)?;
+    let _linkscope_command = linkscope::phase("learn.rsi_worker.bwrap_command");
     let status = worker_command(worker, &input_path, &output_path)
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .status()?;
     if !status.success() {
+        linkscope::event_fields(
+            "learn.rsi_worker.run_bwrap.result",
+            [
+                linkscope::TraceField::text("status", "failed"),
+                linkscope::TraceField::signed("exit", i64::from(status.code().unwrap_or(-1))),
+            ],
+        );
         return Err(LearnError::ContractViolation {
             message: format!("RSI worker exited with status {status}"),
         });
     }
     let raw = std::fs::read(&output_path)?;
+    linkscope::record_bytes(
+        "learn.rsi_worker.bwrap_output_bytes",
+        u64::try_from(raw.len()).unwrap_or(u64::MAX),
+    );
+    linkscope::event_fields(
+        "learn.rsi_worker.run_bwrap.result",
+        [linkscope::TraceField::text("status", "ok")],
+    );
     serde_json::from_slice::<RsiWorkerOutput>(&raw).map_err(Into::into)
 }
 
 fn worker_command(worker: &RsiCuratorWorkerConfig, input: &Path, output: &Path) -> Command {
+    let _linkscope_command = linkscope::phase("learn.rsi_worker.worker_command");
     let mut cmd = Command::new("bwrap");
     cmd.args(bwrap_args(worker, input, output));
     cmd
 }
 
 fn bwrap_args(worker: &RsiCuratorWorkerConfig, input: &Path, output: &Path) -> Vec<String> {
+    let _linkscope_args = linkscope::phase("learn.rsi_worker.bwrap_args");
     let cwd = worker.cwd.display().to_string();
     let binary = worker.binary.display().to_string();
     let mut args = vec![
@@ -161,6 +253,13 @@ fn bwrap_args(worker: &RsiCuratorWorkerConfig, input: &Path, output: &Path) -> V
         "--output".into(),
         output.display().to_string(),
     ]);
+    linkscope::event_fields(
+        "learn.rsi_worker.bwrap_args.result",
+        [linkscope::TraceField::count(
+            "args",
+            u64::try_from(args.len()).unwrap_or(u64::MAX),
+        )],
+    );
     args
 }
 

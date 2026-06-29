@@ -40,6 +40,17 @@ pub struct JournalWriter {
 
 impl JournalWriter {
     pub fn new(session_id: Option<&str>, run_id: &str) -> Self {
+        let _linkscope_new = linkscope::phase("engine.workflow.journal.writer.new");
+        linkscope::event_fields(
+            "engine.workflow.journal.writer.new",
+            [
+                linkscope::TraceField::count("has_session", u64::from(session_id.is_some())),
+                linkscope::TraceField::bytes(
+                    "run_id_bytes",
+                    u64::try_from(run_id.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         Self {
             session_id: session_id
                 .filter(|s| !s.trim().is_empty())
@@ -50,9 +61,20 @@ impl JournalWriter {
     }
 
     pub async fn append(&self, entry: &JournalEntry) -> std::io::Result<()> {
+        let _linkscope_append = linkscope::phase("engine.workflow.journal.append");
         let session_id = self.session_id.clone();
         let run_id = self.run_id.clone();
         let json = serde_json::to_string(entry).map_err(io_invalid)?;
+        linkscope::event_fields(
+            "engine.workflow.journal.append",
+            [
+                linkscope::TraceField::text("run_id", run_id.clone()),
+                linkscope::TraceField::bytes(
+                    "json_bytes",
+                    u64::try_from(json.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         tokio::task::spawn_blocking(move || {
             jfc_knowledge::block_on_knowledge(async {
                 let store = jfc_knowledge::KnowledgeStore::open_default()
@@ -75,12 +97,24 @@ impl JournalWriter {
     }
 
     pub fn label(&self) -> String {
+        let _linkscope_label = linkscope::phase("engine.workflow.journal.label");
         format!("db:{}/{}", self.session_id, self.run_id)
     }
 }
 
 /// Load a journal into a cache for resume lookups.
 pub async fn load_journal(session_id: Option<&str>, run_id: &str) -> JournalCache {
+    let _linkscope_load = linkscope::phase("engine.workflow.journal.load");
+    linkscope::event_fields(
+        "engine.workflow.journal.load",
+        [
+            linkscope::TraceField::count("has_session", u64::from(session_id.is_some())),
+            linkscope::TraceField::bytes(
+                "run_id_bytes",
+                u64::try_from(run_id.len()).unwrap_or(u64::MAX),
+            ),
+        ],
+    );
     let session_id = session_id
         .filter(|s| !s.trim().is_empty())
         .unwrap_or(GLOBAL_WORKFLOW_SESSION_ID)
@@ -127,6 +161,19 @@ pub async fn load_journal(session_id: Option<&str>, run_id: &str) -> JournalCach
         }
     }
 
+    linkscope::event_fields(
+        "engine.workflow.journal.load.result",
+        [
+            linkscope::TraceField::count(
+                "results",
+                u64::try_from(results.len()).unwrap_or(u64::MAX),
+            ),
+            linkscope::TraceField::count(
+                "started",
+                u64::try_from(started.len()).unwrap_or(u64::MAX),
+            ),
+        ],
+    );
     JournalCache { results, started }
 }
 
@@ -142,6 +189,24 @@ fn io_other(error: impl std::error::Error + Send + Sync + 'static) -> std::io::E
 /// `running_hash` is the hex-encoded hash from the previous agent call
 /// (empty string for the first call).
 pub fn compute_key(running_hash: &str, prompt: &str, opts_json: &str) -> String {
+    let _linkscope_key = linkscope::phase("engine.workflow.journal.compute_key");
+    linkscope::detail_event_fields(
+        "engine.workflow.journal.compute_key",
+        [
+            linkscope::TraceField::bytes(
+                "running_hash_bytes",
+                u64::try_from(running_hash.len()).unwrap_or(u64::MAX),
+            ),
+            linkscope::TraceField::bytes(
+                "prompt_bytes",
+                u64::try_from(prompt.len()).unwrap_or(u64::MAX),
+            ),
+            linkscope::TraceField::bytes(
+                "opts_bytes",
+                u64::try_from(opts_json.len()).unwrap_or(u64::MAX),
+            ),
+        ],
+    );
     let mut hasher = Sha256::new();
     hasher.update(running_hash.as_bytes());
     hasher.update(b"\0");

@@ -173,6 +173,14 @@ impl ContextReductionQueue {
         }
     }
 
+    pub fn extend(&mut self, drops: impl IntoIterator<Item = QueuedContextDrop>) {
+        self.drops.extend(drops);
+    }
+
+    pub fn take(&mut self) -> Vec<QueuedContextDrop> {
+        std::mem::take(&mut self.drops)
+    }
+
     pub fn drops(&self) -> &[QueuedContextDrop] {
         &self.drops
     }

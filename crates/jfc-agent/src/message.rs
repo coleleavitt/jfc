@@ -39,18 +39,39 @@ pub struct Message {
 impl Message {
     /// Build a system/user-origin message (no sender agent).
     pub fn new(text: impl Into<String>) -> Self {
+        let _linkscope_message = linkscope::phase("agent.message.new");
+        let text = text.into();
+        linkscope::detail_event_fields(
+            "agent.message.new",
+            [linkscope::TraceField::bytes(
+                "text_bytes",
+                u64::try_from(text.len()).unwrap_or(u64::MAX),
+            )],
+        );
         Self {
             from: None,
-            text: text.into(),
+            text,
             sent_at_ms: now_ms(),
         }
     }
 
     /// Build a message from a specific agent.
     pub fn from_agent(from: AgentId, text: impl Into<String>) -> Self {
+        let _linkscope_message = linkscope::phase("agent.message.from_agent");
+        let text = text.into();
+        linkscope::detail_event_fields(
+            "agent.message.from_agent",
+            [
+                linkscope::TraceField::text("from", from.to_string()),
+                linkscope::TraceField::bytes(
+                    "text_bytes",
+                    u64::try_from(text.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         Self {
             from: Some(from),
-            text: text.into(),
+            text,
             sent_at_ms: now_ms(),
         }
     }
@@ -87,9 +108,18 @@ pub struct MessageBus {
 impl MessageBus {
     /// Create a bus rooted at `inbox_dir` (created on first file write).
     pub fn new(inbox_dir: impl Into<PathBuf>) -> Self {
+        let _linkscope_new = linkscope::phase("agent.message_bus.new");
+        let inbox_dir = inbox_dir.into();
+        linkscope::event_fields(
+            "agent.message_bus.new",
+            [linkscope::TraceField::text(
+                "inbox_dir",
+                inbox_dir.display().to_string(),
+            )],
+        );
         Self {
             inboxes: Mutex::new(HashMap::new()),
-            inbox_dir: inbox_dir.into(),
+            inbox_dir,
         }
     }
 
@@ -97,6 +127,11 @@ impl MessageBus {
     ///
     /// Idempotent: re-registering an existing agent keeps any queued messages.
     pub fn register(&self, agent: AgentId) {
+        let _linkscope_register = linkscope::phase("agent.message_bus.register");
+        linkscope::event_fields(
+            "agent.message_bus.register",
+            [linkscope::TraceField::text("agent", agent.to_string())],
+        );
         self.inboxes.lock().entry(agent).or_default();
     }
 
@@ -105,24 +140,56 @@ impl MessageBus {
     /// Returns any messages still queued, so the caller can flush them to the
     /// file inbox if delivery must survive.
     pub fn deregister(&self, agent: &AgentId) -> Vec<Message> {
-        self.inboxes.lock().remove(agent).unwrap_or_default()
+        let _linkscope_deregister = linkscope::phase("agent.message_bus.deregister");
+        let messages = self.inboxes.lock().remove(agent).unwrap_or_default();
+        linkscope::event_fields(
+            "agent.message_bus.deregister.result",
+            [
+                linkscope::TraceField::text("agent", agent.to_string()),
+                linkscope::TraceField::count(
+                    "leftover",
+                    u64::try_from(messages.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
+        messages
     }
 
     /// Send `msg` to `to`. In-process recipients get the in-memory queue; all
     /// others are appended to their file inbox.
     pub fn send(&self, to: &AgentId, msg: Message) -> Result<(), MessageError> {
+        let _linkscope_send = linkscope::phase("agent.message_bus.send");
         {
             let mut guard = self.inboxes.lock();
             if let Some(queue) = guard.get_mut(to) {
                 queue.push(msg);
+                linkscope::event_fields(
+                    "agent.message_bus.send.result",
+                    [
+                        linkscope::TraceField::text("to", to.to_string()),
+                        linkscope::TraceField::text("transport", "memory"),
+                        linkscope::TraceField::count(
+                            "queue_depth",
+                            u64::try_from(queue.len()).unwrap_or(u64::MAX),
+                        ),
+                    ],
+                );
                 return Ok(());
             }
         }
+        linkscope::event_fields(
+            "agent.message_bus.send.result",
+            [
+                linkscope::TraceField::text("to", to.to_string()),
+                linkscope::TraceField::text("transport", "file"),
+            ],
+        );
         self.append_file_inbox(to, msg)
     }
 
     /// Drain every pending message for `agent` (both transports), oldest first.
     pub fn poll(&self, agent: &AgentId) -> Vec<Message> {
+        let _linkscope_poll = linkscope::phase("agent.message_bus.poll");
         let mut out = {
             let mut guard = self.inboxes.lock();
             match guard.get_mut(agent) {
@@ -134,20 +201,48 @@ impl MessageBus {
             out.append(&mut from_file);
         }
         out.sort_by_key(|m| m.sent_at_ms);
+        linkscope::event_fields(
+            "agent.message_bus.poll.result",
+            [
+                linkscope::TraceField::text("agent", agent.to_string()),
+                linkscope::TraceField::count(
+                    "messages",
+                    u64::try_from(out.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         out
     }
 
     /// Pop a single message for `agent`, preferring the in-memory queue.
     pub fn recv(&self, agent: &AgentId) -> Option<Message> {
+        let _linkscope_recv = linkscope::phase("agent.message_bus.recv");
         {
             let mut guard = self.inboxes.lock();
             if let Some(queue) = guard.get_mut(agent) {
                 if !queue.is_empty() {
+                    linkscope::event_fields(
+                        "agent.message_bus.recv.result",
+                        [
+                            linkscope::TraceField::text("agent", agent.to_string()),
+                            linkscope::TraceField::text("transport", "memory"),
+                            linkscope::TraceField::count("hit", 1),
+                        ],
+                    );
                     return Some(queue.remove(0));
                 }
             }
         }
-        self.pop_file_inbox(agent).ok().flatten()
+        let message = self.pop_file_inbox(agent).ok().flatten();
+        linkscope::event_fields(
+            "agent.message_bus.recv.result",
+            [
+                linkscope::TraceField::text("agent", agent.to_string()),
+                linkscope::TraceField::text("transport", "file"),
+                linkscope::TraceField::count("hit", u64::from(message.is_some())),
+            ],
+        );
+        message
     }
 
     fn inbox_path(&self, agent: &AgentId) -> PathBuf {
@@ -155,15 +250,21 @@ impl MessageBus {
     }
 
     fn append_file_inbox(&self, to: &AgentId, msg: Message) -> Result<(), MessageError> {
+        let _linkscope_append = linkscope::phase("agent.message_bus.append_file_inbox");
         let _lock = self.lock_file_inboxes()?;
         let path = self.inbox_path(to);
         let mut existing = read_inbox_file(&path)?;
         existing.push(msg);
         write_inbox_file(&path, &existing)?;
+        linkscope::record_items(
+            "agent.message_bus.file_depth",
+            u64::try_from(existing.len()).unwrap_or(u64::MAX),
+        );
         Ok(())
     }
 
     fn drain_file_inbox(&self, agent: &AgentId) -> Result<Vec<Message>, MessageError> {
+        let _linkscope_drain = linkscope::phase("agent.message_bus.drain_file_inbox");
         let _lock = self.lock_file_inboxes()?;
         let path = self.inbox_path(agent);
         let messages = read_inbox_file(&path)?;
@@ -171,10 +272,15 @@ impl MessageBus {
             // Truncate the inbox now that we've taken ownership.
             write_inbox_file(&path, &[])?;
         }
+        linkscope::record_items(
+            "agent.message_bus.file_drained",
+            u64::try_from(messages.len()).unwrap_or(u64::MAX),
+        );
         Ok(messages)
     }
 
     fn pop_file_inbox(&self, agent: &AgentId) -> Result<Option<Message>, MessageError> {
+        let _linkscope_pop = linkscope::phase("agent.message_bus.pop_file_inbox");
         let _lock = self.lock_file_inboxes()?;
         let path = self.inbox_path(agent);
         let mut messages = read_inbox_file(&path)?;
@@ -187,6 +293,7 @@ impl MessageBus {
     }
 
     fn lock_file_inboxes(&self) -> Result<File, MessageError> {
+        let _linkscope_lock = linkscope::phase("agent.message_bus.lock_file_inboxes");
         std::fs::create_dir_all(&self.inbox_dir)?;
         let lock = OpenOptions::new()
             .create(true)

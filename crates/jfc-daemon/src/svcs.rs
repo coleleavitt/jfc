@@ -594,6 +594,11 @@ impl DaemonServices {
     /// the first Restart/IdleExit. After the roster runs cleanly, the idle
     /// check decides whether to exit. `now` is the shared tick clock.
     pub async fn run_tick(&mut self, daemon: &mut Daemon, now: SystemTime) -> TickOutcome {
+        let _linkscope_tick = linkscope::phase("daemon.services.tick");
+        linkscope::record_items(
+            "daemon.services.count",
+            usize_to_u64_saturating(self.services.len()),
+        );
         for svc in self.services.iter_mut() {
             match svc.tick(daemon, now).await {
                 TickOutcome::Continue => {}
@@ -605,6 +610,10 @@ impl DaemonServices {
         }
         TickOutcome::Continue
     }
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]

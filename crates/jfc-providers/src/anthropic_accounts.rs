@@ -942,7 +942,48 @@ impl AccountManager {
         &self,
         exclude: &std::collections::HashSet<String>,
     ) -> Option<(Account, AccountRequestGuard)> {
+        self.acquire_next_preferring(exclude, None).await
+    }
+
+    /// Like [`Self::acquire_next_excluding`], but biased toward `prefer` when
+    /// that account is usable right now (and not excluded). Used for session
+    /// affinity: an Anthropic conversation that has streamed extended-thinking
+    /// blocks should keep being served by the account that minted them, because
+    /// `thinking`/`redacted_thinking` blocks are account-bound and replaying
+    /// them under a different account 400s ("blocks cannot be modified"). The
+    /// preference NEVER overrides usability/cooldown — it only reorders among
+    /// accounts that are already eligible to send.
+    pub async fn acquire_next_preferring(
+        &self,
+        exclude: &std::collections::HashSet<String>,
+        prefer: Option<&str>,
+    ) -> Option<(Account, AccountRequestGuard)> {
         let mut state = self.inner.state.lock().await;
+        // Affinity fast-path: if the preferred account is currently usable and
+        // not excluded, serve it directly without scoring.
+        if let Some(pref) = prefer {
+            let usable_pref = state.store.accounts.iter().any(|a| {
+                a.name == pref
+                    && !exclude.contains(&a.name)
+                    && Self::is_account_usable(
+                        a,
+                        &state.runtime.get(&a.name).cloned().unwrap_or_default(),
+                    )
+            });
+            if usable_pref
+                && let Some(account) = state
+                    .store
+                    .accounts
+                    .iter()
+                    .find(|a| a.name == pref)
+                    .cloned()
+            {
+                let rt = state.runtime.entry(account.name.clone()).or_default();
+                rt.in_flight = rt.in_flight.saturating_add(1);
+                let guard = AccountRequestGuard::new(self.clone(), account.name.clone());
+                return Some((account, guard));
+            }
+        }
         // For a *real outbound request*, pick only accounts that are usable now.
         // `choose_account_from_state` has a tier-3 fallback that returns the
         // soonest-recovering account even while it is still rate-limited; that's
@@ -2530,6 +2571,58 @@ mod tests {
             runtime.iter().all(|(_, rt)| rt.in_flight == 0),
             "guard drop must release in-flight counters: {runtime:?}"
         );
+    }
+
+    // Normal: session affinity serves the preferred account even when the
+    // default scoring would pick a different one (here a higher tier).
+    #[tokio::test]
+    async fn acquire_prefers_session_account_normal() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("accounts.json");
+        let mgr = AccountManager::load(path).await.unwrap();
+        // "max20x" scores higher than "pro", so the default pick is max20x.
+        mgr.atomic_add_account(mk_account("pro", Some("claude_pro")))
+            .await
+            .unwrap();
+        mgr.atomic_add_account(mk_account("max20x", Some("claude_max_20x")))
+            .await
+            .unwrap();
+
+        let exclude = std::collections::HashSet::new();
+        let (default_pick, g) = mgr.acquire_next_excluding(&exclude).await.unwrap();
+        assert_eq!(default_pick.name, "max20x");
+        drop(g);
+
+        // With affinity to "pro", it is served despite the lower tier.
+        let (pinned, _g) = mgr
+            .acquire_next_preferring(&exclude, Some("pro"))
+            .await
+            .unwrap();
+        assert_eq!(pinned.name, "pro");
+    }
+
+    // Robust: a preference for an excluded account falls back to normal scoring
+    // (affinity never overrides usability / already-tried exclusion).
+    #[tokio::test]
+    async fn acquire_preferring_excluded_falls_back_robust() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("accounts.json");
+        let mgr = AccountManager::load(path).await.unwrap();
+        mgr.atomic_add_account(mk_account("pro", Some("claude_pro")))
+            .await
+            .unwrap();
+        mgr.atomic_add_account(mk_account("max20x", Some("claude_max_20x")))
+            .await
+            .unwrap();
+
+        let mut exclude = std::collections::HashSet::new();
+        exclude.insert("pro".to_owned());
+        // Prefer the excluded account → must fall back to the next usable one.
+        let (picked, _g) = mgr
+            .acquire_next_preferring(&exclude, Some("pro"))
+            .await
+            .unwrap();
+        assert_eq!(picked.name, "max20x");
     }
 
     // Robust: callers can exclude already-tried accounts within one rotation

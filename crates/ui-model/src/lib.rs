@@ -5,3 +5,5 @@ pub mod status;
 pub mod tools;
 pub mod transcript;
 pub mod widgets;
+
+mod trace;

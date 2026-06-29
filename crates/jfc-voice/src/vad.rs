@@ -120,6 +120,7 @@ pub struct Vad {
 impl Vad {
     /// Create with adaptive parameters (or a fixed threshold via env).
     pub fn new() -> Self {
+        let _linkscope_vad = linkscope::phase("voice.vad.new");
         let frame_ms = 20; // 20ms frames
         let sample_rate = 16_000u32;
         let frame_samples = (sample_rate * frame_ms / 1000) as usize; // 320
@@ -163,6 +164,26 @@ impl Vad {
         let min_speech_frames =
             (min_speech_ms * sample_rate / 1000 / frame_samples as u32).max(1) as usize;
 
+        linkscope::event_fields(
+            "voice.vad.new",
+            [
+                linkscope::TraceField::count(
+                    "silence_frames",
+                    u64::try_from(silence_frames).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::count(
+                    "min_speech_frames",
+                    u64::try_from(min_speech_frames).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::count(
+                    "fixed_threshold",
+                    u64::from(fixed_threshold.is_some()),
+                ),
+                linkscope::TraceField::text("onset_margin", format!("{onset_margin:.3}")),
+                linkscope::TraceField::text("min_periodicity", format!("{min_periodicity:.3}")),
+            ],
+        );
+
         Self {
             speech_onset_frames: 3,
             silence_frames,
@@ -199,26 +220,49 @@ impl Vad {
 
     /// Push raw 16-bit signed PCM bytes. Returns any VAD events detected.
     pub fn push(&mut self, pcm: &[u8]) -> Vec<VadEvent> {
+        let _linkscope_push = linkscope::phase("voice.vad.push");
         let mut events = Vec::new();
         let mut buf = std::mem::take(&mut self.leftover);
         buf.extend_from_slice(pcm);
 
         let frame_bytes = self.frame_samples * 2;
+        let mut frames = 0usize;
         let mut pos = 0;
         while pos + frame_bytes <= buf.len() {
             let frame = &buf[pos..pos + frame_bytes];
             pos += frame_bytes;
+            frames += 1;
             if let Some(ev) = self.process_frame(frame) {
                 events.push(ev);
             }
         }
 
         self.leftover = buf[pos..].to_vec();
+        linkscope::event_fields(
+            "voice.vad.push.result",
+            [
+                linkscope::TraceField::bytes(
+                    "pcm_bytes",
+                    u64::try_from(pcm.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::count("frames", u64::try_from(frames).unwrap_or(u64::MAX)),
+                linkscope::TraceField::count(
+                    "events",
+                    u64::try_from(events.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::bytes(
+                    "leftover_bytes",
+                    u64::try_from(self.leftover.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::count("in_speech", u64::from(self.in_speech)),
+            ],
+        );
         events
     }
 
     /// Process one complete frame and return a state-transition event, if any.
     fn process_frame(&mut self, frame: &[u8]) -> Option<VadEvent> {
+        let _linkscope_frame = linkscope::phase("voice.vad.process_frame");
         let rms = rms_energy(frame);
         self.last_rms = rms;
         self.last_zcr = zero_crossing_rate(frame);
@@ -264,6 +308,16 @@ impl Vad {
         };
 
         let voiced = loud_enough && speech_like;
+        linkscope::detail_event_fields(
+            "voice.vad.frame",
+            [
+                linkscope::TraceField::count("rms", u64::from(rms)),
+                linkscope::TraceField::count("voiced", u64::from(voiced)),
+                linkscope::TraceField::count("in_speech", u64::from(self.in_speech)),
+                linkscope::TraceField::text("periodicity", format!("{:.3}", self.last_periodicity)),
+                linkscope::TraceField::text("flatness", format!("{:.3}", self.last_flatness)),
+            ],
+        );
 
         if voiced {
             self.consecutive_voiced += 1;
@@ -287,6 +341,16 @@ impl Vad {
         if !self.in_speech && self.consecutive_voiced >= self.speech_onset_frames {
             self.in_speech = true;
             self.speech_frames = self.consecutive_voiced;
+            linkscope::event_fields(
+                "voice.vad.speech_start",
+                [
+                    linkscope::TraceField::count("rms", u64::from(rms)),
+                    linkscope::TraceField::count(
+                        "consecutive_voiced",
+                        u64::try_from(self.consecutive_voiced).unwrap_or(u64::MAX),
+                    ),
+                ],
+            );
             return Some(VadEvent::SpeechStart);
         }
         if self.in_speech {
@@ -300,6 +364,16 @@ impl Vad {
                 self.in_speech = false;
                 self.consecutive_voiced = 0;
                 self.speech_frames = 0;
+                linkscope::event_fields(
+                    "voice.vad.speech_end",
+                    [
+                        linkscope::TraceField::count("rms", u64::from(rms)),
+                        linkscope::TraceField::count(
+                            "consecutive_silent",
+                            u64::try_from(self.consecutive_silent).unwrap_or(u64::MAX),
+                        ),
+                    ],
+                );
                 return Some(VadEvent::SpeechEnd);
             }
         }
@@ -367,13 +441,22 @@ impl Vad {
 
     /// Force a SpeechEnd if we're currently in speech (e.g. on PTT release).
     pub fn force_end(&mut self) -> bool {
+        let _linkscope_force = linkscope::phase("voice.vad.force_end");
         if self.in_speech {
             self.in_speech = false;
             self.consecutive_voiced = 0;
             self.consecutive_silent = 0;
             self.speech_frames = 0;
+            linkscope::event_fields(
+                "voice.vad.force_end.result",
+                [linkscope::TraceField::count("ended", 1)],
+            );
             true
         } else {
+            linkscope::event_fields(
+                "voice.vad.force_end.result",
+                [linkscope::TraceField::count("ended", 0)],
+            );
             false
         }
     }
@@ -421,6 +504,7 @@ impl Vad {
     /// Reset detection state (e.g. between utterances). Keeps the learned
     /// noise floor so the next utterance benefits from prior adaptation.
     pub fn reset(&mut self) {
+        let _linkscope_reset = linkscope::phase("voice.vad.reset");
         self.consecutive_voiced = 0;
         self.consecutive_silent = 0;
         self.in_speech = false;

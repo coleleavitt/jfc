@@ -323,7 +323,10 @@ pub fn team_memory_dir(project_root: &Path) -> PathBuf {
 /// row, restoring rich frontmatter from the verbatim `mem_meta` JSON. TTL-expired
 /// entries are filtered (same rule the `.md` loader applied).
 pub async fn load_all_memories(project_root: &Path) -> Vec<MemoryEntry> {
+    let _linkscope_load = linkscope::phase("memory.load_all");
+    trace_path_event("memory.load_all.start", project_root);
     if let Err(e) = import_legacy_memory_dirs(project_root).await {
+        linkscope::record_items("memory.legacy_import.error", 1);
         tracing::warn!(target: "jfc::memory", error = %e, "legacy memory import failed");
     }
     let project_key = jfc_knowledge::project_key(project_root);
@@ -333,6 +336,7 @@ pub async fn load_all_memories(project_root: &Path) -> Vec<MemoryEntry> {
             .await
             .unwrap_or_default(),
         Err(e) => {
+            linkscope::record_items("memory.store.open_error", 1);
             tracing::warn!(target: "jfc::memory", error = %e, "knowledge store open failed; no memories loaded");
             return Vec::new();
         }
@@ -359,6 +363,7 @@ pub async fn load_all_memories(project_root: &Path) -> Vec<MemoryEntry> {
             body: row.body,
         });
     }
+    linkscope::record_items("memory.rows.loaded", usize_to_u64_saturating(entries.len()));
     tracing::info!(
         target: "jfc::memory",
         project_key = %project_key,
@@ -434,12 +439,14 @@ fn content_hash(body: &str) -> String {
 }
 
 async fn open_store_or_err() -> Result<jfc_knowledge::KnowledgeStore, String> {
+    let _linkscope_open = linkscope::phase("memory.store.open");
     jfc_knowledge::KnowledgeStore::open_default()
         .await
         .map_err(|e| format!("knowledge store: {e}"))
 }
 
 async fn import_legacy_memory_dirs(project_root: &Path) -> Result<(), String> {
+    let _linkscope_import = linkscope::phase("memory.legacy_import");
     import_memory_dir_to_db(
         project_root,
         &user_memory_dir(),
@@ -477,6 +484,14 @@ pub async fn create_memory_checked(
     body: &str,
     project_root: &Path,
 ) -> Result<CreateMemoryResult, String> {
+    let _linkscope_create = linkscope::phase("memory.create_checked");
+    trace_memory_write(
+        "memory.create_checked.start",
+        level,
+        memory_type,
+        scope,
+        body,
+    );
     let store = open_store_or_err().await?;
     let hash = content_hash(body);
     let conflicting = store
@@ -484,6 +499,10 @@ pub async fn create_memory_checked(
         .await
         .map_err(|e| e.to_string())?;
     let id = write_memory_row(&store, level, memory_type, scope, body, project_root, &hash).await?;
+    linkscope::record_items("memory.create_checked.ok", 1);
+    if conflicting.is_some() {
+        linkscope::record_items("memory.create_checked.conflict", 1);
+    }
     tracing::info!(
         target: "jfc::memory",
         id = %id,
@@ -507,9 +526,12 @@ pub async fn create_memory(
     body: &str,
     project_root: &Path,
 ) -> Result<String, String> {
+    let _linkscope_create = linkscope::phase("memory.create");
+    trace_memory_write("memory.create.start", level, memory_type, scope, body);
     let store = open_store_or_err().await?;
     let hash = content_hash(body);
     let id = write_memory_row(&store, level, memory_type, scope, body, project_root, &hash).await?;
+    linkscope::record_items("memory.create.ok", 1);
     tracing::info!(
         target: "jfc::memory",
         id = %id,
@@ -531,6 +553,7 @@ async fn write_memory_row(
     project_root: &Path,
     hash: &str,
 ) -> Result<String, String> {
+    let _linkscope_write = linkscope::phase("memory.write_row");
     let mem_level = memory_level_to_mem_level(level);
     let project_key = jfc_knowledge::project_key(project_root);
     let project_key_opt =
@@ -555,6 +578,7 @@ async fn write_memory_row(
         })
         .await
         .map_err(|e| format!("failed to insert memory: {e}"))?;
+    linkscope::record_items("memory.write_row.ok", 1);
     Ok(id)
 }
 
@@ -562,14 +586,17 @@ async fn write_memory_row(
 /// Delete a memory by its DB id (the delete-by-id contract after the MD→DB
 /// cutover). Returns an error if no such memory row exists.
 pub async fn delete_memory(id: &str) -> Result<(), String> {
+    let _linkscope_delete = linkscope::phase("memory.delete");
     let store = open_store_or_err().await?;
     let removed = store
         .delete_memory_by_id(id)
         .await
         .map_err(|e| format!("failed to delete memory: {e}"))?;
     if removed == 0 {
+        linkscope::record_items("memory.delete.missing", 1);
         return Err(format!("no memory with id {id}"));
     }
+    linkscope::record_items("memory.delete.ok", 1);
     tracing::info!(target: "jfc::memory", id, "deleted memory (db)");
     Ok(())
 }
@@ -584,6 +611,16 @@ pub async fn sync_team_memory(
     project_root: &Path,
     remote_dir: &Path,
 ) -> Result<TeamMemorySyncReport, String> {
+    let _linkscope_sync = linkscope::phase("memory.team_sync");
+    if linkscope::is_enabled() {
+        linkscope::event_fields(
+            "memory.team_sync.start",
+            [
+                linkscope::TraceField::text("project_root", project_root.display().to_string()),
+                linkscope::TraceField::text("remote_dir", remote_dir.display().to_string()),
+            ],
+        );
+    }
     let local_dir = team_memory_dir(project_root);
     std::fs::create_dir_all(&local_dir)
         .map_err(|e| format!("failed to create local team memory dir: {e}"))?;
@@ -650,6 +687,18 @@ pub async fn sync_team_memory(
     )
     .await?;
 
+    linkscope::record_items(
+        "memory.team_sync.pushed",
+        usize_to_u64_saturating(report.pushed),
+    );
+    linkscope::record_items(
+        "memory.team_sync.pulled",
+        usize_to_u64_saturating(report.pulled),
+    );
+    linkscope::record_items(
+        "memory.team_sync.conflicts",
+        usize_to_u64_saturating(report.conflicts.len()),
+    );
     Ok(report)
 }
 
@@ -694,6 +743,7 @@ fn collect_md_file_names(
 }
 
 async fn export_team_db_memories(project_root: &Path, local_dir: &Path) -> Result<(), String> {
+    let _linkscope_export = linkscope::phase("memory.team_export");
     for mem in load_all_memories(project_root)
         .await
         .into_iter()
@@ -713,7 +763,10 @@ async fn import_memory_dir_to_db(
     level: MemoryLevel,
     default_scope: MemoryScope,
 ) -> Result<(), String> {
+    let _linkscope_import = linkscope::phase("memory.dir_import");
+    trace_path_event("memory.dir_import.start", local_dir);
     let Ok(entries) = std::fs::read_dir(local_dir) else {
+        linkscope::record_items("memory.dir_import.missing", 1);
         return Ok(());
     };
     let store = open_store_or_err().await?;
@@ -748,6 +801,7 @@ async fn import_memory_dir_to_db(
         )
         .await
         {
+            linkscope::record_items("memory.dir_import.row_error", 1);
             tracing::warn!(
                 target: "jfc::memory",
                 path = %path.display(),
@@ -757,6 +811,42 @@ async fn import_memory_dir_to_db(
         }
     }
     Ok(())
+}
+
+fn trace_path_event(name: &'static str, path: &Path) {
+    if linkscope::is_enabled() {
+        linkscope::detail_event_fields(
+            name,
+            [linkscope::TraceField::text(
+                "path",
+                path.display().to_string(),
+            )],
+        );
+    }
+}
+
+fn trace_memory_write(
+    name: &'static str,
+    level: MemoryLevel,
+    memory_type: MemoryType,
+    scope: MemoryScope,
+    body: &str,
+) {
+    if linkscope::is_enabled() {
+        linkscope::event_fields(
+            name,
+            [
+                linkscope::TraceField::text("level", level.to_string()),
+                linkscope::TraceField::text("memory_type", memory_type.to_string()),
+                linkscope::TraceField::text("scope", scope.to_string()),
+                linkscope::TraceField::bytes("body_bytes", usize_to_u64_saturating(body.len())),
+            ],
+        );
+    }
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 fn exported_team_memory_file_name(mem: &MemoryEntry) -> String {

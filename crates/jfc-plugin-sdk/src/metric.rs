@@ -42,11 +42,31 @@ impl MetricDescriptor {
         description: impl Into<String>,
         unit: MetricUnit,
     ) -> Self {
+        let _linkscope_metric = linkscope::phase("plugin_sdk.metric.new");
+        let id = id.into();
+        let label = label.into();
+        let description = description.into();
+        linkscope::event_fields(
+            "plugin_sdk.metric.new",
+            [
+                linkscope::TraceField::text("plugin_id", plugin_id.as_str().to_owned()),
+                linkscope::TraceField::text("id", id.clone()),
+                linkscope::TraceField::text("unit", format!("{unit:?}")),
+                linkscope::TraceField::bytes(
+                    "label_bytes",
+                    u64::try_from(label.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::bytes(
+                    "description_bytes",
+                    u64::try_from(description.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         Self {
             plugin_id,
-            id: id.into(),
-            label: label.into(),
-            description: description.into(),
+            id,
+            label,
+            description,
             unit,
             surfaces: Vec::new(),
             priority: 0,
@@ -55,7 +75,19 @@ impl MetricDescriptor {
     }
 
     pub fn with_surface(mut self, surface: MetricSurface) -> Self {
+        let _linkscope_surface = linkscope::phase("plugin_sdk.metric.with_surface");
         self.surfaces.push(surface);
+        linkscope::detail_event_fields(
+            "plugin_sdk.metric.with_surface",
+            [
+                linkscope::TraceField::text("id", self.id.clone()),
+                linkscope::TraceField::text("surface", format!("{surface:?}")),
+                linkscope::TraceField::count(
+                    "surfaces",
+                    u64::try_from(self.surfaces.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         self
     }
 
@@ -63,7 +95,20 @@ impl MetricDescriptor {
     where
         I: IntoIterator<Item = MetricSurface>,
     {
+        let _linkscope_surfaces = linkscope::phase("plugin_sdk.metric.with_surfaces");
+        let before = self.surfaces.len();
         self.surfaces.extend(surfaces);
+        linkscope::detail_event_fields(
+            "plugin_sdk.metric.with_surfaces",
+            [
+                linkscope::TraceField::text("id", self.id.clone()),
+                linkscope::TraceField::count("before", u64::try_from(before).unwrap_or(u64::MAX)),
+                linkscope::TraceField::count(
+                    "after",
+                    u64::try_from(self.surfaces.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         self
     }
 

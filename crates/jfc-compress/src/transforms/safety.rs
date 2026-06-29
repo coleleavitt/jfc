@@ -38,6 +38,14 @@ pub struct ToolPair {
 /// list. Used by the live-zone dispatcher to keep tool_use and its
 /// tool_result on the same compression decision.
 pub fn tool_pair_indices(messages: &[Value]) -> Vec<ToolPair> {
+    let _linkscope_pairs = linkscope::phase("compress.safety.tool_pair_indices");
+    linkscope::event_fields(
+        "compress.safety.tool_pair_indices.start",
+        [linkscope::TraceField::count(
+            "messages",
+            u64::try_from(messages.len()).unwrap_or(u64::MAX),
+        )],
+    );
     // Map from tool_call id → assistant index that announced it.
     let mut announced: HashMap<String, usize> = HashMap::new();
     for (i, msg) in messages.iter().enumerate() {
@@ -48,6 +56,10 @@ pub fn tool_pair_indices(messages: &[Value]) -> Vec<ToolPair> {
             announced.insert(id, i);
         }
     }
+    linkscope::record_items(
+        "compress.safety.announced_tools",
+        u64::try_from(announced.len()).unwrap_or(u64::MAX),
+    );
 
     let mut pairs: Vec<ToolPair> = Vec::new();
     let mut seen: HashSet<(usize, usize)> = HashSet::new();
@@ -87,6 +99,16 @@ pub fn tool_pair_indices(messages: &[Value]) -> Vec<ToolPair> {
         }
     }
 
+    linkscope::event_fields(
+        "compress.safety.tool_pair_indices.result",
+        [
+            linkscope::TraceField::count(
+                "announced",
+                u64::try_from(announced.len()).unwrap_or(u64::MAX),
+            ),
+            linkscope::TraceField::count("pairs", u64::try_from(pairs.len()).unwrap_or(u64::MAX)),
+        ],
+    );
     pairs
 }
 
@@ -96,6 +118,7 @@ pub fn tool_pair_indices(messages: &[Value]) -> Vec<ToolPair> {
 /// - **OpenAI**: `{role:assistant, tool_calls: [{id, ...}, ...]}`
 /// - **Anthropic**: `{role:assistant, content: [{type:tool_use, id, ...}]}`
 fn collect_assistant_tool_call_ids(assistant: &Value) -> HashSet<String> {
+    let _linkscope_collect = linkscope::phase("compress.safety.collect_tool_call_ids");
     let mut ids: HashSet<String> = HashSet::new();
 
     if let Some(arr) = assistant.get("tool_calls").and_then(Value::as_array) {
@@ -116,6 +139,13 @@ fn collect_assistant_tool_call_ids(assistant: &Value) -> HashSet<String> {
         }
     }
 
+    linkscope::detail_event_fields(
+        "compress.safety.collect_tool_call_ids.result",
+        [linkscope::TraceField::count(
+            "ids",
+            u64::try_from(ids.len()).unwrap_or(u64::MAX),
+        )],
+    );
     ids
 }
 

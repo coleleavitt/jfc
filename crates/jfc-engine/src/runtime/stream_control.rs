@@ -240,10 +240,12 @@ pub fn restart_stream_in_place_with_overrides(
     } else {
         assistant_idx
     };
-    let messages = stream::build_provider_messages(&state.messages[..slice_end]);
     let model = state.model.clone();
+    let context_drain = crate::context_reduction::drain_context_reduction_queue(state);
     let identity = crate::cache_lineage::request_cache_identity(state, provider.name(), &model);
+    crate::context_reduction::mark_expected_cache_drop(state, identity.clone(), context_drain);
     crate::cache_lineage::stamp_assistant(&mut state.messages, assistant_idx, &identity);
+    let messages = stream::build_provider_messages(&state.messages[..slice_end]);
     let interrupt = state.interrupt_flag.clone();
     interrupt.store(false, std::sync::atomic::Ordering::SeqCst);
     state.cancel_token = tokio_util::sync::CancellationToken::new();

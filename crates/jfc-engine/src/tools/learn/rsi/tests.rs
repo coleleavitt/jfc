@@ -1,3 +1,5 @@
+use jfc_learn::rsi_curator::ApplyToStore;
+
 #[tokio::test(flavor = "multi_thread")]
 #[serial_test::serial]
 async fn learn_rsi_promote_and_rollback_drive_tool_surface_normal() {

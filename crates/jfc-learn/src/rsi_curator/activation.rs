@@ -49,6 +49,16 @@ impl RsiActivationAction {
     }
 }
 
+/// True if a candidate definition's metadata satisfies the promotion gate
+/// (trust=verified, no raw thinking stored, fixtures run and all passed,
+/// research verified). This is the SAME predicate [`promote_rsi_definition`]
+/// enforces — exposed so callers (e.g. the dashboard funnel) can count how many
+/// staged candidates are actually promotion-eligible without attempting a
+/// promotion. `metadata` is the parsed `metadata_json` of a definition record.
+pub fn is_promotable_candidate(metadata: &Value) -> bool {
+    require_verified_candidate(metadata).is_ok()
+}
+
 pub async fn promote_rsi_definition(
     store: &jfc_knowledge::KnowledgeStore,
     project_key: &str,

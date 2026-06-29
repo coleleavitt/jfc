@@ -96,6 +96,14 @@ pub(super) fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
         format!("{} / {}", fmt_number(total_tokens), fmt_number(ctx_max)),
         Style::default().fg(t.text_secondary),
     )]));
+    if let Some(nudge) = app
+        .engine
+        .current_stream_request
+        .as_ref()
+        .and_then(|metadata| metadata.context_pressure_nudge)
+    {
+        lines.push(super::context_pressure::nudge_line(nudge, t));
+    }
 
     let bar_width = inner.width.saturating_sub(1) as usize;
     if bar_width > 4 {

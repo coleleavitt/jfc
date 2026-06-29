@@ -45,13 +45,22 @@ fn main() {
     let addr = server.local_addr;
 
     let json = http_get(addr, "/api/snapshot");
-    assert!(json.contains("\"total_cost_usd\":1.23"), "snapshot json: {json}");
+    assert!(
+        json.contains("\"total_cost_usd\":1.23"),
+        "snapshot json: {json}"
+    );
     assert!(json.contains("claude-opus-4-8"), "model in json");
     assert!(json.contains("\"cache_hit_pct\":100"), "usage row in json");
     assert!(json.contains("\"timeline\""), "timeline array in json");
-    assert!(json.contains("add a timeline to the dashboard"), "per-prompt text in json");
+    assert!(
+        json.contains("add a timeline to the dashboard"),
+        "per-prompt text in json"
+    );
     assert!(json.contains("input_spike"), "anomaly flag in json");
-    assert!(json.contains("turn.submit"), "linkscope profile phase in json");
+    assert!(
+        json.contains("turn.submit"),
+        "linkscope profile phase in json"
+    );
 
     let html = http_get(addr, "/");
     assert!(html.contains("token audit"), "index html title");
@@ -70,7 +79,11 @@ fn main() {
 
 fn http_get(addr: SocketAddr, path: &str) -> String {
     let mut stream = TcpStream::connect(addr).expect("connect");
-    write!(stream, "GET {path} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n").expect("write");
+    write!(
+        stream,
+        "GET {path} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"
+    )
+    .expect("write");
     let mut buf = String::new();
     stream.read_to_string(&mut buf).expect("read");
     buf

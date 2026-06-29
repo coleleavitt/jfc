@@ -89,8 +89,16 @@ impl From<WireDecision> for HookDecision {
 /// Returns `None` when no matching script exists (the common case
 /// when the user has no hooks installed).
 pub fn discover_hook(root: &Path, event: &HookEvent) -> Option<DiscoveredHook> {
+    let _linkscope_discover = linkscope::phase("engine.hook_runner.discover");
     let dir = root.join(HOOKS_DIR);
     if !dir.is_dir() {
+        linkscope::event_fields(
+            "engine.hook_runner.discover.result",
+            [
+                linkscope::TraceField::text("event", event.script_name()),
+                linkscope::TraceField::text("status", "missing_dir"),
+            ],
+        );
         return None;
     }
     let stem = event.script_name();
@@ -102,12 +110,27 @@ pub fn discover_hook(root: &Path, event: &HookEvent) -> Option<DiscoveredHook> {
             } else {
                 HookKind::Script
             };
+            linkscope::event_fields(
+                "engine.hook_runner.discover.result",
+                [
+                    linkscope::TraceField::text("event", stem),
+                    linkscope::TraceField::text("path", candidate.display().to_string()),
+                    linkscope::TraceField::text("kind", format!("{kind:?}")),
+                ],
+            );
             return Some(DiscoveredHook {
                 path: candidate,
                 kind,
             });
         }
     }
+    linkscope::event_fields(
+        "engine.hook_runner.discover.result",
+        [
+            linkscope::TraceField::text("event", stem),
+            linkscope::TraceField::text("status", "not_found"),
+        ],
+    );
     None
 }
 
@@ -115,12 +138,28 @@ pub fn discover_hook(root: &Path, event: &HookEvent) -> Option<DiscoveredHook> {
 ///
 /// If no hook is registered, returns [`HookDecision::Allow`] immediately.
 pub fn run_hook(root: &Path, event: &HookEvent) -> HookDecision {
+    let _linkscope_run = linkscope::phase("engine.hook_runner.run_hook");
     run_hook_with_timeout(root, event, DEFAULT_TIMEOUT)
 }
 
 /// Same as [`run_hook`] but with a caller-supplied timeout.
 pub fn run_hook_with_timeout(root: &Path, event: &HookEvent, timeout: Duration) -> HookDecision {
+    let _linkscope_run = linkscope::phase("engine.hook_runner.run_hook_with_timeout");
+    linkscope::event_fields(
+        "engine.hook_runner.run_hook_with_timeout",
+        [
+            linkscope::TraceField::text("event", event.script_name()),
+            linkscope::TraceField::count(
+                "timeout_ms",
+                u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
+            ),
+        ],
+    );
     let Some(hook) = discover_hook(root, event) else {
+        linkscope::event_fields(
+            "engine.hook_runner.result",
+            [linkscope::TraceField::text("decision", "allow_no_hook")],
+        );
         return HookDecision::Allow;
     };
     match hook.kind {
@@ -133,6 +172,14 @@ pub fn run_hook_with_timeout(root: &Path, event: &HookEvent, timeout: Duration) 
 /// decision object. Useful for static "always deny X" policies that
 /// don't need a script.
 fn run_json_hook(path: &Path) -> HookDecision {
+    let _linkscope_json = linkscope::phase("engine.hook_runner.run_json_hook");
+    linkscope::event_fields(
+        "engine.hook_runner.run_json_hook",
+        [linkscope::TraceField::text(
+            "path",
+            path.display().to_string(),
+        )],
+    );
     match std::fs::read_to_string(path) {
         Ok(contents) => match serde_json::from_str::<WireDecision>(&contents) {
             Ok(wire) => HookDecision::from(wire),
@@ -150,6 +197,7 @@ fn run_json_hook(path: &Path) -> HookDecision {
 /// a timeout. The script's stdout must be a [`WireDecision`] JSON
 /// object; otherwise the call is treated as Deny.
 fn run_script_hook(path: &Path, event: &HookEvent, timeout: Duration) -> HookDecision {
+    let _linkscope_script = linkscope::phase("engine.hook_runner.run_script_hook");
     let payload = match serde_json::to_string(event) {
         Ok(s) => s,
         Err(e) => {
@@ -158,7 +206,19 @@ fn run_script_hook(path: &Path, event: &HookEvent, timeout: Duration) -> HookDec
             };
         }
     };
+    linkscope::event_fields(
+        "engine.hook_runner.run_script_hook",
+        [
+            linkscope::TraceField::text("event", event.script_name()),
+            linkscope::TraceField::text("path", path.display().to_string()),
+            linkscope::TraceField::bytes(
+                "payload_bytes",
+                u64::try_from(payload.len()).unwrap_or(u64::MAX),
+            ),
+        ],
+    );
 
+    let _linkscope_spawn = linkscope::phase("engine.hook_runner.spawn");
     let mut child = match Command::new("sh")
         .arg("-c")
         .arg(path.as_os_str())
@@ -177,6 +237,7 @@ fn run_script_hook(path: &Path, event: &HookEvent, timeout: Duration) -> HookDec
     };
 
     if let Some(mut stdin) = child.stdin.take() {
+        let _linkscope_stdin = linkscope::phase("engine.hook_runner.write_stdin");
         let _ = stdin.write_all(payload.as_bytes());
         // Closing stdin signals EOF to the script.
         drop(stdin);
@@ -184,10 +245,15 @@ fn run_script_hook(path: &Path, event: &HookEvent, timeout: Duration) -> HookDec
 
     let deadline = Instant::now() + timeout;
     loop {
+        let _linkscope_wait = linkscope::phase("engine.hook_runner.try_wait");
         match child.try_wait() {
             Ok(Some(_status)) => break,
             Ok(None) => {
                 if Instant::now() >= deadline {
+                    linkscope::event_fields(
+                        "engine.hook_runner.result",
+                        [linkscope::TraceField::text("decision", "deny_timeout")],
+                    );
                     let _ = child.kill();
                     let _ = child.wait();
                     return HookDecision::Deny {
@@ -214,6 +280,16 @@ fn run_script_hook(path: &Path, event: &HookEvent, timeout: Duration) -> HookDec
     };
 
     if !output.status.success() {
+        linkscope::event_fields(
+            "engine.hook_runner.result",
+            [
+                linkscope::TraceField::text("decision", "deny_exit"),
+                linkscope::TraceField::count(
+                    "exit",
+                    u64::try_from(output.status.code().unwrap_or(-1).max(0)).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         let exit = output.status.code().unwrap_or(-1);
         return HookDecision::Deny {
@@ -231,11 +307,24 @@ fn run_script_hook(path: &Path, event: &HookEvent, timeout: Duration) -> HookDec
         // Empty stdout on success = implicit allow. Common when a hook
         // wants to perform a side effect (logging, telemetry) without
         // influencing the decision.
+        linkscope::event_fields(
+            "engine.hook_runner.result",
+            [linkscope::TraceField::text(
+                "decision",
+                "allow_empty_stdout",
+            )],
+        );
         return HookDecision::Allow;
     }
 
     match serde_json::from_str::<WireDecision>(trimmed) {
-        Ok(wire) => HookDecision::from(wire),
+        Ok(wire) => {
+            linkscope::event_fields(
+                "engine.hook_runner.result",
+                [linkscope::TraceField::text("decision", "parsed_stdout")],
+            );
+            HookDecision::from(wire)
+        }
         Err(e) => HookDecision::Deny {
             reason: format!("hook {path:?} stdout not valid decision JSON: {e}"),
         },

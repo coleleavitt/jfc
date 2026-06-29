@@ -636,8 +636,7 @@ mod tests {
     #[tokio::test]
     async fn toast_border_click_does_not_underflow_regression() {
         let mut app = App::new(Arc::new(StubProvider), "test-model");
-        let mut toast =
-            jfc_engine::toast::Toast::new(jfc_engine::toast::ToastKind::Error, "boom");
+        let mut toast = jfc_engine::toast::Toast::new(jfc_engine::toast::ToastKind::Error, "boom");
         toast.created_at -= std::time::Duration::from_secs(1);
         jfc_engine::toast::push_with_cap(&mut app.engine.toasts, toast);
         // Bordered strip at (40,10) sized 30x4: row 10 = top border (local 0),

@@ -20,8 +20,19 @@ const RRF_K: f64 = 60.0;
 /// 4. Merges via RRF deduplication
 /// 5. Returns formatted output
 pub async fn unified_search(query: &str, max_results: usize) -> Result<String, String> {
+    let _linkscope_search = linkscope::phase("web.unified_search");
     let class = QueryClass::classify(query);
+    if linkscope::is_enabled() {
+        linkscope::event_fields(
+            "web.unified_search.start",
+            [
+                linkscope::TraceField::text("class", format!("{class:?}")),
+                linkscope::TraceField::count("max_results", usize_to_u64_saturating(max_results)),
+            ],
+        );
+    }
     if fused_web_class(class) {
+        linkscope::record_items("web.unified_search.fused", 1);
         return fused_web_search(query, max_results, class).await;
     }
 
@@ -32,6 +43,7 @@ pub async fn unified_search(query: &str, max_results: usize) -> Result<String, S
     // Flatten to check if we have any results
     let has_results = backend_results.iter().any(|v| !v.is_empty());
     if !has_results {
+        linkscope::record_items("web.unified_search.empty", 1);
         return Err(format!(
             "All backends failed for query: \"{query}\" (class: {class:?})"
         ));
@@ -55,6 +67,10 @@ pub async fn unified_search(query: &str, max_results: usize) -> Result<String, S
 
     // Merge via RRF (pass separate backend results for proper rank fusion)
     let merged = merge_rrf(backend_results, RRF_K, max_results);
+    linkscope::record_items(
+        "web.unified_search.results",
+        usize_to_u64_saturating(merged.len()),
+    );
     Ok(format_results(query, &merged, &unique_sources))
 }
 
@@ -91,8 +107,10 @@ async fn fused_web_search(
     max_results: usize,
     class: QueryClass,
 ) -> Result<String, String> {
+    let _linkscope_search = linkscope::phase("web.fused_search");
     let backend_results = search_backends(query, max_results, &class.backends()).await;
     if !backend_results.iter().any(|v| !v.is_empty()) {
+        linkscope::record_items("web.fused_search.empty", 1);
         return Err(format!(
             "All backends failed for query: \"{query}\" (class: {class:?})"
         ));
@@ -105,6 +123,10 @@ async fn fused_web_search(
         append_unique_result_groups(core, support, max_results)
     };
     let sources = unique_sources(&merged);
+    linkscope::record_items(
+        "web.fused_search.results",
+        usize_to_u64_saturating(merged.len()),
+    );
     Ok(format_results(query, &merged, &sources))
 }
 
@@ -187,12 +209,18 @@ async fn search_backends(
     max_results: usize,
     backend_ids: &[BackendId],
 ) -> Vec<Vec<SearchResult>> {
+    let _linkscope_backends = linkscope::phase("web.search_backends");
     let backends = backends_for_ids(backend_ids);
 
     if backends.is_empty() {
+        linkscope::record_items("web.search_backends.none", 1);
         tracing::warn!("No available backends for query classification");
         return Vec::new();
     }
+    linkscope::record_items(
+        "web.search_backends.count",
+        usize_to_u64_saturating(backends.len()),
+    );
 
     // Fire all backends in parallel
     let futures: Vec<_> = backends
@@ -204,6 +232,10 @@ async fn search_backends(
                 let id = backend.id();
                 match timeout(backend_timeout, backend.search(&query, max_results)).await {
                     Ok(Ok(results)) => {
+                        linkscope::record_items(
+                            "web.backend.results",
+                            usize_to_u64_saturating(results.len()),
+                        );
                         tracing::debug!(
                             backend = %id.name(),
                             count = results.len(),
@@ -212,10 +244,12 @@ async fn search_backends(
                         results
                     }
                     Ok(Err(e)) => {
+                        linkscope::record_items("web.backend.error", 1);
                         tracing::debug!(backend = %id.name(), error = %e, "Backend failed");
                         Vec::new()
                     }
                     Err(_) => {
+                        linkscope::record_items("web.backend.timeout", 1);
                         tracing::debug!(backend = %id.name(), "Backend timed out");
                         Vec::new()
                     }
@@ -234,17 +268,27 @@ pub async fn search_explicit(
     max_results: usize,
     backend_id: BackendId,
 ) -> Result<String, String> {
+    let _linkscope_search = linkscope::phase("web.search_explicit");
     let backend_results = search_backends(query, max_results, &[backend_id]).await;
     let results: Vec<SearchResult> = backend_results.into_iter().flatten().collect();
 
     if results.is_empty() {
+        linkscope::record_items("web.search_explicit.empty", 1);
         return Err(format!(
             "{} returned no results for: \"{query}\"",
             backend_id.name()
         ));
     }
 
+    linkscope::record_items(
+        "web.search_explicit.results",
+        usize_to_u64_saturating(results.len()),
+    );
     Ok(format_results(query, &results, &[backend_id]))
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]

@@ -1,4 +1,5 @@
 mod error;
+mod trace;
 
 pub mod agents;
 pub mod council;
@@ -30,3 +31,6 @@ pub(crate) fn non_empty_string(
 
     Ok(value)
 }
+
+#[cfg(test)]
+mod tests;

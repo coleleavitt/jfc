@@ -1,3 +1,4 @@
+use super::trace::{self, BackendResultTrace, BackendStart, PageRequest};
 use crate::backend::{BackendId, BackendResult, SearchBackend, SearchResult};
 use async_trait::async_trait;
 use reqwest::header::{ACCEPT, ORIGIN, REFERER, USER_AGENT};
@@ -23,11 +24,18 @@ impl SearchBackend for PrimoBackend {
     }
 
     async fn search(&self, query: &str, max_results: usize) -> BackendResult {
+        let _linkscope_search = linkscope::phase("web.backend.primo.search");
+        trace::backend_start(BackendStart {
+            backend: "primo",
+            query,
+            max_results,
+        });
         search_primo_structured(query, max_results).await
     }
 }
 
 async fn search_primo_structured(query: &str, max_results: usize) -> BackendResult {
+    let _linkscope_search = linkscope::phase("web.backend.primo.structured");
     let q = query.trim();
     let target = max_results.clamp(1, 100);
     let mut results = Vec::new();
@@ -37,17 +45,30 @@ async fn search_primo_structured(query: &str, max_results: usize) -> BackendResu
         let remaining = target - results.len();
         let page = search_primo_page(q, offset, remaining.min(50)).await?;
         if page.is_empty() {
+            linkscope::record_items("web.backend.primo.empty_page", 1);
             break;
         }
         offset += page.len();
         results.extend(page);
     }
 
+    trace::backend_result(BackendResultTrace {
+        backend: "primo",
+        status: "ok",
+        results: results.len(),
+    });
     Ok(results)
 }
 
 async fn search_primo_page(query: &str, offset: usize, limit: usize) -> BackendResult {
+    let _linkscope_page = linkscope::phase("web.backend.primo.page");
     let page_limit = limit.clamp(1, 50);
+    trace::page_request(PageRequest {
+        backend: "primo",
+        query,
+        offset,
+        limit: page_limit,
+    });
     let limit = page_limit.to_string();
     let offset_start = offset;
     let offset = offset_start.to_string();
@@ -95,8 +116,10 @@ async fn search_primo_page(query: &str, offset: usize, limit: usize) -> BackendR
         .map_err(|e| format!("Primo request failed: {e}"))?;
     if !response.status().is_success() {
         let status = response.status();
+        linkscope::record_items("web.backend.primo.http_error", u64::from(status.as_u16()));
         return Err(format!("Primo returned HTTP {status}"));
     }
+    linkscope::record_items("web.backend.primo.http_ok", 1);
     let parsed: PrimoResponse = response
         .json()
         .await

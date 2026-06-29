@@ -41,7 +41,15 @@ pub struct ProjectStore {
 impl ProjectStore {
     /// Open (creating if needed) the store rooted at `base`.
     pub fn new(base: impl Into<PathBuf>) -> Result<Self> {
+        let _linkscope_store = linkscope::phase("design.project_store.new");
         let base = base.into();
+        linkscope::event_fields(
+            "design.project_store.new",
+            [linkscope::TraceField::text(
+                "base",
+                base.display().to_string(),
+            )],
+        );
         std::fs::create_dir_all(&base).map_err(|e| io_err(&base, e))?;
         let base = std::fs::canonicalize(&base).map_err(|e| io_err(&base, e))?;
         Ok(Self { base })
@@ -49,6 +57,7 @@ impl ProjectStore {
 
     /// The conventional store under `<cwd>/.jfc/design/projects`.
     pub fn default_in(cwd: impl AsRef<Path>) -> Result<Self> {
+        let _linkscope_default = linkscope::phase("design.project_store.default_in");
         Self::new(cwd.as_ref().join(".jfc/design/projects"))
     }
 
@@ -58,8 +67,19 @@ impl ProjectStore {
 
     /// Create a new project with a generated id and the given title.
     pub fn create(&self, title: impl Into<String>) -> Result<DesignProject> {
+        let _linkscope_create = linkscope::phase("design.project_store.create");
         let title = title.into();
         let id = generate_id(&title);
+        linkscope::event_fields(
+            "design.project_store.create",
+            [
+                linkscope::TraceField::text("project_id", id.clone()),
+                linkscope::TraceField::bytes(
+                    "title_bytes",
+                    u64::try_from(title.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         let root = self.base.join(&id);
         std::fs::create_dir_all(&root).map_err(|e| io_err(&root, e))?;
         std::fs::create_dir_all(root.join("scraps")).ok();
@@ -76,6 +96,7 @@ impl ProjectStore {
 
     /// List all projects in id order.
     pub fn list(&self) -> Result<Vec<ProjectMeta>> {
+        let _linkscope_list = linkscope::phase("design.project_store.list");
         let mut out = Vec::new();
         let entries = match std::fs::read_dir(&self.base) {
             Ok(e) => e,
@@ -90,11 +111,20 @@ impl ProjectStore {
             }
         }
         out.sort_by(|a, b| a.id.cmp(&b.id));
+        linkscope::record_items(
+            "design.project_store.projects",
+            u64::try_from(out.len()).unwrap_or(u64::MAX),
+        );
         Ok(out)
     }
 
     /// Open an existing project by id.
     pub fn open(&self, id: &str) -> Result<DesignProject> {
+        let _linkscope_open = linkscope::phase("design.project_store.open");
+        linkscope::event_fields(
+            "design.project_store.open",
+            [linkscope::TraceField::text("project_id", id.to_owned())],
+        );
         let root = self.project_root(id)?;
         let meta_path = root.join("project.json");
         let raw = std::fs::read_to_string(&meta_path)
@@ -124,7 +154,15 @@ impl DesignProject {
     /// Treat an arbitrary directory as a project root (for ad-hoc, store-less use,
     /// e.g. the preview server pointed at a working directory).
     pub fn at(root: impl Into<PathBuf>) -> Self {
+        let _linkscope_at = linkscope::phase("design.project.at");
         let root = root.into();
+        linkscope::event_fields(
+            "design.project.at",
+            [linkscope::TraceField::text(
+                "root",
+                root.display().to_string(),
+            )],
+        );
         let meta = std::fs::read_to_string(root.join("project.json"))
             .ok()
             .and_then(|raw| serde_json::from_str(&raw).ok())
@@ -154,6 +192,11 @@ impl DesignProject {
 
     /// Resolve a project-relative path, rejecting any traversal outside the root.
     pub fn resolve(&self, rel: &str) -> Result<PathBuf> {
+        let _linkscope_resolve = linkscope::phase("design.project.resolve");
+        linkscope::detail_event_fields(
+            "design.project.resolve",
+            [linkscope::TraceField::text("rel", rel.to_owned())],
+        );
         let rel = rel.trim_start_matches('/');
         let mut out = self.root.clone();
         for comp in Path::new(rel).components() {
@@ -170,18 +213,42 @@ impl DesignProject {
     }
 
     pub fn read_file(&self, rel: &str) -> Result<Vec<u8>> {
+        let _linkscope_read = linkscope::phase("design.project.read_file");
         let p = self.resolve(rel)?;
-        std::fs::read(&p).map_err(|e| io_err(&p, e))
+        let bytes = std::fs::read(&p).map_err(|e| io_err(&p, e))?;
+        linkscope::record_bytes(
+            "design.project.read_file.bytes",
+            u64::try_from(bytes.len()).unwrap_or(u64::MAX),
+        );
+        Ok(bytes)
     }
 
     pub fn read_to_string(&self, rel: &str) -> Result<String> {
+        let _linkscope_read = linkscope::phase("design.project.read_to_string");
         let p = self.resolve(rel)?;
-        std::fs::read_to_string(&p).map_err(|e| io_err(&p, e))
+        let raw = std::fs::read_to_string(&p).map_err(|e| io_err(&p, e))?;
+        linkscope::record_bytes(
+            "design.project.read_to_string.bytes",
+            u64::try_from(raw.len()).unwrap_or(u64::MAX),
+        );
+        Ok(raw)
     }
 
     /// Write a file (creating parent dirs). When `asset` is set, the file is
     /// registered as a deliverable in the asset review list.
     pub fn write_file(&mut self, rel: &str, bytes: &[u8], asset: Option<&str>) -> Result<()> {
+        let _linkscope_write = linkscope::phase("design.project.write_file");
+        linkscope::event_fields(
+            "design.project.write_file",
+            [
+                linkscope::TraceField::text("rel", rel.to_owned()),
+                linkscope::TraceField::bytes(
+                    "bytes",
+                    u64::try_from(bytes.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::count("asset", u64::from(asset.is_some())),
+            ],
+        );
         let p = self.resolve(rel)?;
         if let Some(parent) = p.parent() {
             std::fs::create_dir_all(parent).map_err(|e| io_err(parent, e))?;
@@ -195,6 +262,14 @@ impl DesignProject {
 
     /// Copy a file from one project-relative path to another (both sandboxed).
     pub fn copy_file(&self, from_rel: &str, to_rel: &str) -> Result<()> {
+        let _linkscope_copy = linkscope::phase("design.project.copy_file");
+        linkscope::event_fields(
+            "design.project.copy_file",
+            [
+                linkscope::TraceField::text("from", from_rel.to_owned()),
+                linkscope::TraceField::text("to", to_rel.to_owned()),
+            ],
+        );
         let from = self.resolve(from_rel)?;
         let to = self.resolve(to_rel)?;
         if let Some(parent) = to.parent() {
@@ -207,6 +282,11 @@ impl DesignProject {
     /// Delete a project-relative file or directory, and unregister any matching
     /// deliverable asset. The path is sandboxed before removal.
     pub fn delete_path(&mut self, rel: &str) -> Result<()> {
+        let _linkscope_delete = linkscope::phase("design.project.delete_path");
+        linkscope::event_fields(
+            "design.project.delete_path",
+            [linkscope::TraceField::text("rel", rel.to_owned())],
+        );
         if targets_project_root(rel) {
             return Err(DesignError::PathEscape(rel.to_owned()));
         }
@@ -223,6 +303,7 @@ impl DesignProject {
     /// List every file in the project (relative paths, sorted), skipping metadata
     /// and dotfiles.
     pub fn list_files(&self) -> Vec<String> {
+        let _linkscope_list = linkscope::phase("design.project.list_files");
         let mut out = Vec::new();
         for entry in walkdir::WalkDir::new(&self.root)
             .into_iter()
@@ -241,27 +322,47 @@ impl DesignProject {
             out.push(rel);
         }
         out.sort();
+        linkscope::record_items(
+            "design.project.files",
+            u64::try_from(out.len()).unwrap_or(u64::MAX),
+        );
         out
     }
 
     /// Register (or update) a deliverable asset and persist metadata.
     pub fn register_asset(&mut self, name: &str, rel: &str) -> Result<()> {
+        let _linkscope_asset = linkscope::phase("design.project.register_asset");
         let rel = rel.trim_start_matches('/').to_owned();
         self.meta.assets.retain(|a| a.path != rel);
         self.meta.assets.push(Asset {
             name: name.to_owned(),
             path: rel,
         });
+        linkscope::record_items(
+            "design.project.assets",
+            u64::try_from(self.meta.assets.len()).unwrap_or(u64::MAX),
+        );
         self.save_meta()
     }
 
     /// Remove a deliverable asset by project-relative path. Returns whether the
     /// registry changed.
     pub fn unregister_asset(&mut self, rel: &str) -> Result<bool> {
+        let _linkscope_asset = linkscope::phase("design.project.unregister_asset");
         let rel = rel.trim_start_matches('/');
         let before = self.meta.assets.len();
         self.meta.assets.retain(|a| a.path != rel);
         let changed = self.meta.assets.len() != before;
+        linkscope::event_fields(
+            "design.project.unregister_asset.result",
+            [
+                linkscope::TraceField::count("changed", u64::from(changed)),
+                linkscope::TraceField::count(
+                    "assets",
+                    u64::try_from(self.meta.assets.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         if changed {
             self.save_meta()?;
         }
@@ -269,18 +370,34 @@ impl DesignProject {
     }
 
     pub fn set_title(&mut self, title: impl Into<String>) -> Result<()> {
-        self.meta.title = title.into();
+        let _linkscope_title = linkscope::phase("design.project.set_title");
+        let title = title.into();
+        linkscope::record_bytes(
+            "design.project.title_bytes",
+            u64::try_from(title.len()).unwrap_or(u64::MAX),
+        );
+        self.meta.title = title;
         self.save_meta()
     }
 
     pub fn set_is_design_system(&mut self, yes: bool) -> Result<()> {
+        let _linkscope_flag = linkscope::phase("design.project.set_is_design_system");
+        linkscope::event_fields(
+            "design.project.set_is_design_system",
+            [linkscope::TraceField::count("yes", u64::from(yes))],
+        );
         self.meta.is_design_system = yes;
         self.save_meta()
     }
 
     fn save_meta(&self) -> Result<()> {
+        let _linkscope_save = linkscope::phase("design.project.save_meta");
         let p = self.root.join("project.json");
         let json = serde_json::to_string_pretty(&self.meta)?;
+        linkscope::record_bytes(
+            "design.project.meta_bytes",
+            u64::try_from(json.len()).unwrap_or(u64::MAX),
+        );
         std::fs::write(&p, json).map_err(|e| io_err(&p, e))
     }
 }

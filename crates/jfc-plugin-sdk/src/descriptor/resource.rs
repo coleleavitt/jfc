@@ -18,10 +18,20 @@ pub struct ResourceDescriptor {
 
 impl ResourceDescriptor {
     pub fn new(plugin_id: PluginId, kind: ResourceKind, path: impl Into<String>) -> Self {
+        let _linkscope_resource = linkscope::phase("plugin_sdk.resource.new");
+        let path = path.into();
+        linkscope::event_fields(
+            "plugin_sdk.resource.new",
+            [
+                linkscope::TraceField::text("plugin_id", plugin_id.as_str().to_owned()),
+                linkscope::TraceField::text("kind", format!("{kind:?}")),
+                linkscope::TraceField::text("path", path.clone()),
+            ],
+        );
         Self {
             plugin_id,
             kind,
-            path: path.into(),
+            path,
             source: None,
             scope: None,
             namespace: None,
@@ -62,10 +72,24 @@ impl CommandDescriptor {
         name: impl Into<String>,
         description: impl Into<String>,
     ) -> Self {
+        let _linkscope_command = linkscope::phase("plugin_sdk.command.new");
+        let name = name.into();
+        let description = description.into();
+        linkscope::event_fields(
+            "plugin_sdk.command.new",
+            [
+                linkscope::TraceField::text("plugin_id", plugin_id.as_str().to_owned()),
+                linkscope::TraceField::text("name", name.clone()),
+                linkscope::TraceField::bytes(
+                    "description_bytes",
+                    u64::try_from(description.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         Self {
             plugin_id,
-            name: name.into(),
-            description: description.into(),
+            name,
+            description,
             path: None,
             source: None,
             scope: None,

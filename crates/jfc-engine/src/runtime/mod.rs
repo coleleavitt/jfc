@@ -57,11 +57,10 @@ pub use runtime_action::{
 };
 pub use services::{
     AgentRuntime, ContextAssembler, DefaultContextAssembler, DefaultPluginRuntime, PluginRuntime,
-    ProviderModelResolution, ProviderRegistry,
-    ProviderRegistryError, RuntimeDiagnostics, RuntimeDiagnosticsSnapshot,
-    RuntimeDiagnosticsStatus, RuntimePolicy, RuntimeService, RuntimeServiceKind, RuntimeServices,
-    RuntimeServicesBuilder, RuntimeServicesError, ToolRuntime, ToolRuntimeCatalogEntry,
-    ToolRuntimeRequest,
+    ProviderModelResolution, ProviderRegistry, ProviderRegistryError, RuntimeDiagnostics,
+    RuntimeDiagnosticsSnapshot, RuntimeDiagnosticsStatus, RuntimePolicy, RuntimeService,
+    RuntimeServiceKind, RuntimeServices, RuntimeServicesBuilder, RuntimeServicesError, ToolRuntime,
+    ToolRuntimeCatalogEntry, ToolRuntimeRequest,
 };
 pub use stream_control::{
     materialize_terminal_transcript_boundary, restart_stream_in_place, spawn_stream_response_scoped,

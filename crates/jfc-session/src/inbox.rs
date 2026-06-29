@@ -5,6 +5,14 @@ use serde::{Deserialize, Serialize};
 const INBOX_KIND: &str = "inbox";
 const INBOX_KEY: &str = "message";
 
+fn bool_to_u64(value: bool) -> u64 {
+    u64::from(value)
+}
+
+fn len_to_u64(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
+}
+
 /// Message persisted in a session's inbox file.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -23,6 +31,15 @@ pub async fn write_message(
     from: Option<&str>,
     text: &str,
 ) -> std::io::Result<()> {
+    let _linkscope_write = linkscope::phase("session.inbox.write_message");
+    linkscope::event_fields(
+        "session.inbox.write_message.request",
+        [
+            linkscope::TraceField::bytes("session_id_bytes", len_to_u64(session_id.len())),
+            linkscope::TraceField::count("has_from", bool_to_u64(from.is_some())),
+            linkscope::TraceField::bytes("text_bytes", len_to_u64(text.len())),
+        ],
+    );
     let session_id = session_id.to_owned();
     let msg = SessionInboxMessage {
         text: text.to_owned(),
@@ -30,7 +47,7 @@ pub async fn write_message(
         timestamp: chrono::Utc::now().to_rfc3339(),
         read: false,
     };
-    tokio::task::spawn_blocking(move || {
+    let result = tokio::task::spawn_blocking(move || {
         jfc_knowledge::block_on_knowledge(async {
             let store = crate::open_default_knowledge_store()
                 .await
@@ -44,13 +61,24 @@ pub async fn write_message(
         })
     })
     .await
-    .map_err(io_other)?
+    .map_err(io_other)?;
+    if result.is_ok() {
+        linkscope::record_items("session.inbox.write_message.ok", 1);
+    } else {
+        linkscope::record_items("session.inbox.write_message.error", 1);
+    }
+    result
 }
 
 /// Read all messages for a session inbox.
 pub async fn read_messages(session_id: &str) -> Vec<SessionInboxMessage> {
+    let _linkscope_read = linkscope::phase("session.inbox.read_messages");
+    linkscope::record_bytes(
+        "session.inbox.read_messages.session_id",
+        len_to_u64(session_id.len()),
+    );
     let session_id = session_id.to_owned();
-    tokio::task::spawn_blocking(move || {
+    let messages: Vec<SessionInboxMessage> = tokio::task::spawn_blocking(move || {
         jfc_knowledge::block_on_knowledge(async {
             let store = crate::open_default_knowledge_store().await.ok()?;
             let rows = store
@@ -69,13 +97,23 @@ pub async fn read_messages(session_id: &str) -> Vec<SessionInboxMessage> {
     .await
     .ok()
     .flatten()
-    .unwrap_or_default()
+    .unwrap_or_default();
+    linkscope::record_items(
+        "session.inbox.read_messages.rows",
+        len_to_u64(messages.len()),
+    );
+    messages
 }
 
 /// Clear a session's inbox.
 pub async fn clear_inbox(session_id: &str) -> std::io::Result<()> {
+    let _linkscope_clear = linkscope::phase("session.inbox.clear");
+    linkscope::record_bytes(
+        "session.inbox.clear.session_id",
+        len_to_u64(session_id.len()),
+    );
     let session_id = session_id.to_owned();
-    tokio::task::spawn_blocking(move || {
+    let result = tokio::task::spawn_blocking(move || {
         jfc_knowledge::block_on_knowledge(async {
             let store = crate::open_default_knowledge_store()
                 .await
@@ -88,7 +126,13 @@ pub async fn clear_inbox(session_id: &str) -> std::io::Result<()> {
         })
     })
     .await
-    .map_err(io_other)?
+    .map_err(io_other)?;
+    if result.is_ok() {
+        linkscope::record_items("session.inbox.clear.ok", 1);
+    } else {
+        linkscope::record_items("session.inbox.clear.error", 1);
+    }
+    result
 }
 
 fn io_invalid(error: impl std::error::Error + Send + Sync + 'static) -> std::io::Error {

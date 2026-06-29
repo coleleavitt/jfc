@@ -3151,6 +3151,7 @@ impl Provider for OpenWebUIProvider {
     /// whatever the admin has wired up (Bedrock, Vertex, Ollama, OpenAI, …) so the picker
     /// can never know it ahead of time — the only correct thing to do is ask the server.
     async fn fetch_models(&self) -> anyhow::Result<Vec<ModelInfo>> {
+        let _linkscope_fetch = linkscope::phase("provider.openwebui.fetch_models");
         let account = self.acquire_account_with_refresh().await?;
 
         let base_url = account.base_url.trim_end_matches('/');
@@ -3226,6 +3227,21 @@ impl Provider for OpenWebUIProvider {
         messages: Vec<ProviderMessage>,
         options: &StreamOptions,
     ) -> anyhow::Result<EventStream> {
+        let message_count = usize_to_u64_saturating(messages.len());
+        let _linkscope_stream = linkscope::phase("provider.openwebui.stream");
+        if linkscope::is_enabled() {
+            linkscope::event_fields(
+                "provider.openwebui.stream.start",
+                [
+                    linkscope::TraceField::text("model", options.model.to_string()),
+                    linkscope::TraceField::count("messages", message_count),
+                    linkscope::TraceField::count(
+                        "tools",
+                        usize_to_u64_saturating(options.tools.len()),
+                    ),
+                ],
+            );
+        }
         let account = self.acquire_account_with_refresh().await?;
 
         let url = chat_completions_url(&account.base_url);
@@ -3335,6 +3351,10 @@ impl Provider for OpenWebUIProvider {
 
         Ok(openai_compatible_event_stream(resp))
     }
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 /// `POST /api/chat/completed` — fire-and-forget outlet-filter notification.

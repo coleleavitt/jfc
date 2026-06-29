@@ -36,9 +36,18 @@ pub struct UiWidgetRefreshDescriptor {
 
 impl UiWidgetRefreshDescriptor {
     pub fn process_bridge(handler: impl Into<String>) -> Self {
+        let _linkscope_refresh = linkscope::phase("plugin_sdk.ui_widget.refresh.process_bridge");
+        let handler = handler.into();
+        linkscope::detail_event_fields(
+            "plugin_sdk.ui_widget.refresh.process_bridge",
+            [linkscope::TraceField::bytes(
+                "handler_bytes",
+                u64::try_from(handler.len()).unwrap_or(u64::MAX),
+            )],
+        );
         Self {
             kind: UiWidgetRefreshKind::ProcessBridge,
-            handler: handler.into(),
+            handler,
             min_interval_ms: None,
             auto_refresh_ms: None,
         }
@@ -81,11 +90,27 @@ impl UiWidgetDescriptor {
         label: impl Into<String>,
         kind: UiWidgetKind,
     ) -> Self {
+        let _linkscope_widget = linkscope::phase("plugin_sdk.ui_widget.new");
+        let id = id.into();
+        let label = label.into();
+        linkscope::event_fields(
+            "plugin_sdk.ui_widget.new",
+            [
+                linkscope::TraceField::text("plugin_id", plugin_id.as_str().to_owned()),
+                linkscope::TraceField::text("scope", format!("{scope:?}")),
+                linkscope::TraceField::text("id", id.clone()),
+                linkscope::TraceField::text("kind", format!("{kind:?}")),
+                linkscope::TraceField::bytes(
+                    "label_bytes",
+                    u64::try_from(label.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         Self {
             plugin_id,
             scope,
-            id: id.into(),
-            label: label.into(),
+            id,
+            label,
             kind,
             body: None,
             runtime_action_id: None,
@@ -132,8 +157,17 @@ pub struct BridgeUiWidgetRefreshRequest {
 
 impl BridgeUiWidgetRefreshRequest {
     pub fn new(widget_id: impl Into<String>, scope: UiMutationScope) -> Self {
+        let _linkscope_request = linkscope::phase("plugin_sdk.ui_widget.refresh_request.new");
+        let widget_id = widget_id.into();
+        linkscope::event_fields(
+            "plugin_sdk.ui_widget.refresh_request.new",
+            [
+                linkscope::TraceField::text("widget_id", widget_id.clone()),
+                linkscope::TraceField::text("scope", format!("{scope:?}")),
+            ],
+        );
         Self {
-            widget_id: widget_id.into(),
+            widget_id,
             scope,
             state: None,
         }
@@ -156,8 +190,17 @@ pub struct BridgeUiWidgetRefreshResult {
 
 impl BridgeUiWidgetRefreshResult {
     pub fn body(body: impl Into<String>) -> Self {
+        let _linkscope_result = linkscope::phase("plugin_sdk.ui_widget.refresh_result.body");
+        let body = body.into();
+        linkscope::event_fields(
+            "plugin_sdk.ui_widget.refresh_result.body",
+            [linkscope::TraceField::bytes(
+                "body_bytes",
+                u64::try_from(body.len()).unwrap_or(u64::MAX),
+            )],
+        );
         Self {
-            body: Some(body.into()),
+            body: Some(body),
             state: None,
         }
     }

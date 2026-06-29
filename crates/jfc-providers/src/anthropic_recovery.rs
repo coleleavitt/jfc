@@ -358,9 +358,35 @@ fn toggle_thinking_type(body: &mut Value) -> bool {
     }
 }
 
+/// True if any message in the request body carries a `thinking` or
+/// `redacted_thinking` content block. Cheap pre-check so the proactive
+/// cross-account strip is skipped when there is nothing to strip.
+pub fn body_has_thinking_blocks(body: &Value) -> bool {
+    let Some(messages) = body.get("messages").and_then(|m| m.as_array()) else {
+        return false;
+    };
+    messages.iter().any(|m| {
+        m.get("content")
+            .and_then(|c| c.as_array())
+            .is_some_and(|blocks| {
+                blocks.iter().any(|b| {
+                    matches!(
+                        b.get("type").and_then(|t| t.as_str()),
+                        Some("thinking") | Some("redacted_thinking")
+                    )
+                })
+            })
+    })
+}
+
 /// Remove every `thinking` / `redacted_thinking` block from all messages.
 /// Returns whether anything was removed.
-fn strip_thinking_blocks(body: &mut Value) -> bool {
+///
+/// Used both reactively (after a thinking-immutable 400) and proactively
+/// (before the first send when a session has crossed accounts and its
+/// account-bound thinking blocks would otherwise be rejected). `pub` so the
+/// rotation loop can run it up-front.
+pub fn strip_thinking_blocks(body: &mut Value) -> bool {
     let Some(messages) = body.get_mut("messages").and_then(|m| m.as_array_mut()) else {
         return false;
     };
@@ -423,6 +449,70 @@ fn extract_message_text(message: &Value) -> String {
             .join("\n"),
         _ => String::new(),
     }
+}
+
+// ─── Diagnostics ────────────────────────────────────────────────────────────
+
+/// Parse the leading `messages.<i>.content.<j>` path Anthropic embeds in many
+/// 400 bodies (e.g. the thinking-immutable reject). Returns
+/// `(message_index, content_index)` when present. Diagnostics-only: it pinpoints
+/// which block a reject names so we can log that block's shape.
+pub fn parse_message_content_path(body: &str) -> Option<(usize, usize)> {
+    let start = body.find("messages.")?;
+    let rest = &body[start + "messages.".len()..];
+    let (msg_str, rest) = rest.split_once('.')?;
+    let msg_idx: usize = msg_str.parse().ok()?;
+    let rest = rest.strip_prefix("content.")?;
+    let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+    let content_idx: usize = digits.parse().ok()?;
+    Some((msg_idx, content_idx))
+}
+
+/// Compact, content-free summary of one request message's content-block types —
+/// for diagnosing thinking-block rejects WITHOUT logging any thinking text. Marks
+/// `mark_idx` (the content index a 400 named) with `<<HERE`. Thinking blocks are
+/// annotated with signature presence + lengths only; redacted blocks with their
+/// data length. Returns `None` if the message has no array content.
+pub fn summarize_message_block_types(
+    body: &Value,
+    msg_idx: usize,
+    mark_idx: Option<usize>,
+) -> Option<String> {
+    let msg = body.get("messages")?.as_array()?.get(msg_idx)?;
+    let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("?");
+    let content = msg.get("content")?.as_array()?;
+    let mut out = format!("[{msg_idx}] {role} ({} blocks): ", content.len());
+    for (i, block) in content.iter().enumerate() {
+        let ty = block.get("type").and_then(|t| t.as_str()).unwrap_or("?");
+        if i > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(&format!("{i}:{ty}"));
+        match ty {
+            "thinking" => {
+                let has_sig = block.get("signature").is_some();
+                let tlen = block
+                    .get("thinking")
+                    .and_then(|x| x.as_str())
+                    .map(str::len)
+                    .unwrap_or(0);
+                out.push_str(&format!("(sig={has_sig},len={tlen})"));
+            }
+            "redacted_thinking" => {
+                let dlen = block
+                    .get("data")
+                    .and_then(|x| x.as_str())
+                    .map(str::len)
+                    .unwrap_or(0);
+                out.push_str(&format!("(data_len={dlen})"));
+            }
+            _ => {}
+        }
+        if Some(i) == mark_idx {
+            out.push_str("<<HERE");
+        }
+    }
+    Some(out)
 }
 
 #[cfg(test)]
@@ -675,6 +765,82 @@ mod tests {
             Some("credit_other")
         );
         assert_eq!(classify_fallback_credit_reject("some other 400"), None);
+    }
+
+    // Normal: the `messages.<i>.content.<j>` path is parsed out of a real
+    // thinking-immutable 400 body.
+    #[test]
+    fn parse_message_content_path_normal() {
+        let body = "{\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"messages.11.content.4: `thinking` or `redacted_thinking` blocks in the latest assistant message cannot be modified.\"}}";
+        assert_eq!(parse_message_content_path(body), Some((11, 4)));
+    }
+
+    // Robust: a body with no content path yields None rather than a bogus index.
+    #[test]
+    fn parse_message_content_path_absent_robust() {
+        assert_eq!(parse_message_content_path("overloaded_error"), None);
+        // `messages.` present but malformed → None, not a panic.
+        assert_eq!(parse_message_content_path("messages.x.content.y"), None);
+    }
+
+    // Normal: the block-type summary marks the named index and annotates
+    // thinking/redacted blocks with shape only (no thinking text leaks).
+    #[test]
+    fn summarize_message_block_types_marks_named_block_normal() {
+        let body = json!({
+            "messages": [
+                { "role": "user", "content": [{ "type": "text", "text": "hi" }] },
+                { "role": "assistant", "content": [
+                    { "type": "thinking", "thinking": "secret reasoning", "signature": "sig" },
+                    { "type": "redacted_thinking", "data": "AAAA" },
+                    { "type": "text", "text": "ok" }
+                ]}
+            ]
+        });
+        let s = summarize_message_block_types(&body, 1, Some(1)).unwrap();
+        assert!(s.contains("[1] assistant (3 blocks)"));
+        assert!(s.contains("0:thinking(sig=true,len=16)"));
+        assert!(s.contains("1:redacted_thinking(data_len=4)<<HERE"));
+        assert!(s.contains("2:text"));
+        // The actual thinking text must never appear in the diagnostic.
+        assert!(!s.contains("secret reasoning"));
+    }
+
+    // Robust: an out-of-range message index returns None.
+    #[test]
+    fn summarize_message_block_types_out_of_range_robust() {
+        let body = json!({ "messages": [] });
+        assert_eq!(summarize_message_block_types(&body, 5, None), None);
+    }
+
+    // Normal: thinking/redacted blocks are detected; a thinking-free body is not.
+    #[test]
+    fn body_has_thinking_blocks_detects_both_kinds_normal() {
+        assert!(body_has_thinking_blocks(&body_with_thinking("enabled")));
+        let mut redacted = json!({
+            "messages": [
+                { "role": "assistant", "content": [
+                    { "type": "redacted_thinking", "data": "AAAA" },
+                    { "type": "text", "text": "x" }
+                ]}
+            ]
+        });
+        assert!(body_has_thinking_blocks(&redacted));
+        // After stripping, the body no longer reports thinking blocks.
+        assert!(strip_thinking_blocks(&mut redacted));
+        assert!(!body_has_thinking_blocks(&redacted));
+    }
+
+    // Robust: a plain text conversation has no thinking blocks.
+    #[test]
+    fn body_has_thinking_blocks_false_for_plain_text_robust() {
+        let body = json!({
+            "messages": [
+                { "role": "user", "content": [{ "type": "text", "text": "hi" }] },
+                { "role": "assistant", "content": [{ "type": "text", "text": "yo" }] }
+            ]
+        });
+        assert!(!body_has_thinking_blocks(&body));
     }
 
     #[test]

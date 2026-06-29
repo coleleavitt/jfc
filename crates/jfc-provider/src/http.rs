@@ -22,6 +22,7 @@ const HTTP2_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(30);
 const HTTP2_KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub fn streaming_client() -> reqwest::Client {
+    linkscope::record_items("http.client.build", 1);
     reqwest::Client::builder()
         .connect_timeout(HTTP_CONNECT_TIMEOUT)
         // Streaming responses have no known total duration. `read_timeout`
@@ -114,15 +115,34 @@ where
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = reqwest::Result<reqwest::Response>>,
 {
+    let _linkscope_http = linkscope::phase("http.send_with_retry");
+    if linkscope::is_enabled() {
+        linkscope::event_fields(
+            "http.send.start",
+            [linkscope::TraceField::text("operation", operation)],
+        );
+    }
     let config = crate::retry::RetryConfig::default();
     let mut last_err: Option<reqwest::Error> = None;
     for attempt in 0..=config.max_retries {
+        linkscope::record_items("http.send.attempt", 1);
         match build().await {
             Ok(resp) => {
                 let status = resp.status();
+                if linkscope::is_enabled() {
+                    linkscope::detail_event_fields(
+                        "http.send.response",
+                        [
+                            linkscope::TraceField::text("operation", operation),
+                            linkscope::TraceField::count("attempt", u64::from(attempt + 1)),
+                            linkscope::TraceField::count("status", u64::from(status.as_u16())),
+                        ],
+                    );
+                }
                 if crate::retry::should_retry_status(status.as_u16(), Some(resp.headers()))
                     && attempt < config.max_retries
                 {
+                    linkscope::record_items("http.send.retry_status", 1);
                     let delay = config.delay_for_attempt(attempt);
                     tracing::warn!(
                         target: "jfc::http::retry",
@@ -137,6 +157,7 @@ where
                     continue;
                 }
                 if attempt > 0 {
+                    linkscope::record_items("http.send.succeeded_after_retry", 1);
                     tracing::info!(
                         target: "jfc::http::retry",
                         operation = operation,
@@ -149,6 +170,17 @@ where
             Err(e) => {
                 let retriable = crate::retry::is_retriable_error(&e);
                 if retriable && attempt < config.max_retries {
+                    linkscope::record_items("http.send.retry_error", 1);
+                    if linkscope::is_enabled() {
+                        linkscope::detail_event_fields(
+                            "http.send.error",
+                            [
+                                linkscope::TraceField::text("operation", operation),
+                                linkscope::TraceField::count("attempt", u64::from(attempt + 1)),
+                                linkscope::TraceField::text("cause", classify_send_error(&e)),
+                            ],
+                        );
+                    }
                     let delay = config.delay_for_attempt(attempt);
                     tracing::warn!(
                         target: "jfc::http::retry",
@@ -165,6 +197,7 @@ where
                     continue;
                 }
                 if retriable {
+                    linkscope::record_items("http.send.exhausted", 1);
                     tracing::warn!(
                         target: "jfc::http::retry",
                         operation = operation,
@@ -193,7 +226,17 @@ pub const SLOW_FIRST_BYTE_MS: u128 = 5_000;
 /// `report_first_byte_latency` to surface the warning.
 pub fn report_first_byte_latency(operation: &str, elapsed: std::time::Duration) {
     let ms = elapsed.as_millis();
+    if linkscope::is_enabled() {
+        linkscope::event_fields(
+            "http.first_byte",
+            [
+                linkscope::TraceField::text("operation", operation),
+                linkscope::TraceField::count("elapsed_ms", u128_to_u64_saturating(ms)),
+            ],
+        );
+    }
     if ms >= SLOW_FIRST_BYTE_MS {
+        linkscope::record_items("http.first_byte.slow", 1);
         tracing::warn!(
             target: "jfc::http::slow_first_byte",
             operation = operation,
@@ -202,6 +245,7 @@ pub fn report_first_byte_latency(operation: &str, elapsed: std::time::Duration) 
             "first byte was slow — upstream proxy queueing or model cold-start"
         );
     } else {
+        linkscope::record_items("http.first_byte.ok", 1);
         tracing::debug!(
             target: "jfc::http::first_byte",
             operation = operation,
@@ -223,6 +267,7 @@ pub fn report_first_byte_latency(operation: &str, elapsed: std::time::Duration) 
 /// Call [`spawn_connect_warmup`] instead of this directly — that helper
 /// applies the env-var opt-out and fire-and-forgets the task.
 pub async fn connect_warmup(url: String, client: reqwest::Client) {
+    let _linkscope_warmup = linkscope::phase("http.connect_warmup");
     let t0 = Instant::now();
     let outcome = client
         .head(&url)
@@ -232,6 +277,7 @@ pub async fn connect_warmup(url: String, client: reqwest::Client) {
     let elapsed = t0.elapsed();
     match outcome {
         Ok(resp) => {
+            linkscope::record_items("http.connect_warmup.ok", 1);
             tracing::debug!(
                 target: "jfc::http::warmup",
                 url = %url,
@@ -241,6 +287,7 @@ pub async fn connect_warmup(url: String, client: reqwest::Client) {
             );
         }
         Err(e) => {
+            linkscope::record_items("http.connect_warmup.error", 1);
             tracing::debug!(
                 target: "jfc::http::warmup",
                 url = %url,
@@ -305,6 +352,10 @@ pub fn spawn_connect_warmup(provider: &dyn crate::Provider) {
         "spawning TLS/DNS preconnect warmup task"
     );
     tokio::spawn(connect_warmup(url, client));
+}
+
+fn u128_to_u64_saturating(value: u128) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 /// Translate a `reqwest::Error` from a `.send()` call into a

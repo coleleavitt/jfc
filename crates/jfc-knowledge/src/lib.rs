@@ -46,7 +46,9 @@ pub use agent_events::{
     AgentEventRow, AgentMailboxRow, AgentSessionRow, ContextEventRow, LearningEventRow,
     ToolRunLedgerRow,
 };
-pub use definitions::{DefinitionRecord, DefinitionScope, DefinitionStatus, NewDefinition};
+pub use definitions::{
+    DefinitionRecord, DefinitionScope, DefinitionStatus, NewDefinition, RsiDefinitionCount,
+};
 pub use error::{KnowledgeError, Result};
 pub use import::{ImportReport, ImportableMemory};
 pub use memory::{MemLevel, MemoryRow, NewMemory, memory_id};
@@ -168,6 +170,7 @@ impl KnowledgeStore {
     /// backoff; the [`schema::migrate`] write lock then serializes the actual
     /// schema upgrade so no opener replays a DDL step another already ran.
     pub async fn open(path: &Path) -> Result<Self> {
+        let _linkscope_open = linkscope::phase("knowledge.open");
         const MAX_ATTEMPTS: u32 = 8;
         let mut attempt: u32 = 0;
         loop {
@@ -184,6 +187,7 @@ impl KnowledgeStore {
     }
 
     async fn try_open(path: &Path) -> Result<Self> {
+        let _linkscope_try_open = linkscope::phase("knowledge.try_open");
         let opts = SqliteConnectOptions::new()
             .filename(path)
             .create_if_missing(true)
@@ -208,6 +212,7 @@ impl KnowledgeStore {
     /// reap an idle connection — which happened between a write on one runtime
     /// and a read driven from the `block_on_knowledge` bridge thread.
     pub async fn open_in_memory() -> Result<Self> {
+        let _linkscope_open = linkscope::phase("knowledge.open_in_memory");
         let opts = SqliteConnectOptions::from_str("sqlite::memory:")?;
         let pool = SqlitePoolOptions::new()
             .min_connections(1)
@@ -430,6 +435,8 @@ impl KnowledgeStore {
     /// Upsert a session-index row. The SQLite session catalog is the primary
     /// picker/search surface.
     pub async fn upsert_session(&self, row: &SessionRow) -> Result<()> {
+        let _linkscope_upsert = linkscope::phase("knowledge.session.upsert");
+        linkscope::record_items("knowledge.session.upsert", 1);
         sqlx::query(
             "INSERT INTO sessions \
              (id, cwd, model, created_at, updated_at, first_prompt, title, message_count) \
@@ -454,6 +461,7 @@ impl KnowledgeStore {
 
     /// One session-index row by id (or `None`).
     pub async fn get_session(&self, id: &str) -> Result<Option<SessionRow>> {
+        let _linkscope_get = linkscope::phase("knowledge.session.get");
         sqlx::query(
             "SELECT id, cwd, model, created_at, updated_at, first_prompt, title, message_count \
              FROM sessions WHERE id = ?1",
@@ -469,6 +477,7 @@ impl KnowledgeStore {
     /// Session-index rows, most-recently-updated first. `cwd` filters to one
     /// project when `Some`.
     pub async fn list_sessions(&self, cwd: Option<&str>, limit: usize) -> Result<Vec<SessionRow>> {
+        let _linkscope_list = linkscope::phase("knowledge.session.list");
         let rows = if let Some(cwd) = cwd {
             sqlx::query(
                 "SELECT id, cwd, model, created_at, updated_at, first_prompt, title, message_count \
@@ -533,6 +542,11 @@ impl KnowledgeStore {
         row: &SessionRow,
         messages: &[SessionMessage],
     ) -> Result<()> {
+        let _linkscope_replace = linkscope::phase("knowledge.transcript.replace");
+        linkscope::record_items(
+            "knowledge.transcript.messages",
+            usize_to_u64_saturating(messages.len()),
+        );
         let mut tx = self.pool.begin().await?;
         sqlx::query(
             "INSERT INTO sessions \
@@ -584,6 +598,7 @@ impl KnowledgeStore {
 
     /// Load a session's full transcript in `seq` order (resume path, post-flip).
     pub async fn load_transcript(&self, session_id: &str) -> Result<Vec<SessionMessage>> {
+        let _linkscope_load = linkscope::phase("knowledge.transcript.load");
         let rows = sqlx::query(
             "SELECT seq, role, content, meta FROM session_messages \
              WHERE session_id = ?1 ORDER BY seq ASC",
@@ -1015,6 +1030,7 @@ impl KnowledgeStore {
     /// failure domain, so keep a recoverable snapshot). `VACUUM INTO` writes a
     /// fully-consistent copy without blocking writers for long.
     pub async fn backup_to(&self, path: &Path) -> Result<()> {
+        let _linkscope_backup = linkscope::phase("knowledge.backup");
         // SQLite's `VACUUM INTO` does not accept a bound parameter for the target
         // path (the bind silently no-ops and no file is written), so the path is
         // inlined. Single-quotes are SQL-escaped to keep this injection-safe even
@@ -2262,6 +2278,10 @@ async fn auto_maintain_inner(
     report.auto_promoted = store.auto_promote(DEFAULT_AUTO_PROMOTE_SUPPORT).await?;
 
     Ok(report)
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]

@@ -21,6 +21,7 @@ md-5 = "0.10"
 flate2 = "1"
 # Sharded concurrent map for the in-memory CCR store.
 dashmap = "6"
+linkscope = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

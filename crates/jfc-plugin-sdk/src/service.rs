@@ -74,19 +74,47 @@ impl ServiceDescriptor {
         namespace: impl Into<String>,
         description: impl Into<String>,
     ) -> Self {
+        let _linkscope_service = linkscope::phase("plugin_sdk.service.new");
+        let name = name.into();
+        let namespace = namespace.into();
+        let description = description.into();
+        linkscope::event_fields(
+            "plugin_sdk.service.new",
+            [
+                linkscope::TraceField::text("plugin_id", plugin_id.as_str().to_owned()),
+                linkscope::TraceField::text("kind", kind.as_str()),
+                linkscope::TraceField::text("namespace", namespace.clone()),
+                linkscope::TraceField::bytes(
+                    "name_bytes",
+                    u64::try_from(name.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::bytes(
+                    "description_bytes",
+                    u64::try_from(description.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         Self {
             plugin_id,
             kind,
-            name: name.into(),
-            namespace: namespace.into(),
+            name,
+            namespace,
             status: ServiceDescriptorStatus::Available,
-            description: description.into(),
+            description,
             visibility: DescriptorVisibility::HostVisible,
         }
     }
 
     pub fn with_status(mut self, status: ServiceDescriptorStatus) -> Self {
+        let _linkscope_status = linkscope::phase("plugin_sdk.service.with_status");
         self.status = status;
+        linkscope::detail_event_fields(
+            "plugin_sdk.service.with_status",
+            [
+                linkscope::TraceField::text("namespace", self.namespace.clone()),
+                linkscope::TraceField::text("status", status.as_str()),
+            ],
+        );
         self
     }
 

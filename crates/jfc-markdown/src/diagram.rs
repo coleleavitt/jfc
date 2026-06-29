@@ -74,6 +74,8 @@ enum Graph {
 /// `src` is the raw block body. Never panics — unsupported input degrades to a
 /// labelled outline.
 pub fn render(lang: &str, src: &str, theme: &Theme, width: usize) -> Vec<Line<'static>> {
+    let _linkscope_render = linkscope::phase("markdown.diagram.render");
+    linkscope::record_bytes("markdown.diagram.input", usize_to_u64_saturating(src.len()));
     let inner_width = width.saturating_sub(2).max(20);
     let parsed = match lang.trim().to_ascii_lowercase().as_str() {
         "dot" | "graphviz" | "gv" => parse_dot(src),
@@ -81,6 +83,7 @@ pub fn render(lang: &str, src: &str, theme: &Theme, width: usize) -> Vec<Line<'s
     };
     match parsed {
         Some(graph) => {
+            linkscope::record_items("markdown.diagram.parsed", 1);
             let body = match graph {
                 Graph::Flow {
                     title,
@@ -95,11 +98,18 @@ pub fn render(lang: &str, src: &str, theme: &Theme, width: usize) -> Vec<Line<'s
             frame(body, theme, "diagram")
         }
         None => frame(
-            fallback_outline(src, theme, inner_width),
+            {
+                linkscope::record_items("markdown.diagram.fallback", 1);
+                fallback_outline(src, theme, inner_width)
+            },
             theme,
             "diagram (raw)",
         ),
     }
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 // ── Parsing ──────────────────────────────────────────────────────────────────
@@ -266,12 +276,14 @@ fn parse_mermaid_sequence(src: &str) -> Option<Graph> {
         if lower.starts_with("sequencediagram") {
             continue;
         }
-        if let Some(rest) = lower
-            .strip_prefix("participant ")
-            .or_else(|| lower.strip_prefix("actor "))
-        {
+        if lower.starts_with("participant ") || lower.starts_with("actor ") {
             // Preserve original casing of the id from the raw line.
-            let raw_rest = &line[line.len() - rest.len()..];
+            let prefix_len = if lower.starts_with("participant ") {
+                "participant ".len()
+            } else {
+                "actor ".len()
+            };
+            let raw_rest = &line[prefix_len..];
             if let Some((id, label)) = raw_rest.split_once(" as ") {
                 add_participant(id, Some(label), &mut order, &mut participants);
             } else {
@@ -736,7 +748,7 @@ fn sequence_msg_re() -> &'static regex::Regex {
     RE.get_or_init(|| {
         // `A->>B: text` / `A-->>B: text` / `A->B`
         regex::Regex::new(
-            r#"^\s*(?P<from>\w[\w\-]*)\s*-?-?>>?\s*(?P<to>\w[\w\-]*)\s*(?::\s*(?P<lbl>.*))?$"#,
+            r#"^\s*(?P<from>\w[\w\-]*?)\s*(?:-->>|->>|-->|->|--)\s*(?P<to>\w[\w\-]*)\s*(?::\s*(?P<lbl>.*))?$"#,
         )
         .expect("valid sequence regex")
     })

@@ -24,6 +24,7 @@ mod memory;
 mod pair;
 mod plugin;
 mod policy;
+pub(crate) mod profiling;
 
 mod rc;
 mod redteam;
@@ -546,6 +547,7 @@ pub(crate) async fn run(cli: Cli) -> anyhow::Result<()> {
     // is `info` which lights up the high-signal #[instrument] spans we
     // sprinkled across providers, the classifier, and the tool dispatcher.
     let _trace_guard = init_tracing(cli.command.is_some());
+    let _linkscope_report = profiling::init_linkscope_from_env();
 
     // Initialize the process-global hook registry once. From here on
     // any `jfc_engine::hooks::fire(point, ctx)` call short-circuits to the
@@ -1021,6 +1023,12 @@ pub(crate) async fn run(cli: Cli) -> anyhow::Result<()> {
 
 /// Dispatch `jfc <subcommand>`. Pure CLI — no terminal raw-mode, no TUI.
 async fn run_subcommand(cmd: Command) -> anyhow::Result<()> {
+    let label = cmd.linkscope_label();
+    let _linkscope_subcommand = linkscope::phase("cli.subcommand");
+    let _linkscope_subcommand_trace = linkscope::trace_fields(
+        "cli.subcommand",
+        [linkscope::TraceField::text("name", label)],
+    );
     match cmd {
         Command::RsiWorker(args) => run_rsi_worker_subcommand(args).await,
         Command::Daemon { sub } => run_daemon_subcommand(sub).await,
@@ -1035,6 +1043,26 @@ async fn run_subcommand(cmd: Command) -> anyhow::Result<()> {
         Command::Bridge { sub } => run_bridge_subcommand(sub).await,
         Command::Debug { sub } => run_debug_subcommand(sub).await,
         Command::Doctor { sub } => run_doctor_subcommand(sub).await,
+    }
+}
+
+impl Command {
+    const fn linkscope_label(&self) -> &'static str {
+        match self {
+            Self::RsiWorker(_) => "rsi-worker",
+            Self::Daemon { .. } => "daemon",
+            Self::Auth { .. } => "auth",
+            Self::Rc { .. } => "rc",
+            Self::Changes { .. } => "changes",
+            Self::Plugin { .. } => "plugin",
+            Self::Policy { .. } => "policy",
+            Self::Memory { .. } => "memory",
+            Self::Pair { .. } => "pair",
+            Self::Redteam { .. } => "redteam",
+            Self::Bridge { .. } => "bridge",
+            Self::Debug { .. } => "debug",
+            Self::Doctor { .. } => "doctor",
+        }
     }
 }
 

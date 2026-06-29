@@ -3,6 +3,14 @@ use serde::{Deserialize, Serialize};
 use crate::enumerator::EntryPointKind;
 use crate::error::Result;
 
+fn bool_to_u64(value: bool) -> u64 {
+    u64::from(value)
+}
+
+fn len_to_u64(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
+}
+
 /// A proof that a target is reachable from an entry point.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReachabilityProof {
@@ -36,20 +44,53 @@ pub struct ReachabilityProver<G: ReachabilityGraph> {
 
 impl<G: ReachabilityGraph> ReachabilityProver<G> {
     pub fn new(graph: G) -> Self {
+        linkscope::record_items("audit.reachability.prover.new", 1);
         Self { graph }
     }
 
     /// Prove that a target symbol is reachable from some entry point.
     /// Returns None if no path exists (target is dead code).
     pub fn prove(&self, target: &str) -> Result<Option<Vec<String>>> {
-        self.graph.find_path_to(target)
+        let _linkscope_prove = linkscope::phase("audit.reachability.prove");
+        linkscope::record_bytes("audit.reachability.target", len_to_u64(target.len()));
+        let path = self.graph.find_path_to(target)?;
+        linkscope::event_fields(
+            "audit.reachability.prove.result",
+            [
+                linkscope::TraceField::count("hit", bool_to_u64(path.is_some())),
+                linkscope::TraceField::count(
+                    "path_len",
+                    path.as_ref()
+                        .map(|path| len_to_u64(path.len()))
+                        .unwrap_or(0),
+                ),
+            ],
+        );
+        Ok(path)
     }
 
     /// Prove reachability with full precondition extraction.
     pub fn prove_with_preconditions(&self, target: &str) -> Result<Option<ReachabilityProof>> {
+        let _linkscope_prove = linkscope::phase("audit.reachability.prove_with_preconditions");
+        linkscope::record_bytes("audit.reachability.target", len_to_u64(target.len()));
         match self.graph.find_path_with_preconditions(target)? {
             Some((path, preconditions, entrypoint_kind)) => {
                 let depth = path.len().saturating_sub(1);
+                linkscope::event_fields(
+                    "audit.reachability.proof",
+                    [
+                        linkscope::TraceField::text(
+                            "entrypoint_kind",
+                            format!("{entrypoint_kind:?}"),
+                        ),
+                        linkscope::TraceField::count("depth", len_to_u64(depth)),
+                        linkscope::TraceField::count("path_len", len_to_u64(path.len())),
+                        linkscope::TraceField::count(
+                            "preconditions",
+                            len_to_u64(preconditions.len()),
+                        ),
+                    ],
+                );
                 Ok(Some(ReachabilityProof {
                     path,
                     preconditions,
@@ -57,7 +98,10 @@ impl<G: ReachabilityGraph> ReachabilityProver<G> {
                     depth,
                 }))
             }
-            None => Ok(None),
+            None => {
+                linkscope::record_items("audit.reachability.proof.miss", 1);
+                Ok(None)
+            }
         }
     }
 }

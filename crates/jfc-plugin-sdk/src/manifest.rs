@@ -17,7 +17,19 @@ macro_rules! string_newtype {
 
         impl $name {
             pub fn new(value: impl Into<String>) -> Self {
-                Self(value.into())
+                let _linkscope_new = linkscope::phase("plugin_sdk.string_newtype.new");
+                let value = value.into();
+                linkscope::detail_event_fields(
+                    "plugin_sdk.string_newtype.new",
+                    [
+                        linkscope::TraceField::text("type", stringify!($name)),
+                        linkscope::TraceField::bytes(
+                            "value_bytes",
+                            u64::try_from(value.len()).unwrap_or(u64::MAX),
+                        ),
+                    ],
+                );
+                Self(value)
             }
 
             pub fn as_str(&self) -> &str {
@@ -91,6 +103,14 @@ pub struct PluginManifest {
 
 impl PluginManifest {
     pub fn new(id: PluginId, version: PluginVersion, source: PluginSource) -> Self {
+        let _linkscope_manifest = linkscope::phase("plugin_sdk.manifest.new");
+        linkscope::event_fields(
+            "plugin_sdk.manifest.new",
+            [
+                linkscope::TraceField::text("plugin_id", id.as_str().to_owned()),
+                linkscope::TraceField::text("version", version.as_str().to_owned()),
+            ],
+        );
         Self {
             schema_version: CURRENT_MANIFEST_SCHEMA_VERSION,
             id,

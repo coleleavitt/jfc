@@ -157,6 +157,13 @@ pub struct RemoteFrame {
 impl RemoteFrame {
     /// The canonical string that is HMAC-signed.
     pub fn signing_input(version: u8, seq: u64, ts_ms: u64, payload_json: &str) -> String {
+        let _linkscope_signing = linkscope::phase("remote.protocol.signing_input");
+        trace_payload_shape(
+            "remote.protocol.signing_input.detail",
+            version,
+            seq,
+            payload_json,
+        );
         format!("{version}.{seq}.{ts_ms}.{payload_json}")
     }
 }
@@ -166,7 +173,7 @@ impl RemoteFrame {
 impl RemoteEnvelope {
     /// True if this variant is sent by the host to the client.
     pub fn is_outbound(&self) -> bool {
-        matches!(
+        let outbound = matches!(
             self,
             Self::AssistantDelta { .. }
                 | Self::ToolUse { .. }
@@ -179,100 +186,85 @@ impl RemoteEnvelope {
                 | Self::PlanApprovalRequest { .. }
                 | Self::Toast { .. }
                 | Self::Heartbeat
-        )
+        );
+        linkscope::record_items(
+            if outbound {
+                "remote.protocol.envelope.outbound"
+            } else {
+                "remote.protocol.envelope.not_outbound"
+            },
+            1,
+        );
+        trace_envelope_direction("remote.protocol.envelope.direction", self, outbound);
+        outbound
     }
 
     /// True if this variant is sent by the client to the host.
     pub fn is_inbound(&self) -> bool {
-        !self.is_outbound()
+        let inbound = !self.is_outbound();
+        linkscope::record_items(
+            if inbound {
+                "remote.protocol.envelope.inbound"
+            } else {
+                "remote.protocol.envelope.not_inbound"
+            },
+            1,
+        );
+        inbound
     }
+
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::AssistantDelta { .. } => "assistant_delta",
+            Self::ToolUse { .. } => "tool_use",
+            Self::ToolResult { .. } => "tool_result",
+            Self::SetInProgressToolUseIds { .. } => "set_in_progress_tool_use_ids",
+            Self::DeferredToolUse { .. } => "deferred_tool_use",
+            Self::ToolUseSummary { .. } => "tool_use_summary",
+            Self::SessionStatus { .. } => "session_status",
+            Self::PermissionRequest { .. } => "permission_request",
+            Self::PlanApprovalRequest { .. } => "plan_approval_request",
+            Self::Toast { .. } => "toast",
+            Self::Heartbeat => "heartbeat",
+            Self::UserPrompt { .. } => "user_prompt",
+            Self::Interrupt => "interrupt",
+            Self::ApprovalResponse { .. } => "approval_response",
+            Self::PlanApprovalResponse { .. } => "plan_approval_response",
+            Self::Ping => "ping",
+        }
+    }
+}
+
+fn trace_payload_shape(label: &'static str, version: u8, seq: u64, payload_json: &str) {
+    if !linkscope::trace_detail_enabled() {
+        return;
+    }
+    linkscope::detail_event_fields(
+        label,
+        [
+            linkscope::TraceField::count("version", u64::from(version)),
+            linkscope::TraceField::count("seq", seq),
+            linkscope::TraceField::bytes("payload_bytes", len_to_u64(payload_json.len())),
+        ],
+    );
+}
+
+fn trace_envelope_direction(label: &'static str, envelope: &RemoteEnvelope, outbound: bool) {
+    if !linkscope::trace_detail_enabled() {
+        return;
+    }
+    linkscope::detail_event_fields(
+        label,
+        [
+            linkscope::TraceField::text("kind", envelope.kind()),
+            linkscope::TraceField::count("outbound", u64::from(outbound)),
+        ],
+    );
+}
+
+fn len_to_u64(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn protocol_version_exists() {
-        assert_eq!(PROTOCOL_VERSION, 1);
-    }
-
-    #[test]
-    fn envelope_roundtrip_assistant_delta() {
-        let env = RemoteEnvelope::AssistantDelta {
-            text: Some("Hello".into()),
-            reasoning: None,
-        };
-        let json = serde_json::to_string(&env).unwrap();
-        let back: RemoteEnvelope = serde_json::from_str(&json).unwrap();
-        assert_eq!(env, back);
-    }
-
-    #[test]
-    fn envelope_roundtrip_user_prompt() {
-        let env = RemoteEnvelope::UserPrompt {
-            text: "fix the bug".into(),
-        };
-        let json = serde_json::to_string(&env).unwrap();
-        assert!(json.contains("\"type\":\"user_prompt\""));
-        let back: RemoteEnvelope = serde_json::from_str(&json).unwrap();
-        assert_eq!(env, back);
-    }
-
-    #[test]
-    fn envelope_roundtrip_permission_request() {
-        let env = RemoteEnvelope::PermissionRequest {
-            tool_use_id: "t1".into(),
-            tool_name: "Bash".into(),
-            summary: "rm -rf /".into(),
-            diff: Some("- old\n+ new".into()),
-        };
-        let json = serde_json::to_string(&env).unwrap();
-        let back: RemoteEnvelope = serde_json::from_str(&json).unwrap();
-        assert_eq!(env, back);
-    }
-
-    #[test]
-    fn tool_use_summary_timestamp_is_optional_robust() {
-        let json = r#"{"type":"tool_use_summary","summary":"edited files","preceding_tool_use_ids":["t1"]}"#;
-        let env: RemoteEnvelope = serde_json::from_str(json).unwrap();
-        assert_eq!(
-            env,
-            RemoteEnvelope::ToolUseSummary {
-                summary: "edited files".into(),
-                preceding_tool_use_ids: vec!["t1".into()],
-                timestamp: None,
-            }
-        );
-        assert!(env.is_outbound());
-    }
-
-    #[test]
-    fn frame_roundtrip() {
-        let frame = RemoteFrame {
-            version: PROTOCOL_VERSION,
-            seq: 42,
-            ts_ms: 1700000000000,
-            payload: RemoteEnvelope::Heartbeat,
-            hmac: "abc123".into(),
-        };
-        let json = serde_json::to_string(&frame).unwrap();
-        let back: RemoteFrame = serde_json::from_str(&json).unwrap();
-        assert_eq!(frame, back);
-    }
-
-    #[test]
-    fn direction_helpers() {
-        assert!(RemoteEnvelope::Heartbeat.is_outbound());
-        assert!(!RemoteEnvelope::Heartbeat.is_inbound());
-        assert!(RemoteEnvelope::Ping.is_inbound());
-        assert!(!RemoteEnvelope::Ping.is_outbound());
-    }
-
-    #[test]
-    fn session_state_serialization() {
-        let s = SessionState::WaitingApproval;
-        let json = serde_json::to_string(&s).unwrap();
-        assert_eq!(json, "\"waiting_approval\"");
-    }
-}
+mod tests;

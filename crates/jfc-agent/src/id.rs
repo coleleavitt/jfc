@@ -30,26 +30,37 @@ pub struct AgentId {
 impl AgentId {
     /// Mint a fresh random identity (UUID v4).
     pub fn new() -> Self {
-        Self {
+        let _linkscope_id = linkscope::phase("agent.id.new");
+        let id = Self {
             uuid: Uuid::new_v4(),
             display_name: None,
-        }
+        };
+        trace_id_shape("agent.id.new.detail", &id, "random", 0);
+        id
     }
 
     /// Mint a fresh identity with a human-readable name attached.
     pub fn named(name: impl Into<String>) -> Self {
-        Self {
+        let _linkscope_id = linkscope::phase("agent.id.named");
+        let name = name.into();
+        let name_bytes = name.len();
+        let id = Self {
             uuid: Uuid::new_v4(),
-            display_name: Some(name.into()),
-        }
+            display_name: Some(name),
+        };
+        trace_id_shape("agent.id.named.detail", &id, "named", name_bytes);
+        id
     }
 
     /// Reconstruct from an existing UUID (e.g. when loading persisted state).
     pub fn from_uuid(uuid: Uuid) -> Self {
-        Self {
+        let _linkscope_id = linkscope::phase("agent.id.from_uuid");
+        let id = Self {
             uuid,
             display_name: None,
-        }
+        };
+        trace_id_shape("agent.id.from_uuid.detail", &id, "uuid", 0);
+        id
     }
 
     /// Derive a *stable* identity from a role prefix and an index.
@@ -60,11 +71,16 @@ impl AgentId {
     /// a bounty cycle without a shared counter. The prefix is also kept as the
     /// display name.
     pub fn stable(prefix: &str, index: u64) -> Self {
+        let _linkscope_id = linkscope::phase("agent.id.stable");
         let seed = format!("{prefix}-{index}");
-        Self {
+        let seed_bytes = seed.len();
+        let id = Self {
             uuid: Uuid::new_v5(&Uuid::NAMESPACE_OID, seed.as_bytes()),
             display_name: Some(seed),
-        }
+        };
+        trace_stable_id(prefix.len(), index);
+        trace_id_shape("agent.id.stable.detail", &id, "stable", seed_bytes);
+        id
     }
 
     /// Derive a *deterministic* identity from a single string label.
@@ -75,11 +91,15 @@ impl AgentId {
     /// the identity key (e.g. the economy's `AgentId(String)`): a fixed label
     /// like `"solver_a"` keeps stable equality and hashing after the type swap.
     pub fn from_label(label: impl Into<String>) -> Self {
+        let _linkscope_id = linkscope::phase("agent.id.from_label");
         let label = label.into();
-        Self {
+        let label_bytes = label.len();
+        let id = Self {
             uuid: Uuid::new_v5(&Uuid::NAMESPACE_OID, label.as_bytes()),
             display_name: Some(label),
-        }
+        };
+        trace_id_shape("agent.id.from_label.detail", &id, "label", label_bytes);
+        id
     }
 
     /// The canonical UUID.
@@ -102,9 +122,45 @@ impl AgentId {
 
     /// Attach (or replace) the presentation name.
     pub fn with_name(mut self, name: impl Into<String>) -> Self {
-        self.display_name = Some(name.into());
+        let _linkscope_id = linkscope::phase("agent.id.with_name");
+        let name = name.into();
+        let name_bytes = name.len();
+        self.display_name = Some(name);
+        trace_id_shape("agent.id.with_name.detail", &self, "with_name", name_bytes);
         self
     }
+}
+
+fn trace_id_shape(label: &'static str, id: &AgentId, source: &'static str, name_bytes: usize) {
+    if !linkscope::trace_detail_enabled() {
+        return;
+    }
+    linkscope::detail_event_fields(
+        label,
+        [
+            linkscope::TraceField::text("source", source),
+            linkscope::TraceField::text("uuid", id.uuid.to_string()),
+            linkscope::TraceField::count("has_name", u64::from(id.display_name.is_some())),
+            linkscope::TraceField::bytes("name_bytes", usize_to_u64_saturating(name_bytes)),
+        ],
+    );
+}
+
+fn trace_stable_id(prefix_bytes: usize, index: u64) {
+    if !linkscope::trace_detail_enabled() {
+        return;
+    }
+    linkscope::detail_event_fields(
+        "agent.id.stable.seed",
+        [
+            linkscope::TraceField::bytes("prefix_bytes", usize_to_u64_saturating(prefix_bytes)),
+            linkscope::TraceField::count("index", index),
+        ],
+    );
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 impl Default for AgentId {
@@ -211,5 +267,20 @@ mod tests {
         let back: AgentId = serde_json::from_str(&json).unwrap();
         assert_eq!(id, back);
         assert_eq!(back.display_name(), Some("researcher"));
+    }
+
+    #[test]
+    fn id_trace_records_shape_without_label_payload_normal() {
+        linkscope::trace_detail_enable();
+        let id = AgentId::from_label("private researcher label").with_name("private display name");
+        assert_eq!(id.display_name(), Some("private display name"));
+
+        let snapshot = linkscope::snapshot();
+        let rendered = format!("{snapshot:?}");
+        assert!(rendered.contains("agent.id.from_label.detail"));
+        assert!(rendered.contains("agent.id.with_name.detail"));
+        assert!(rendered.contains("name_bytes"));
+        assert!(!rendered.contains("private researcher label"));
+        assert!(!rendered.contains("private display name"));
     }
 }

@@ -4,6 +4,8 @@ use sha2::{Digest, Sha256};
 use crate::error::Result;
 use crate::state::ChangeState;
 
+mod trace;
+
 /// A single changed file inside the proposal's worktree.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChangedFile {
@@ -29,7 +31,17 @@ pub struct TestRun {
 impl TestRun {
     /// A run passes iff it exited zero.
     pub fn passed(&self) -> bool {
-        self.exit_code == 0
+        let passed = self.exit_code == 0;
+        linkscope::record_items(
+            if passed {
+                "changeset.test_run.passed"
+            } else {
+                "changeset.test_run.failed"
+            },
+            1,
+        );
+        trace::test_run(self, passed);
+        passed
     }
 }
 
@@ -45,6 +57,15 @@ pub enum Approval {
         total: u32,
         at_ms: u64,
     },
+}
+
+impl Approval {
+    pub(super) fn label(&self) -> &'static str {
+        match self {
+            Self::Human { .. } => "human",
+            Self::ValidatorQuorum { .. } => "validator_quorum",
+        }
+    }
 }
 
 /// A durable, reviewable, reversible record of one mutating agent run.
@@ -110,11 +131,15 @@ impl AgentChangeSet {
         worktree_path: impl Into<String>,
         now_ms: u64,
     ) -> Self {
+        let _linkscope_open = linkscope::phase("changeset.types.open");
         let base_head = base_head.into();
         let branch = branch.into();
         let worktree_path = worktree_path.into();
+        let base_head_bytes = base_head.len();
+        let branch_bytes = branch.len();
+        let worktree_path_bytes = worktree_path.len();
         let id = Self::compute_id(&base_head, &branch, &worktree_path, now_ms);
-        Self {
+        let changeset = Self {
             id,
             state: ChangeState::Draft,
             task_id: None,
@@ -131,12 +156,26 @@ impl AgentChangeSet {
             approval: None,
             created_at_ms: now_ms,
             updated_at_ms: now_ms,
-        }
+        };
+        trace::open_inputs(trace::OpenTrace {
+            changeset: &changeset,
+            base_head_bytes,
+            branch_bytes,
+            worktree_path_bytes,
+        });
+        changeset
     }
 
     /// Deterministic short id: first 16 hex chars of
     /// `sha256(base_head | branch | worktree_path | now_ms)`.
     pub fn compute_id(base_head: &str, branch: &str, worktree_path: &str, now_ms: u64) -> String {
+        let _linkscope_compute = linkscope::phase("changeset.types.compute_id");
+        trace::compute_id(trace::ComputeIdTrace {
+            base_head_bytes: base_head.len(),
+            branch_bytes: branch.len(),
+            worktree_path_bytes: worktree_path.len(),
+            now_ms,
+        });
         let mut hasher = Sha256::new();
         hasher.update(base_head.as_bytes());
         hasher.update(b"\0");
@@ -157,9 +196,17 @@ impl AgentChangeSet {
     /// Returns the same `IllegalTransition` error the state machine raises so
     /// callers can surface exactly why an apply was refused.
     pub fn transition_to(&mut self, next: ChangeState, now_ms: u64) -> Result<()> {
+        let _linkscope_transition = linkscope::phase("changeset.types.transition_to");
+        let previous = self.state;
         self.state.ensure_transition(next)?;
         self.state = next;
         self.updated_at_ms = now_ms;
+        trace::transition(trace::TransitionTrace {
+            changeset: self,
+            previous,
+            next,
+            status: "ok",
+        });
         Ok(())
     }
 
@@ -170,31 +217,56 @@ impl AgentChangeSet {
         diff_summary: impl Into<String>,
         now_ms: u64,
     ) -> Result<()> {
+        let _linkscope_ready = linkscope::phase("changeset.types.mark_ready");
         self.changed_files = changed_files;
         self.diff_summary = diff_summary.into();
+        trace::change_content(self);
         self.transition_to(ChangeState::Ready, now_ms)
     }
 
     /// Record a test run and advance `Ready → Tested`. The transition only
     /// fires from `Ready`; subsequent runs append without re-transitioning.
     pub fn record_test_run(&mut self, run: TestRun, now_ms: u64) -> Result<()> {
+        let _linkscope_test = linkscope::phase("changeset.types.record_test_run");
         self.test_runs.push(run);
+        linkscope::record_items(
+            "changeset.test_runs",
+            u64::try_from(self.test_runs.len()).unwrap_or(u64::MAX),
+        );
         if self.state == ChangeState::Ready {
             self.transition_to(ChangeState::Tested, now_ms)?;
         } else {
             self.updated_at_ms = now_ms;
+            trace::transition(trace::TransitionTrace {
+                changeset: self,
+                previous: self.state,
+                next: self.state,
+                status: "append_only",
+            });
         }
         Ok(())
     }
 
     /// True iff at least one test run was recorded and all of them passed.
     pub fn all_tests_passed(&self) -> bool {
-        !self.test_runs.is_empty() && self.test_runs.iter().all(TestRun::passed)
+        let passed = !self.test_runs.is_empty() && self.test_runs.iter().all(TestRun::passed);
+        linkscope::record_items(
+            if passed {
+                "changeset.tests.all_passed"
+            } else {
+                "changeset.tests.not_all_passed"
+            },
+            1,
+        );
+        trace::test_summary(self, passed);
+        passed
     }
 
     /// Approve the change (`Tested → Approved`). Refuses if no test run passed,
     /// so approval can never rubber-stamp an untested branch.
     pub fn approve(&mut self, approval: Approval, now_ms: u64) -> Result<()> {
+        let _linkscope_approve = linkscope::phase("changeset.types.approve");
+        trace::approval(&approval);
         self.transition_to(ChangeState::Approved, now_ms)?;
         self.approval = Some(approval);
         Ok(())
@@ -202,108 +274,4 @@ impl AgentChangeSet {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn ready_set() -> AgentChangeSet {
-        let mut cs = AgentChangeSet::open("abc123", "jfc/feature", "/tmp/wt", 1000);
-        cs.mark_ready(
-            vec![ChangedFile {
-                path: "src/lib.rs".into(),
-                insertions: 10,
-                deletions: 2,
-            }],
-            "1 file changed, 10 insertions(+), 2 deletions(-)",
-            1001,
-        )
-        .unwrap();
-        cs
-    }
-
-    // Normal: a freshly opened change-set is a Draft with a stable id.
-    #[test]
-    fn open_starts_in_draft_normal() {
-        let cs = AgentChangeSet::open("head", "jfc/x", "/tmp/x", 42);
-        assert_eq!(cs.state, ChangeState::Draft);
-        assert_eq!(cs.id.len(), 16);
-        assert_eq!(cs.created_at_ms, cs.updated_at_ms);
-    }
-
-    // Robust: the id is deterministic in its inputs but distinguishes runs by
-    // timestamp.
-    #[test]
-    fn id_is_deterministic_and_time_sensitive_robust() {
-        let a = AgentChangeSet::compute_id("h", "b", "w", 1);
-        let b = AgentChangeSet::compute_id("h", "b", "w", 1);
-        let c = AgentChangeSet::compute_id("h", "b", "w", 2);
-        assert_eq!(a, b, "same inputs → same id");
-        assert_ne!(a, c, "different timestamp → different id");
-    }
-
-    // Normal: the full review pipeline advances state and updates timestamps.
-    #[test]
-    fn review_pipeline_advances_state_normal() {
-        let mut cs = ready_set();
-        assert_eq!(cs.state, ChangeState::Ready);
-
-        cs.record_test_run(
-            TestRun {
-                command: "cargo test".into(),
-                exit_code: 0,
-                duration_ms: 1234,
-                finished_at_ms: 1002,
-            },
-            1002,
-        )
-        .unwrap();
-        assert_eq!(cs.state, ChangeState::Tested);
-        assert!(cs.all_tests_passed());
-
-        cs.approve(
-            Approval::Human {
-                user: "cole".into(),
-                at_ms: 1003,
-            },
-            1003,
-        )
-        .unwrap();
-        assert_eq!(cs.state, ChangeState::Approved);
-        assert!(cs.approval.is_some());
-
-        cs.transition_to(ChangeState::Applied, 1004).unwrap();
-        assert_eq!(cs.state, ChangeState::Applied);
-        assert_eq!(cs.updated_at_ms, 1004);
-    }
-
-    // Robust — the safety guard at the object level: a Ready change cannot be
-    // applied directly, only through Tested+Approved.
-    #[test]
-    fn ready_set_refuses_direct_apply_robust() {
-        let mut cs = ready_set();
-        let err = cs.transition_to(ChangeState::Applied, 1002).unwrap_err();
-        assert!(matches!(
-            err,
-            crate::error::ChangeSetError::IllegalTransition { .. }
-        ));
-        // State is unchanged after a refused transition.
-        assert_eq!(cs.state, ChangeState::Ready);
-    }
-
-    // Robust: a failing test run is recorded but does not count as passing.
-    #[test]
-    fn failing_test_run_does_not_pass_robust() {
-        let mut cs = ready_set();
-        cs.record_test_run(
-            TestRun {
-                command: "cargo test".into(),
-                exit_code: 101,
-                duration_ms: 50,
-                finished_at_ms: 1002,
-            },
-            1002,
-        )
-        .unwrap();
-        assert_eq!(cs.state, ChangeState::Tested);
-        assert!(!cs.all_tests_passed(), "exit 101 must not pass");
-    }
-}
+mod tests;

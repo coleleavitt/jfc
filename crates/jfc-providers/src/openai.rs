@@ -164,6 +164,7 @@ impl Provider for OpenAIProvider {
     }
 
     async fn fetch_models(&self) -> anyhow::Result<Vec<ModelInfo>> {
+        let _linkscope_fetch = linkscope::phase("provider.openai.fetch_models");
         // First try to get the model list from OpenAI's own /v1/models endpoint.
         let url = self.models_url();
         let resp = match jfc_provider::http::send_with_retry("openai.models", || {
@@ -227,7 +228,19 @@ impl Provider for OpenAIProvider {
         messages: Vec<ProviderMessage>,
         options: &StreamOptions,
     ) -> anyhow::Result<EventStream> {
+        let message_count = usize_to_u64_saturating(messages.len());
+        let _linkscope_stream = linkscope::phase("provider.openai.stream");
+        if linkscope::is_enabled() {
+            linkscope::event_fields(
+                "provider.openai.stream.start",
+                [
+                    linkscope::TraceField::text("model", options.model.to_string()),
+                    linkscope::TraceField::count("messages", message_count),
+                ],
+            );
+        }
         if model_uses_responses(options.model.as_str()) {
+            linkscope::record_items("provider.openai.responses_stream", 1);
             let body = build_responses_body(messages, options, true);
             let url = self.responses_url();
             let send_started = std::time::Instant::now();
@@ -274,6 +287,7 @@ impl Provider for OpenAIProvider {
             return Ok(responses_event_stream(resp));
         }
 
+        linkscope::record_items("provider.openai.chat_stream", 1);
         let body = super::openwebui::build_body(messages, options);
         let url = self.chat_url();
         let send_started = std::time::Instant::now();
@@ -325,7 +339,9 @@ impl Provider for OpenAIProvider {
         messages: Vec<ProviderMessage>,
         options: &StreamOptions,
     ) -> anyhow::Result<CompletionResponse> {
+        let _linkscope_complete = linkscope::phase("provider.openai.complete");
         if model_uses_responses(options.model.as_str()) {
+            linkscope::record_items("provider.openai.responses_complete", 1);
             let url = self.responses_url();
             let body = build_responses_body(messages, options, false);
             let resp =
@@ -359,6 +375,7 @@ impl Provider for OpenAIProvider {
             });
         }
 
+        linkscope::record_items("provider.openai.chat_complete", 1);
         let mut body = super::openwebui::build_body(messages, options);
         if let Some(obj) = body.as_object_mut() {
             obj.insert("stream".to_owned(), serde_json::Value::Bool(false));
@@ -446,6 +463,10 @@ fn model_uses_responses(id: &str) -> bool {
         .trim()
         .to_ascii_lowercase();
     id.starts_with("gpt-5") || id.starts_with("o1") || id.starts_with("o3") || id.starts_with("o4")
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 fn is_anthropic_base_url(url: &str) -> bool {

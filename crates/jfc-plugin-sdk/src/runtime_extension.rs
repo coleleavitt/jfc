@@ -35,6 +35,12 @@ pub struct RuntimeExtensionRefreshDescriptor {
 
 impl RuntimeExtensionRefreshDescriptor {
     pub fn process_bridge() -> Self {
+        let _linkscope_refresh =
+            linkscope::phase("plugin_sdk.runtime_extension.refresh.process_bridge");
+        linkscope::detail_event_fields(
+            "plugin_sdk.runtime_extension.refresh.process_bridge",
+            [linkscope::TraceField::text("kind", "process_bridge")],
+        );
         Self {
             kind: RuntimeExtensionRefreshKind::ProcessBridge,
             min_interval_ms: None,
@@ -62,10 +68,19 @@ pub struct RuntimeExtensionExecutorDescriptor {
 
 impl RuntimeExtensionExecutorDescriptor {
     pub fn new(kind: RuntimeExtensionExecutorKind, handler: impl Into<String>) -> Self {
-        Self {
-            kind,
-            handler: handler.into(),
-        }
+        let _linkscope_executor = linkscope::phase("plugin_sdk.runtime_extension.executor.new");
+        let handler = handler.into();
+        linkscope::detail_event_fields(
+            "plugin_sdk.runtime_extension.executor.new",
+            [
+                linkscope::TraceField::text("kind", format!("{kind:?}")),
+                linkscope::TraceField::bytes(
+                    "handler_bytes",
+                    u64::try_from(handler.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
+        Self { kind, handler }
     }
 
     pub fn built_in(handler: impl Into<String>) -> Self {
@@ -102,11 +117,26 @@ impl RuntimeExtensionDescriptor {
         id: impl Into<String>,
         label: impl Into<String>,
     ) -> Self {
+        let _linkscope_extension = linkscope::phase("plugin_sdk.runtime_extension.new");
+        let id = id.into();
+        let label = label.into();
+        linkscope::event_fields(
+            "plugin_sdk.runtime_extension.new",
+            [
+                linkscope::TraceField::text("plugin_id", plugin_id.as_str().to_owned()),
+                linkscope::TraceField::text("target", format!("{target:?}")),
+                linkscope::TraceField::text("id", id.clone()),
+                linkscope::TraceField::bytes(
+                    "label_bytes",
+                    u64::try_from(label.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         Self {
             plugin_id,
             target,
-            id: id.into(),
-            label: label.into(),
+            id,
+            label,
             priority: 0,
             visibility: DescriptorVisibility::HostVisible,
             executor: RuntimeExtensionExecutorDescriptor::built_in(""),
@@ -149,8 +179,18 @@ pub struct BridgePromptContextRefreshRequest {
 
 impl BridgePromptContextRefreshRequest {
     pub fn new(extension_id: impl Into<String>) -> Self {
+        let _linkscope_request =
+            linkscope::phase("plugin_sdk.runtime_extension.refresh_request.new");
+        let extension_id = extension_id.into();
+        linkscope::event_fields(
+            "plugin_sdk.runtime_extension.refresh_request.new",
+            [linkscope::TraceField::text(
+                "extension_id",
+                extension_id.clone(),
+            )],
+        );
         Self {
-            extension_id: extension_id.into(),
+            extension_id,
             cwd: None,
             max_chars: None,
             state: None,
@@ -184,8 +224,18 @@ pub struct BridgePromptContextRefreshResult {
 
 impl BridgePromptContextRefreshResult {
     pub fn body(body: impl Into<String>) -> Self {
+        let _linkscope_result =
+            linkscope::phase("plugin_sdk.runtime_extension.refresh_result.body");
+        let body = body.into();
+        linkscope::event_fields(
+            "plugin_sdk.runtime_extension.refresh_result.body",
+            [linkscope::TraceField::bytes(
+                "body_bytes",
+                u64::try_from(body.len()).unwrap_or(u64::MAX),
+            )],
+        );
         Self {
-            body: Some(body.into()),
+            body: Some(body),
             state: None,
         }
     }

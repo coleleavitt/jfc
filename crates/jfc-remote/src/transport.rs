@@ -32,24 +32,47 @@ pub struct TransportSender {
 
 impl TransportSender {
     pub fn new(tx: mpsc::Sender<RemoteFrame>) -> Self {
+        linkscope::record_items("remote.transport.sender.new", 1);
         Self { tx }
     }
 
     /// Send a frame. Returns `Err(TransportError::Closed)` if the peer
     /// has disconnected.
     pub async fn send(&self, frame: RemoteFrame) -> Result<(), TransportError> {
-        self.tx
+        let _linkscope_send = linkscope::phase("remote.transport.send");
+        trace_frame("remote.transport.send.start", &frame);
+        let result = self
+            .tx
             .send(frame)
             .await
-            .map_err(|_| TransportError::Closed)
+            .map_err(|_| TransportError::Closed);
+        linkscope::record_items(
+            if result.is_ok() {
+                "remote.transport.send.ok"
+            } else {
+                "remote.transport.send.closed"
+            },
+            1,
+        );
+        result
     }
 
     /// Non-blocking send. Returns `Err` if the channel is full or closed.
     pub fn try_send(&self, frame: RemoteFrame) -> Result<(), TransportError> {
+        let _linkscope_try_send = linkscope::phase("remote.transport.try_send");
+        trace_frame("remote.transport.try_send.start", &frame);
         self.tx.try_send(frame).map_err(|e| match e {
-            mpsc::error::TrySendError::Full(_) => TransportError::Send("channel full".into()),
-            mpsc::error::TrySendError::Closed(_) => TransportError::Closed,
-        })
+            mpsc::error::TrySendError::Full(_) => {
+                linkscope::record_items("remote.transport.try_send.full", 1);
+                TransportError::Send("channel full".into())
+            }
+            mpsc::error::TrySendError::Closed(_) => {
+                linkscope::record_items("remote.transport.try_send.closed", 1);
+                TransportError::Closed
+            }
+        })?;
+        linkscope::record_items("remote.transport.try_send.ok", 1);
+        Ok(())
     }
 }
 
@@ -60,12 +83,24 @@ pub struct TransportReceiver {
 
 impl TransportReceiver {
     pub fn new(rx: mpsc::Receiver<RemoteFrame>) -> Self {
+        linkscope::record_items("remote.transport.receiver.new", 1);
         Self { rx }
     }
 
     /// Receive the next frame. Returns `None` when the peer closes.
     pub async fn recv(&mut self) -> Option<RemoteFrame> {
-        self.rx.recv().await
+        let _linkscope_recv = linkscope::phase("remote.transport.recv");
+        let frame = self.rx.recv().await;
+        match &frame {
+            Some(frame) => {
+                linkscope::record_items("remote.transport.recv.frame", 1);
+                trace_frame("remote.transport.recv.detail", frame);
+            }
+            None => {
+                linkscope::record_items("remote.transport.recv.closed", 1);
+            }
+        }
+        frame
     }
 }
 
@@ -84,6 +119,12 @@ pub fn loopback() -> (
     (TransportSender, TransportReceiver),
     (TransportSender, TransportReceiver),
 ) {
+    let _linkscope_loopback = linkscope::phase("remote.transport.loopback");
+    linkscope::record_items("remote.transport.loopback.created", 1);
+    linkscope::record_items(
+        "remote.transport.loopback.capacity",
+        usize_to_u64_saturating(CHANNEL_BUF),
+    );
     let (host_tx, client_rx) = mpsc::channel(CHANNEL_BUF);
     let (client_tx, host_rx) = mpsc::channel(CHANNEL_BUF);
     (
@@ -96,6 +137,25 @@ pub fn loopback() -> (
             TransportReceiver::new(client_rx),
         ),
     )
+}
+
+fn trace_frame(label: &'static str, frame: &RemoteFrame) {
+    if !linkscope::trace_detail_enabled() {
+        return;
+    }
+    linkscope::detail_event_fields(
+        label,
+        [
+            linkscope::TraceField::count("version", u64::from(frame.version)),
+            linkscope::TraceField::count("seq", frame.seq),
+            linkscope::TraceField::text("payload_kind", frame.payload.kind()),
+            linkscope::TraceField::count("outbound", u64::from(frame.payload.is_outbound())),
+        ],
+    );
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]
@@ -150,5 +210,31 @@ mod tests {
         let ((host_tx, _host_rx), (_client_tx, mut client_rx)) = loopback();
         drop(host_tx);
         assert!(client_rx.recv().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn transport_trace_records_frame_shape_without_payload_normal() {
+        linkscope::trace_detail_enable();
+        let ((host_tx, _host_rx), (_client_tx, mut client_rx)) = loopback();
+        host_tx
+            .send(RemoteFrame {
+                version: PROTOCOL_VERSION,
+                seq: 99,
+                ts_ms: 0,
+                payload: RemoteEnvelope::UserPrompt {
+                    text: "private prompt".into(),
+                },
+                hmac: String::new(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(client_rx.recv().await.unwrap().seq, 99);
+
+        let snapshot = linkscope::snapshot();
+        let rendered = format!("{snapshot:?}");
+        assert!(rendered.contains("remote.transport.send.start"));
+        assert!(rendered.contains("remote.transport.recv.detail"));
+        assert!(rendered.contains("user_prompt"));
+        assert!(!rendered.contains("private prompt"));
     }
 }

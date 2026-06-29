@@ -467,6 +467,9 @@ pub async fn load_session(state: &mut EngineState, session_id: crate::ids::Sessi
 
 pub(crate) async fn restore_session_context_state(state: &mut EngineState, session_id: &str) {
     restore_detected_context_limit(state, session_id).await;
+    let typed_session_id = crate::ids::SessionId::new(session_id);
+    state.context_reduction_queue =
+        crate::session::load_context_reduction_queue(&typed_session_id).await;
     match load_session_provider_history_archive_seen(session_id).await {
         Ok(seen) => {
             let count = seen.len();
@@ -534,6 +537,15 @@ pub async fn submit_prompt(
     edit_at: Option<usize>,
 ) -> anyhow::Result<SubmitOutcome> {
     let _ls = linkscope::phase("turn.submit");
+    let _linkscope_submit_trace = linkscope::trace_fields(
+        "turn.submit",
+        [
+            linkscope::TraceField::bytes("prompt_bytes", usize_to_u64_saturating(text.len())),
+            linkscope::TraceField::count("attachments", usize_to_u64_saturating(attachments.len())),
+            linkscope::TraceField::count("messages", usize_to_u64_saturating(state.messages.len())),
+        ],
+    );
+    linkscope::record_bytes("turn.prompt", usize_to_u64_saturating(text.len()));
     tracing::debug!(
         target: "jfc::submit",
         "submit_prompt TOP: msgs={} budget_reached={}",
@@ -1294,11 +1306,20 @@ pub async fn start_turn_from_transcript(
     tx: &EventSender,
     turn_text: &str,
 ) {
+    let _linkscope_turn = linkscope::phase("turn.start");
     if refuse_budget_cap_if_reached(state) {
         return;
     }
 
     let assistant_idx = state.messages.len();
+    let _linkscope_turn_trace = linkscope::trace_fields(
+        "turn.start",
+        [
+            linkscope::TraceField::bytes("prompt_bytes", usize_to_u64_saturating(turn_text.len())),
+            linkscope::TraceField::count("assistant_idx", usize_to_u64_saturating(assistant_idx)),
+            linkscope::TraceField::count("messages", usize_to_u64_saturating(state.messages.len())),
+        ],
+    );
     state.messages.push(ChatMessage::assistant(String::new()));
     state.streaming_text.clear();
     state.streaming_reasoning.clear();
@@ -1374,8 +1395,10 @@ pub async fn start_turn_from_transcript(
     } else {
         state.model.clone()
     };
+    let context_drain = crate::context_reduction::drain_context_reduction_queue(state);
     let identity =
         crate::cache_lineage::request_cache_identity(state, state.provider.name(), &model);
+    crate::context_reduction::mark_expected_cache_drop(state, identity.clone(), context_drain);
     crate::cache_lineage::stamp_assistant(&mut state.messages, assistant_idx, &identity);
 
     // Auto-persist the session so the sidebar shows it. Reuses the existing
@@ -1390,9 +1413,11 @@ pub async fn start_turn_from_transcript(
         let msgs = state.messages.clone();
         let cwd = state.cwd.clone();
         let model = model.clone();
+        let context_reduction_queue = state.context_reduction_queue.clone();
         tokio::spawn(async move {
             crate::session::save_session(&sid, &msgs, Some(cwd.as_str()), Some(model.as_str()))
                 .await;
+            crate::session::save_context_reduction_queue(sid, context_reduction_queue).await;
         });
     }
     state.current_session_id = Some(session_id.clone());
@@ -1446,6 +1471,10 @@ pub async fn start_turn_from_transcript(
     crate::runtime::spawn_stream_response_scoped(
         state, tx, provider, messages, model, interrupt, cancel, None, overrides,
     );
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]

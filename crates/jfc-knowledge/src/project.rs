@@ -20,11 +20,26 @@ use std::process::Command;
 /// The returned key is a short hex digest so it's safe as a SQL value and
 /// doesn't leak a full path/URL into the row.
 pub fn project_key(dir: &Path) -> String {
+    let _linkscope_project = linkscope::phase("knowledge.project.project_key");
     let basis = remote_url(dir)
         .map(|url| format!("remote:{}", normalize_remote(&url)))
         .or_else(|| repo_root(dir).map(|root| format!("root:{}", root)))
         .unwrap_or_else(|| format!("dir:{}", dir.display()));
-    digest(&basis)
+    let key = digest(&basis);
+    linkscope::event_fields(
+        "knowledge.project.project_key",
+        [
+            linkscope::TraceField::text(
+                "basis_kind",
+                basis
+                    .split_once(':')
+                    .map(|(kind, _)| kind)
+                    .unwrap_or("unknown"),
+            ),
+            linkscope::TraceField::text("key", key.clone()),
+        ],
+    );
+    key
 }
 
 fn remote_url(dir: &Path) -> Option<String> {
@@ -57,6 +72,7 @@ fn repo_root(dir: &Path) -> Option<String> {
 /// `https://github.com/o/r.git`, and `https://github.com/o/r` all map to the
 /// same key (`github.com/o/r`).
 pub fn normalize_remote(url: &str) -> String {
+    let _linkscope_normalize = linkscope::phase("knowledge.project.normalize_remote");
     let mut s = url.trim().to_ascii_lowercase();
     // Strip scheme.
     for prefix in ["https://", "http://", "ssh://", "git://"] {
@@ -77,6 +93,16 @@ pub fn normalize_remote(url: &str) -> String {
     if let Some(stripped) = s.strip_suffix(".git") {
         s = stripped.to_owned();
     }
+    linkscope::detail_event_fields(
+        "knowledge.project.normalize_remote",
+        [
+            linkscope::TraceField::bytes(
+                "input_bytes",
+                u64::try_from(url.len()).unwrap_or(u64::MAX),
+            ),
+            linkscope::TraceField::text("normalized", s.clone()),
+        ],
+    );
     s
 }
 

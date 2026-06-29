@@ -109,6 +109,30 @@ pub fn handle_request_metadata(
         provider_history_archive_recall_count = meta.provider_history_archive_recall_ids.len(),
         "stream request metadata"
     );
+    if let Some(nudge) = meta.context_pressure_nudge {
+        tracing::warn!(
+            target: "jfc::stream::ctx_reduce",
+            nudge = nudge.kind.label(),
+            level = ?nudge.level,
+            raw_tokens = nudge.raw_tokens,
+            effective_tokens = nudge.effective_tokens,
+            window_tokens = nudge.window_tokens,
+            threshold_tokens = nudge.threshold_tokens,
+            reclaim_floor_tokens = nudge.reclaim_floor_tokens,
+            "stream request metadata carried ctx_reduce pressure nudge"
+        );
+        if let Some(reduction) = crate::context_reduction::queue_pressure_reduction(state, nudge) {
+            tracing::warn!(
+                target: "jfc::stream::ctx_reduce",
+                nudge = nudge.kind.label(),
+                queued_tags = reduction.queued_tags,
+                queued_ranges = reduction.queued_ranges,
+                estimated_reclaim_tokens = reduction.estimated_reclaim_tokens,
+                "queued automatic ctx_reduce pressure drops for next cache-safe drain"
+            );
+            crate::runtime::session_save::request_save(state);
+        }
+    }
     let previous_seen_count = state.provider_history_archive_seen.len();
     state
         .provider_history_archive_seen
@@ -267,6 +291,7 @@ mod tests {
                 project_instructions_tokens: 40,
                 user_message_tokens: 50,
             }),
+            context_pressure_nudge: None,
             provider_history_archive_recall_ids: vec!["provider-history-1".to_owned()],
             rsi_prompt_sections: 0,
             rsi_tool_visibility_rules: 0,

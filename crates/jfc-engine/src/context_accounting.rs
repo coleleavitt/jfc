@@ -24,10 +24,11 @@ pub(crate) use message_pressure::{
     estimate_transcript_tokens, pending_turn_tokens, transcript_visible_chars,
 };
 pub(crate) use provider_archive::{
-    archive_provider_history_current_project, list_provider_history_archives,
-    load_session_provider_history_archive_seen, persist_session_provider_history_archive_seen,
-    provider_history_archive_recall_block, render_provider_history_archive_by_id,
-    search_provider_history_archives,
+    ProviderHistoryArchiveHit, archive_provider_history_current_project,
+    list_provider_history_archives, load_session_provider_history_archive_seen,
+    persist_session_provider_history_archive_seen, provider_history_archive_recall_block,
+    render_provider_history_archive_by_id, search_provider_history_archives,
+    search_provider_history_archives_in,
 };
 pub(crate) use provider_history::{
     ProviderHistoryBudget, ProviderHistoryTransform, compact_provider_history,
@@ -35,6 +36,7 @@ pub(crate) use provider_history::{
 };
 pub(crate) use provider_payload::{chars_to_tokens, provider_messages_tokens};
 pub(crate) use request_pressure::RequestContextPressure;
+pub use request_pressure::{ContextPressureNudge, ContextPressureNudgeKind};
 pub(crate) use transcript_boundary::{TranscriptBoundaryBudget, materialize_transcript_boundary};
 
 pub fn fallback_request_overhead_tokens() -> usize {

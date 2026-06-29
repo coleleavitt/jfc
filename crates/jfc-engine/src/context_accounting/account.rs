@@ -120,10 +120,18 @@ pub fn build_context_account(
     ContextAccount::new(vec![
         contributor(CONTRIB_SYSTEM, "System", system_tokens),
         contributor(CONTRIB_DOCS, "Docs", docs_tokens),
-        contributor(CONTRIB_COMPARTMENTS, "Compartments", transcript.compartment_tokens),
+        contributor(
+            CONTRIB_COMPARTMENTS,
+            "Compartments",
+            transcript.compartment_tokens,
+        ),
         contributor(CONTRIB_MEMORIES, "Memories", memory_tokens),
         contributor(CONTRIB_CONVERSATION, "Conversation", conversation_tokens),
-        contributor(CONTRIB_TOOL_CALLS, "Tool Calls", transcript.tool_call_tokens),
+        contributor(
+            CONTRIB_TOOL_CALLS,
+            "Tool Calls",
+            transcript.tool_call_tokens,
+        ),
         contributor(CONTRIB_TOOL_DEFS, "Tool Defs", tool_def_tokens),
     ])
 }

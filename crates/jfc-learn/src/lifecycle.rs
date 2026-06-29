@@ -20,6 +20,11 @@ fn project_session_id(cwd: &str) -> String {
 /// from previous sessions. Runs the dreamer cycle (consolidation, archival).
 /// Best-effort: failures are logged.
 pub async fn on_session_start(cwd: &str) {
+    let _linkscope_start = linkscope::phase("learn.lifecycle.session_start");
+    linkscope::event_fields(
+        "learn.lifecycle.session_start",
+        [linkscope::TraceField::text("cwd", cwd.to_owned())],
+    );
     let pending_count = match jfc_knowledge::KnowledgeStore::open_default().await {
         Ok(store) => {
             match store
@@ -38,6 +43,10 @@ pub async fn on_session_start(cwd: &str) {
     };
 
     if pending_count == 0 {
+        linkscope::event_fields(
+            "learn.lifecycle.session_start.result",
+            [linkscope::TraceField::count("pending", 0)],
+        );
         return;
     }
 
@@ -45,6 +54,13 @@ pub async fn on_session_start(cwd: &str) {
         target: "jfc::learn",
         pending_count,
         "on_session_start: found pending transcripts"
+    );
+    linkscope::event_fields(
+        "learn.lifecycle.session_start.result",
+        [linkscope::TraceField::count(
+            "pending",
+            u64::try_from(pending_count).unwrap_or(u64::MAX),
+        )],
     );
 
     // We can't run the full historian here (needs LLM), but we log the
@@ -57,12 +73,37 @@ pub async fn on_session_start(cwd: &str) {
 /// (role, content) tuples and queues it for the historian to process on
 /// next session start (since the LLM provider is unavailable at exit time).
 pub async fn on_session_end(messages: &[ChatMessage], cwd: &str) {
+    let _linkscope_end = linkscope::phase("learn.lifecycle.session_end");
+    linkscope::event_fields(
+        "learn.lifecycle.session_end",
+        [
+            linkscope::TraceField::count(
+                "messages",
+                u64::try_from(messages.len()).unwrap_or(u64::MAX),
+            ),
+            linkscope::TraceField::text("cwd", cwd.to_owned()),
+        ],
+    );
     let transcript = build_transcript(messages);
     if transcript.is_empty() {
+        linkscope::event_fields(
+            "learn.lifecycle.session_end.result",
+            [linkscope::TraceField::text("status", "empty_transcript")],
+        );
         debug!(target: "jfc::learn", "on_session_end: empty transcript, skipping");
         return;
     }
     if transcript.len() < 4 {
+        linkscope::event_fields(
+            "learn.lifecycle.session_end.result",
+            [
+                linkscope::TraceField::text("status", "too_few_turns"),
+                linkscope::TraceField::count(
+                    "turns",
+                    u64::try_from(transcript.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         debug!(target: "jfc::learn", turns = transcript.len(), "on_session_end: too few turns, skipping");
         return;
     }
@@ -92,6 +133,17 @@ pub async fn on_session_end(messages: &[ChatMessage], cwd: &str) {
                         .await
                     {
                         Ok(_) => {
+                            linkscope::event_fields(
+                                "learn.lifecycle.session_end.result",
+                                [
+                                    linkscope::TraceField::text("status", "queued"),
+                                    linkscope::TraceField::text("key", key.clone()),
+                                    linkscope::TraceField::bytes(
+                                        "json_bytes",
+                                        u64::try_from(json.len()).unwrap_or(u64::MAX),
+                                    ),
+                                ],
+                            );
                             debug!(target: "jfc::learn", key, "on_session_end: queued transcript for historian");
                         }
                         Err(e) => {
@@ -112,6 +164,7 @@ pub async fn on_session_end(messages: &[ChatMessage], cwd: &str) {
 
 /// Convert ChatMessages to (role, content) tuples for the historian.
 fn build_transcript(messages: &[ChatMessage]) -> Vec<(String, String)> {
+    let _linkscope_build = linkscope::phase("learn.lifecycle.build_transcript");
     let mut out = Vec::new();
     for msg in messages {
         let role = msg.role.to_string();
@@ -125,5 +178,12 @@ fn build_transcript(messages: &[ChatMessage]) -> Vec<(String, String)> {
             out.push((role, content));
         }
     }
+    linkscope::event_fields(
+        "learn.lifecycle.build_transcript.result",
+        [linkscope::TraceField::count(
+            "turns",
+            u64::try_from(out.len()).unwrap_or(u64::MAX),
+        )],
+    );
     out
 }

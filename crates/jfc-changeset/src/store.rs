@@ -63,6 +63,7 @@ pub struct ChangeStore {
 impl ChangeStore {
     /// Open (or create) the change store under a project root.
     pub fn open_project(root: impl AsRef<Path>) -> Result<Self> {
+        let _linkscope_open = linkscope::phase("changeset.store.open_project");
         let dir = root.as_ref().join(".jfc").join("changes");
         fs::create_dir_all(&dir)
             .map_err(|e| ChangeSetError::io(e, format!("creating {}", dir.display())))?;
@@ -80,6 +81,10 @@ impl ChangeStore {
             index: HashMap::new(),
         };
         store.reload()?;
+        linkscope::record_items(
+            "changeset.store.opened",
+            usize_to_u64_saturating(store.len()),
+        );
         Ok(store)
     }
 
@@ -87,6 +92,7 @@ impl ChangeStore {
     /// parse is skipped with a warning rather than aborting the load — last
     /// write wins on duplicate ids (the file is replayed in order).
     fn reload(&mut self) -> Result<()> {
+        let _linkscope_reload = linkscope::phase("changeset.store.reload");
         self.index.clear();
         let file = File::open(&self.changes_path)
             .map_err(|e| ChangeSetError::io(e, "opening changes.jsonl for reload"))?;
@@ -100,9 +106,16 @@ impl ChangeStore {
                 Ok(cs) => {
                     self.index.insert(cs.id.clone(), cs);
                 }
-                Err(e) => warn!(line = n, error = %e, "skipping corrupt change-set line"),
+                Err(e) => {
+                    linkscope::record_items("changeset.store.corrupt_line", 1);
+                    warn!(line = n, error = %e, "skipping corrupt change-set line");
+                }
             }
         }
+        linkscope::record_items(
+            "changeset.store.loaded",
+            usize_to_u64_saturating(self.index.len()),
+        );
         debug!(count = self.index.len(), "loaded change-sets from store");
         Ok(())
     }
@@ -111,6 +124,7 @@ impl ChangeStore {
     /// `AgentChangeSet` carries its own monotonic `updated_at_ms`, so an
     /// upsert is the natural write for every lifecycle transition.
     pub fn upsert(&mut self, cs: AgentChangeSet) -> Result<()> {
+        let _linkscope_upsert = linkscope::phase("changeset.store.upsert");
         self.index.insert(cs.id.clone(), cs);
         self.flush()
     }
@@ -122,12 +136,17 @@ impl ChangeStore {
 
     /// All change-sets matching `filter`, newest-updated first.
     pub fn query(&self, filter: &ChangeFilter) -> Vec<&AgentChangeSet> {
+        let _linkscope_query = linkscope::phase("changeset.store.query");
         let mut out: Vec<&AgentChangeSet> = self
             .index
             .values()
             .filter(|cs| filter.matches(cs))
             .collect();
         out.sort_by_key(|cs| std::cmp::Reverse(cs.updated_at_ms));
+        linkscope::record_items(
+            "changeset.store.query.rows",
+            usize_to_u64_saturating(out.len()),
+        );
         out
     }
 
@@ -145,6 +164,7 @@ impl ChangeStore {
     /// exclusive lock. Records are written in stable id order so the file is
     /// diff-friendly across runs.
     fn flush(&self) -> Result<()> {
+        let _linkscope_flush = linkscope::phase("changeset.store.flush");
         let lock = OpenOptions::new()
             .create(true)
             .write(true)
@@ -166,6 +186,7 @@ impl ChangeStore {
     }
 
     fn write_all_locked(&self) -> Result<()> {
+        let _linkscope_write = linkscope::phase("changeset.store.write_all");
         let tmp_path = self.changes_path.with_extension("jsonl.tmp");
         let mut tmp = File::create(&tmp_path)
             .map_err(|e| ChangeSetError::io(e, "creating changes.jsonl.tmp"))?;
@@ -189,8 +210,16 @@ impl ChangeStore {
         // Atomic replace so a crash mid-write never truncates the real file.
         fs::rename(&tmp_path, &self.changes_path)
             .map_err(|e| ChangeSetError::io(e, "atomically replacing changes.jsonl"))?;
+        linkscope::record_items(
+            "changeset.store.persisted",
+            usize_to_u64_saturating(self.index.len()),
+        );
         Ok(())
     }
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]

@@ -23,9 +23,13 @@ const DEF_KIND_SKILL: &str = "skill";
 /// Load every skill discoverable from project + user roots. Project skills
 /// override user skills with the same name.
 pub fn load_skills(project_root: &Path) -> Vec<Skill> {
+    let _linkscope_load = linkscope::phase("agents.skills.load");
+    trace_path_event("agents.skills.load.start", project_root);
     tracing::info!(target: "jfc::agents", project_root = %project_root.display(), "loading skills");
     let mut out: Vec<Skill> = built_in_skills();
+    linkscope::record_items("agents.skills.builtin", usize_to_u64_saturating(out.len()));
     if let Some(store) = open_definition_store(project_root) {
+        linkscope::record_items("agents.definition_store.opened", 1);
         let project_key = jfc_knowledge::project_key(project_root);
         import_legacy_skill_definitions(&store, project_root, &project_key);
         let mut defs = jfc_knowledge::block_on_knowledge(async {
@@ -34,6 +38,10 @@ pub fn load_skills(project_root: &Path) -> Vec<Skill> {
                 .await
         })
         .unwrap_or_default();
+        linkscope::record_items(
+            "agents.skills.definition",
+            usize_to_u64_saturating(defs.len()),
+        );
         defs.sort_by_key(definition_precedence);
         for def in defs {
             let path = definition_source_path(&def, DEF_KIND_SKILL);
@@ -66,8 +74,11 @@ pub fn load_skills(project_root: &Path) -> Vec<Skill> {
             out.retain(|s| s.name != skill.name);
             out.push(skill);
         }
+    } else {
+        linkscope::record_items("agents.definition_store.open_error", 1);
     }
     out.sort_by(|a, b| a.name.cmp(&b.name));
+    linkscope::record_items("agents.skills.loaded", usize_to_u64_saturating(out.len()));
     tracing::debug!(
         target: "jfc::agents",
         count = out.len(),
@@ -120,7 +131,18 @@ pub fn write_agent_skill(
     description: &str,
     body: &str,
 ) -> Result<PathBuf, SkillWriteError> {
+    let _linkscope_write = linkscope::phase("agents.skill.write");
+    if linkscope::is_enabled() {
+        linkscope::event_fields(
+            "agents.skill.write.start",
+            [
+                linkscope::TraceField::text("name", name),
+                linkscope::TraceField::bytes("body_bytes", usize_to_u64_saturating(body.len())),
+            ],
+        );
+    }
     if !valid_skill_name(name) {
+        linkscope::record_items("agents.skill.write.invalid_name", 1);
         return Err(SkillWriteError::InvalidName(name.to_owned()));
     }
     let project_key = jfc_knowledge::project_key(project_root);
@@ -142,6 +164,7 @@ pub fn write_agent_skill(
     })?
     .is_some()
     {
+        linkscope::record_items("agents.skill.write.already_exists", 1);
         return Err(SkillWriteError::AlreadyExists(
             name.to_owned(),
             PathBuf::from(format!("db:definition:skill:{name}")),
@@ -176,6 +199,7 @@ pub fn write_agent_skill(
             })
             .await
     })?;
+    linkscope::record_items("agents.skill.write.ok", 1);
     tracing::info!(target: "jfc::agents", skill = name, path = %uri, "wrote agent-created skill definition");
     Ok(PathBuf::from(uri))
 }
@@ -194,6 +218,7 @@ struct SkillCandidate {
 }
 
 fn skill_roots(project_root: &Path) -> Vec<SkillRoot> {
+    let _linkscope_roots = linkscope::phase("agents.skill_roots");
     let mut roots = Vec::new();
     let mut seen = HashSet::new();
     let mut push_root = |path: PathBuf, namespace: Option<String>| {
@@ -215,10 +240,13 @@ fn skill_roots(project_root: &Path) -> Vec<SkillRoot> {
         push_root(plugin.path, plugin.namespace);
     }
 
+    linkscope::record_items("agents.skill_roots", usize_to_u64_saturating(roots.len()));
     roots
 }
 
 fn skill_candidates(root: &Path) -> Vec<SkillCandidate> {
+    let _linkscope_scan = linkscope::phase("agents.skill_candidates");
+    trace_path_event("agents.skill_candidates.start", root);
     const MAX_SCAN_DEPTH: usize = 8;
     const MAX_DIRS: usize = 512;
 
@@ -288,10 +316,15 @@ fn skill_candidates(root: &Path) -> Vec<SkillCandidate> {
         }
     }
 
+    linkscope::record_items(
+        "agents.skill_candidates",
+        usize_to_u64_saturating(out.len()),
+    );
     out
 }
 
 fn import_legacy_skill_definitions(store: &KnowledgeStore, project_root: &Path, project_key: &str) {
+    let _linkscope_import = linkscope::phase("agents.skills.import_legacy");
     for (precedence, root) in skill_roots(project_root).into_iter().enumerate() {
         let (scope, definition_project_key) = root_definition_scope(
             project_root,
@@ -348,6 +381,7 @@ fn import_legacy_skill_definitions(store: &KnowledgeStore, project_root: &Path, 
             if let Err(err) =
                 jfc_knowledge::block_on_knowledge(async { store.upsert_definition(&def).await })
             {
+                linkscope::record_items("agents.skills.import_error", 1);
                 tracing::warn!(
                     target: "jfc::agents",
                     path = %md_path.display(),
@@ -527,9 +561,12 @@ fn agent_roots(project_root: &Path) -> Vec<AgentRoot> {
 
 /// Same precedence rules as `load_skills`, but for agent definitions.
 pub fn load_agents(project_root: &Path) -> Vec<AgentDef> {
+    let _linkscope_load = linkscope::phase("agents.load");
+    trace_path_event("agents.load.start", project_root);
     tracing::info!(target: "jfc::agents", project_root = %project_root.display(), "loading agents");
     let mut out: Vec<AgentDef> = Vec::new();
     if let Some(store) = open_definition_store(project_root) {
+        linkscope::record_items("agents.definition_store.opened", 1);
         let project_key = jfc_knowledge::project_key(project_root);
         import_legacy_agent_definitions(&store, project_root, &project_key);
         let mut defs = jfc_knowledge::block_on_knowledge(async {
@@ -538,6 +575,7 @@ pub fn load_agents(project_root: &Path) -> Vec<AgentDef> {
                 .await
         })
         .unwrap_or_default();
+        linkscope::record_items("agents.definition", usize_to_u64_saturating(defs.len()));
         defs.sort_by_key(definition_precedence);
         for def in defs {
             let path = definition_source_path(&def, DEF_KIND_AGENT);
@@ -552,6 +590,8 @@ pub fn load_agents(project_root: &Path) -> Vec<AgentDef> {
             out.retain(|a| a.name != agent.name);
             out.push(agent);
         }
+    } else {
+        linkscope::record_items("agents.definition_store.open_error", 1);
     }
     // Prepend built-in agents (user-defined agents with same name override them)
     for builtin in built_in_agents() {
@@ -560,6 +600,7 @@ pub fn load_agents(project_root: &Path) -> Vec<AgentDef> {
         }
     }
     out.sort_by(|a, b| a.name.cmp(&b.name));
+    linkscope::record_items("agents.loaded", usize_to_u64_saturating(out.len()));
     tracing::debug!(
         target: "jfc::agents",
         count = out.len(),
@@ -570,6 +611,7 @@ pub fn load_agents(project_root: &Path) -> Vec<AgentDef> {
 }
 
 fn import_legacy_agent_definitions(store: &KnowledgeStore, project_root: &Path, project_key: &str) {
+    let _linkscope_import = linkscope::phase("agents.import_legacy");
     for (precedence, root) in agent_roots(project_root).into_iter().enumerate() {
         let dir = root.path;
         if !dir.exists() {
@@ -618,6 +660,7 @@ fn import_legacy_agent_definitions(store: &KnowledgeStore, project_root: &Path, 
             if let Err(err) =
                 jfc_knowledge::block_on_knowledge(async { store.upsert_definition(&def).await })
             {
+                linkscope::record_items("agents.import_error", 1);
                 tracing::warn!(
                     target: "jfc::agents",
                     path = %path.display(),
@@ -631,9 +674,11 @@ fn import_legacy_agent_definitions(store: &KnowledgeStore, project_root: &Path, 
 
 /// Look up a skill by `name` in a slice. Returns the first match or `None`.
 pub fn find_skill_by_name<'a>(all_skills: &'a [Skill], name: &str) -> Option<&'a Skill> {
+    let _linkscope_find = linkscope::phase("agents.skill.find");
     let result = all_skills
         .iter()
         .find(|s| s.name.eq_ignore_ascii_case(name));
+    linkscope::record_items("agents.skill.find", 1);
     tracing::trace!(
         target: "jfc::agents",
         name,
@@ -641,6 +686,22 @@ pub fn find_skill_by_name<'a>(all_skills: &'a [Skill], name: &str) -> Option<&'a
         "find_skill_by_name"
     );
     result
+}
+
+fn trace_path_event(name: &'static str, path: &Path) {
+    if linkscope::is_enabled() {
+        linkscope::detail_event_fields(
+            name,
+            [linkscope::TraceField::text(
+                "path",
+                path.display().to_string(),
+            )],
+        );
+    }
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 // ─── Built-in Agent Definitions ──────────────────────────────────────────────

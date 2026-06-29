@@ -2,6 +2,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{ChangeSetError, Result};
 
+fn bool_to_u64(value: bool) -> u64 {
+    u64::from(value)
+}
+
 /// Lifecycle state of an agent change proposal.
 ///
 /// Mirrors Dolt's "isolated branch → reviewed → tested → merged" promise as an
@@ -29,7 +33,8 @@ pub enum ChangeState {
 impl ChangeState {
     /// Human-readable label for logs and the `jfc changes` table.
     pub fn label(self) -> &'static str {
-        match self {
+        linkscope::record_items("changeset.state.label", 1);
+        let label = match self {
             Self::Draft => "draft",
             Self::Ready => "ready",
             Self::Tested => "tested",
@@ -37,12 +42,25 @@ impl ChangeState {
             Self::Applied => "applied",
             Self::Reverted => "reverted",
             Self::Abandoned => "abandoned",
-        }
+        };
+        linkscope::detail_event_fields(
+            "changeset.state.label.result",
+            [linkscope::TraceField::text("state", label)],
+        );
+        label
     }
 
     /// A terminal state has no outgoing transitions — the change-set is done.
     pub fn is_terminal(self) -> bool {
-        matches!(self, Self::Reverted | Self::Abandoned)
+        let terminal = matches!(self, Self::Reverted | Self::Abandoned);
+        linkscope::detail_event_fields(
+            "changeset.state.terminal",
+            [
+                linkscope::TraceField::text("state", self.label()),
+                linkscope::TraceField::count("terminal", bool_to_u64(terminal)),
+            ],
+        );
+        terminal
     }
 
     /// Whether `self -> next` is a legal lifecycle transition.
@@ -53,7 +71,7 @@ impl ChangeState {
     /// `Applied`: review and a passing test run are mandatory waypoints.
     pub fn can_transition_to(self, next: ChangeState) -> bool {
         use ChangeState::*;
-        match (self, next) {
+        let allowed = match (self, next) {
             (Draft, Ready)
             | (Ready, Tested)
             | (Tested, Approved)
@@ -62,12 +80,23 @@ impl ChangeState {
             // Any non-terminal, not-yet-applied state can be abandoned.
             (Draft | Ready | Tested | Approved, Abandoned) => true,
             _ => false,
-        }
+        };
+        linkscope::detail_event_fields(
+            "changeset.state.transition.check",
+            [
+                linkscope::TraceField::text("from", self.label()),
+                linkscope::TraceField::text("to", next.label()),
+                linkscope::TraceField::count("allowed", bool_to_u64(allowed)),
+            ],
+        );
+        allowed
     }
 
     /// Validate a transition, returning a descriptive error when illegal.
     pub fn ensure_transition(self, next: ChangeState) -> Result<()> {
+        let _linkscope_transition = linkscope::phase("changeset.state.transition.ensure");
         if self.can_transition_to(next) {
+            linkscope::record_items("changeset.state.transition.ok", 1);
             return Ok(());
         }
         let reason = if self.is_terminal() {
@@ -77,6 +106,14 @@ impl ChangeState {
         } else {
             "not a permitted lifecycle edge"
         };
+        linkscope::event_fields(
+            "changeset.state.transition.rejected",
+            [
+                linkscope::TraceField::text("from", self.label()),
+                linkscope::TraceField::text("to", next.label()),
+                linkscope::TraceField::text("reason", reason),
+            ],
+        );
         Err(ChangeSetError::IllegalTransition {
             from: self,
             to: next,

@@ -12,6 +12,8 @@ pub mod paths;
 pub mod quiet_hours;
 pub mod scheduled_tasks;
 
+mod trace;
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -106,6 +108,14 @@ pub struct Config {
     pub session_cost_budget_usd: Option<f64>,
     #[serde(default = "default_auto_compact_enabled")]
     pub auto_compact_enabled: bool,
+    /// Ask Anthropic to compact old turns SERVER-side (the `compact_20260112`
+    /// context-management edit) before content reaches the model. This is the
+    /// non-blocking primary compaction path: it runs API-side with no
+    /// client-side concurrency and never stalls the user's input. Defaults on;
+    /// only affects the Anthropic provider when `auto_compact_enabled` is also
+    /// true. Set false to fall back to client-side compaction only.
+    #[serde(default = "default_true")]
+    pub server_side_compaction_enabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_compact_window: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -877,6 +887,7 @@ impl Default for Config {
             cross_project_recall_enabled: default_cross_project_recall_enabled(),
             session_cost_budget_usd: None,
             auto_compact_enabled: default_auto_compact_enabled(),
+            server_side_compaction_enabled: default_true(),
             auto_compact_window: None,
             compact_instructions: None,
             hooks: None,
@@ -971,6 +982,7 @@ impl Config {
             plan_recall_enabled: local_wins!(plan_recall_enabled),
             cross_project_recall_enabled: local_wins!(cross_project_recall_enabled),
             auto_compact_enabled: local_wins!(auto_compact_enabled),
+            server_side_compaction_enabled: local_wins!(server_side_compaction_enabled),
             auto_compact_threshold_pct: local_wins!(auto_compact_threshold_pct),
             always_show_thinking: local_wins!(always_show_thinking),
             osc8_hyperlinks: local_wins!(osc8_hyperlinks),
@@ -1518,6 +1530,7 @@ pub fn read_count() -> u64 {
 
 /// Bust the cached parse.
 pub fn invalidate_cache() {
+    linkscope::record_items("config.cache.invalidate", 1);
     mark_config_changed();
     if let Ok(mut slot) = CACHE.lock() {
         *slot = None;
@@ -1534,11 +1547,14 @@ pub fn cache_generation() -> u64 {
 /// The file watcher calls this on real config-file notifications, so the hot
 /// cache path can avoid polling `metadata()` for every caller.
 pub fn mark_config_changed() {
+    linkscope::record_items("config.cache.generation", 1);
     CACHE_GENERATION.fetch_add(1, Ordering::AcqRel);
 }
 
 /// Read + parse config from disk, no caching.
 fn load_from(path: &Path) -> Config {
+    let _linkscope_load = linkscope::phase("config.load_from");
+    trace_path_event("config.load_from.start", path);
     let mut cfg = load_toml_from(path);
     if path == config_path().as_path()
         && let Ok(project_root) = std::env::current_dir()
@@ -1555,12 +1571,33 @@ fn load_toml_from(path: &Path) -> Config {
 /// Inner recursive loader that handles `extends` inheritance.  Depth-limited
 /// to 8 levels so a circular chain of `extends` doesn't hang the process.
 fn load_toml_from_depth(path: &Path, depth: u8) -> Config {
+    let _linkscope_load = linkscope::phase("config.load_toml");
+    trace::record_path_shape("config.load_toml.start", path);
+    if linkscope::is_enabled() {
+        linkscope::detail_event_fields(
+            "config.load_toml.start",
+            [
+                linkscope::TraceField::text("path", path.display().to_string()),
+                linkscope::TraceField::count("depth", u64::from(depth)),
+            ],
+        );
+    }
     #[cfg(test)]
     READ_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
     let raw = match std::fs::read_to_string(path) {
-        Ok(s) => s,
+        Ok(s) => {
+            trace::record_config_load(trace::ConfigLoadTrace {
+                label: "config.toml.load",
+                depth,
+                bytes: s.len(),
+            });
+            linkscope::record_bytes("config.toml.read", usize_to_u64_saturating(s.len()));
+            s
+        }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            trace::record_status("config.toml.load_result", "missing");
+            linkscope::record_items("config.toml.missing", 1);
             tracing::trace!(
                 target: "jfc::config",
                 path = %path.display(),
@@ -1569,6 +1606,8 @@ fn load_toml_from_depth(path: &Path, depth: u8) -> Config {
             return Config::default();
         }
         Err(e) => {
+            trace::record_status("config.toml.load_result", "read_error");
+            linkscope::record_items("config.toml.read_error", 1);
             tracing::warn!(
                 target: "jfc::config",
                 path = %path.display(),
@@ -1579,8 +1618,15 @@ fn load_toml_from_depth(path: &Path, depth: u8) -> Config {
         }
     };
     let local: Config = match toml::from_str::<Config>(&raw) {
-        Ok(cfg) => cfg,
+        Ok(cfg) => {
+            trace::record_config_shape("config.toml.shape", &cfg, depth);
+            trace::record_status("config.toml.load_result", "parsed");
+            linkscope::record_items("config.toml.parsed", 1);
+            cfg
+        }
         Err(e) => {
+            trace::record_status("config.toml.load_result", "parse_error");
+            linkscope::record_items("config.toml.parse_error", 1);
             tracing::warn!(
                 target: "jfc::config",
                 path = %path.display(),
@@ -1595,8 +1641,10 @@ fn load_toml_from_depth(path: &Path, depth: u8) -> Config {
     // local config's values taking priority.  Guard against deep / circular
     // chains.
     if let Some(ref base_rel) = local.extends {
+        linkscope::record_items("config.toml.extends", 1);
         const MAX_DEPTH: u8 = 8;
         if depth >= MAX_DEPTH {
+            linkscope::record_items("config.toml.extends_too_deep", 1);
             tracing::warn!(
                 target: "jfc::config",
                 path = %path.display(),
@@ -1616,7 +1664,9 @@ fn load_toml_from_depth(path: &Path, depth: u8) -> Config {
             "loading base config via `extends`"
         );
         let base = load_toml_from_depth(&base_path, depth + 1);
-        return base.merge_with(local);
+        let merged = base.merge_with(local);
+        trace::record_config_shape("config.toml.merged_shape", &merged, depth);
+        return merged;
     }
 
     local
@@ -1626,6 +1676,8 @@ fn load_toml_from_depth(path: &Path, depth: u8) -> Config {
 /// specific project root. This bypasses the hot cache so tests and daemon
 /// workers can resolve project-local `.claude/settings*.json` deterministically.
 pub fn load_with_project(project_root: &Path) -> Config {
+    let _linkscope_load = linkscope::phase("config.load_with_project");
+    trace_path_event("config.load_with_project.start", project_root);
     let mut cfg = load_toml_from(&config_path());
     claude_settings::apply_to_config(&mut cfg, project_root);
     cfg
@@ -1638,6 +1690,7 @@ pub fn load() -> Config {
 
 /// Load the canonical config as a shared value.
 pub fn load_arc() -> Arc<Config> {
+    let _linkscope_load = linkscope::phase("config.load_arc");
     load_cached_arc(&config_path())
 }
 
@@ -1681,13 +1734,18 @@ pub fn managed_settings_paths() -> Vec<PathBuf> {
 /// Load the first available managed-settings TOML file. Invalid files are
 /// ignored with a warning so a broken policy file does not brick the CLI.
 pub fn load_managed_settings() -> Option<ManagedSettingsConfig> {
+    let _linkscope_load = linkscope::phase("config.managed_settings.load");
     for path in managed_settings_paths() {
         let Ok(raw) = std::fs::read_to_string(&path) else {
             continue;
         };
         match toml::from_str::<ManagedSettingsConfig>(&raw) {
-            Ok(settings) => return Some(settings),
+            Ok(settings) => {
+                linkscope::record_items("config.managed_settings.file_loaded", 1);
+                return Some(settings);
+            }
             Err(e) => {
+                linkscope::record_items("config.managed_settings.parse_error", 1);
                 tracing::warn!(
                     target: "jfc::config",
                     path = %path.display(),
@@ -1697,6 +1755,7 @@ pub fn load_managed_settings() -> Option<ManagedSettingsConfig> {
             }
         }
     }
+    linkscope::record_items("config.managed_settings.embedded_fallback", 1);
     load().managed_settings
 }
 
@@ -1704,6 +1763,7 @@ pub fn load_managed_settings() -> Option<ManagedSettingsConfig> {
 /// from [`load_managed_settings`] so policy diagnostics can explain why a
 /// higher-precedence file was skipped instead of only showing the final merge.
 pub fn managed_settings_sources() -> Vec<ManagedSettingsSource> {
+    let _linkscope_sources = linkscope::phase("config.managed_settings.sources");
     let mut out = Vec::new();
     for path in managed_settings_paths() {
         match std::fs::read_to_string(&path) {
@@ -1765,6 +1825,7 @@ pub fn load_cached(path: &Path) -> Config {
 /// Inner cache-and-load against an arbitrary path, returning a cheap shared
 /// pointer on cache hits.
 pub fn load_cached_arc(path: &Path) -> Arc<Config> {
+    let _linkscope_load = linkscope::phase("config.load_cached_arc");
     let generation = cache_generation();
     let canonical_path = config_path();
     let generation_only = path == canonical_path.as_path();
@@ -1773,6 +1834,12 @@ pub fn load_cached_arc(path: &Path) -> Arc<Config> {
     } else {
         std::fs::metadata(path).and_then(|m| m.modified()).ok()
     };
+    trace::record_cache_probe(trace::ConfigCacheTrace {
+        label: "config.cache.probe",
+        generation,
+        generation_only,
+        mtime_known: cur_mtime.is_some(),
+    });
 
     {
         let slot = CACHE.lock().unwrap_or_else(|e| e.into_inner());
@@ -1781,10 +1848,24 @@ pub fn load_cached_arc(path: &Path) -> Arc<Config> {
             && c.generation == generation
             && c.mtime == cur_mtime
         {
+            trace::record_cache_probe(trace::ConfigCacheTrace {
+                label: "config.cache.hit_shape",
+                generation,
+                generation_only,
+                mtime_known: cur_mtime.is_some(),
+            });
+            linkscope::record_items("config.cache.hit", 1);
             return Arc::clone(&c.config);
         }
     }
 
+    trace::record_cache_probe(trace::ConfigCacheTrace {
+        label: "config.cache.miss_shape",
+        generation,
+        generation_only,
+        mtime_known: cur_mtime.is_some(),
+    });
+    linkscope::record_items("config.cache.miss", 1);
     let config = Arc::new(load_from(path));
     let mut slot = CACHE.lock().unwrap_or_else(|e| e.into_inner());
     *slot = Some(Cached {
@@ -1806,6 +1887,8 @@ pub fn save_theme_to(
     path: &std::path::Path,
     theme_name: &str,
 ) -> Result<std::path::PathBuf, String> {
+    let _linkscope_save = linkscope::phase("config.save_theme");
+    trace_path_event("config.save_theme.start", path);
     if let Some(parent) = path.parent()
         && let Err(e) = std::fs::create_dir_all(parent)
     {
@@ -2164,6 +2247,22 @@ pub fn agent_disallowed<'a>(cfg: &'a Config, agent_name: &str) -> &'a [String] {
         .unwrap_or(&[])
 }
 
+fn trace_path_event(name: &'static str, path: &Path) {
+    if linkscope::is_enabled() {
+        linkscope::detail_event_fields(
+            name,
+            [linkscope::TraceField::text(
+                "path",
+                path.display().to_string(),
+            )],
+        );
+    }
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2206,6 +2305,42 @@ model = "openai/gpt-5"
             Some("anthropic/claude-opus-4-7")
         );
         assert!(cfg.agents.contains_key("researcher"));
+    }
+
+    #[test]
+    fn config_load_trace_records_shape_without_config_values_normal() {
+        linkscope::trace_detail_enable();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"
+theme = "private-theme-value"
+safe_mode = true
+
+[agents.private-agent-name]
+model = "private-model-value"
+
+[mcp.private-server-name]
+command = "private-command-value"
+"#,
+        )
+        .expect("write config");
+
+        let cfg = load_toml_from(&path);
+
+        assert!(cfg.safe_mode);
+        let snapshot = linkscope::snapshot();
+        let rendered = format!("{snapshot:?}");
+        assert!(rendered.contains("config.toml.load"));
+        assert!(rendered.contains("config.toml.shape"));
+        assert!(rendered.contains("agents"));
+        assert!(rendered.contains("mcp"));
+        assert!(!rendered.contains("private-theme-value"));
+        assert!(!rendered.contains("private-agent-name"));
+        assert!(!rendered.contains("private-model-value"));
+        assert!(!rendered.contains("private-server-name"));
+        assert!(!rendered.contains("private-command-value"));
     }
 
     #[test]

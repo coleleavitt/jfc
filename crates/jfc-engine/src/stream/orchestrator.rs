@@ -48,6 +48,10 @@ fn is_prompt_too_long_error(err_lower: &str) -> bool {
         || (err_lower.contains("max_tokens") && err_lower.contains("context limit"))
 }
 
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
+}
+
 fn log_provider_history_transform(
     transform: &ProviderHistoryTransform,
     raw_tokens: u64,
@@ -89,6 +93,17 @@ pub async fn stream_response(
     previous_message_id: Option<String>,
     overrides: StreamRequestOverrides,
 ) {
+    let message_count = usize_to_u64_saturating(messages.len());
+    let _linkscope_stream = linkscope::phase("stream.response");
+    let _linkscope_stream_trace = linkscope::trace_fields(
+        "stream.response",
+        [
+            linkscope::TraceField::text("provider", provider.name().to_owned()),
+            linkscope::TraceField::text("model", model.to_string()),
+            linkscope::TraceField::count("messages", message_count),
+        ],
+    );
+    linkscope::record_items("stream.messages", message_count);
     let _ = tx.try_send(EngineEvent::Stream(StreamEvent::Lifecycle(
         StreamLifecycleStatus::new(
             StreamLifecyclePhase::PreparingContext,
@@ -97,8 +112,10 @@ pub async fn stream_response(
     )));
 
     let mut messages = messages;
-    let mut prepared =
-        prepare_stream_request(provider.clone(), &messages, &model, overrides.clone()).await;
+    let mut prepared = {
+        let _linkscope_prepare = linkscope::phase("stream.prepare");
+        prepare_stream_request(provider.clone(), &messages, &model, overrides.clone()).await
+    };
     if let Some(overflow) = prepared.context_pressure.preflight_overflow() {
         if let Some(transform) = compact_provider_history(
             &messages,
@@ -148,7 +165,10 @@ pub async fn stream_response(
                 .unwrap_or(transform);
             log_provider_history_transform(&transform, overflow.raw_tokens, overflow.window_tokens);
             messages = transform.messages;
-            prepared = prepare_stream_request(provider.clone(), &messages, &model, overrides).await;
+            prepared = {
+                let _linkscope_prepare = linkscope::phase("stream.prepare");
+                prepare_stream_request(provider.clone(), &messages, &model, overrides).await
+            };
         } else {
             tracing::warn!(
                 target: "jfc::stream",
@@ -250,113 +270,116 @@ pub async fn stream_response(
             Some(format!("{} · {}", provider.name(), model)),
         ),
     )));
-    let stream = match open_stream_with_cancel_and_timeout(
-        provider.as_ref(),
-        Arc::clone(&messages),
-        &opts,
-        cancel.clone(),
-    )
-    .await
-    {
-        Ok(s) => {
-            tracing::debug!(target: "jfc::stream", "stream opened successfully");
-            let _ = tx.try_send(EngineEvent::Stream(StreamEvent::Lifecycle(
-                StreamLifecycleStatus::new(
-                    StreamLifecyclePhase::StreamOpened,
-                    Some("waiting for first event".to_string()),
-                ),
-            )));
-            s
-        }
-        Err(e) => {
-            let err_lower = e.to_string().to_lowercase();
-            if (err_lower.contains("thinking") && err_lower.contains("not supported"))
-                || err_lower.contains("adaptive thinking is not supported")
-            {
-                tracing::warn!(
-                    target: "jfc::stream",
-                    model = %model,
-                    error = %e,
-                    "stream rejected thinking parameter — retrying without thinking"
-                );
-                let mut fallback_opts = opts.clone();
-                fallback_opts.adaptive_thinking = false;
-                fallback_opts.thinking_budget = None;
-                fallback_opts.thinking_display = None;
+    let stream = {
+        let _linkscope_open = linkscope::phase("stream.open");
+        match open_stream_with_cancel_and_timeout(
+            provider.as_ref(),
+            Arc::clone(&messages),
+            &opts,
+            cancel.clone(),
+        )
+        .await
+        {
+            Ok(s) => {
+                tracing::debug!(target: "jfc::stream", "stream opened successfully");
                 let _ = tx.try_send(EngineEvent::Stream(StreamEvent::Lifecycle(
                     StreamLifecycleStatus::new(
-                        StreamLifecyclePhase::RetryingWithoutThinking,
-                        Some(model.to_string()),
+                        StreamLifecyclePhase::StreamOpened,
+                        Some("waiting for first event".to_string()),
                     ),
                 )));
-                match open_stream_with_cancel_and_timeout(
-                    provider.as_ref(),
-                    Arc::clone(&messages),
-                    &fallback_opts,
-                    cancel.clone(),
-                )
-                .await
+                s
+            }
+            Err(e) => {
+                let err_lower = e.to_string().to_lowercase();
+                if (err_lower.contains("thinking") && err_lower.contains("not supported"))
+                    || err_lower.contains("adaptive thinking is not supported")
                 {
-                    Ok(s) => s,
-                    Err(e2) => {
-                        if try_nonstreaming_fallback(
-                            provider.as_ref(),
-                            Arc::clone(&messages),
-                            &fallback_opts,
-                            &tx,
-                            &e2.to_string(),
-                            prepared.metadata.advertised_tool_count,
-                            prepared.metadata.action_expected,
-                        )
-                        .await
-                        {
+                    tracing::warn!(
+                        target: "jfc::stream",
+                        model = %model,
+                        error = %e,
+                        "stream rejected thinking parameter — retrying without thinking"
+                    );
+                    let mut fallback_opts = opts.clone();
+                    fallback_opts.adaptive_thinking = false;
+                    fallback_opts.thinking_budget = None;
+                    fallback_opts.thinking_display = None;
+                    let _ = tx.try_send(EngineEvent::Stream(StreamEvent::Lifecycle(
+                        StreamLifecycleStatus::new(
+                            StreamLifecyclePhase::RetryingWithoutThinking,
+                            Some(model.to_string()),
+                        ),
+                    )));
+                    match open_stream_with_cancel_and_timeout(
+                        provider.as_ref(),
+                        Arc::clone(&messages),
+                        &fallback_opts,
+                        cancel.clone(),
+                    )
+                    .await
+                    {
+                        Ok(s) => s,
+                        Err(e2) => {
+                            if try_nonstreaming_fallback(
+                                provider.as_ref(),
+                                Arc::clone(&messages),
+                                &fallback_opts,
+                                &tx,
+                                &e2.to_string(),
+                                prepared.metadata.advertised_tool_count,
+                                prepared.metadata.action_expected,
+                            )
+                            .await
+                            {
+                                return;
+                            }
+                            tracing::error!(target: "jfc::stream", error = %e2, "stream open failed (fallback without thinking)");
+                            let _ = tx
+                                .send(EngineEvent::Stream(StreamEvent::Error(e2.to_string())))
+                                .await;
                             return;
                         }
-                        tracing::error!(target: "jfc::stream", error = %e2, "stream open failed (fallback without thinking)");
-                        let _ = tx
-                            .send(EngineEvent::Stream(StreamEvent::Error(e2.to_string())))
-                            .await;
+                    }
+                } else if is_prompt_too_long_error(&err_lower) {
+                    // v132 mid-stream compaction trigger. The pre-submit
+                    // path catches the obvious cases via `compact_level`,
+                    // but estimator drift means the API can still reject
+                    // a turn with prompt_too_long. Surface a system-level
+                    // signal so the main loop fires `/compact` and re-
+                    // queues the same prompt; the user sees a brief toast
+                    // instead of a hard failure.
+                    tracing::warn!(
+                        target: "jfc::stream",
+                        error = %e,
+                        "stream rejected: prompt too long — requesting auto-compact"
+                    );
+                    let _ = tx
+                        .send(EngineEvent::Stream(StreamEvent::Error(format!(
+                            "auto-compact: {e}"
+                        ))))
+                        .await;
+                    return;
+                } else {
+                    if try_nonstreaming_fallback(
+                        provider.as_ref(),
+                        Arc::clone(&messages),
+                        &opts,
+                        &tx,
+                        &e.to_string(),
+                        prepared.metadata.advertised_tool_count,
+                        prepared.metadata.action_expected,
+                    )
+                    .await
+                    {
                         return;
                     }
-                }
-            } else if is_prompt_too_long_error(&err_lower) {
-                // v132 mid-stream compaction trigger. The pre-submit
-                // path catches the obvious cases via `compact_level`,
-                // but estimator drift means the API can still reject
-                // a turn with prompt_too_long. Surface a system-level
-                // signal so the main loop fires `/compact` and re-
-                // queues the same prompt; the user sees a brief toast
-                // instead of a hard failure.
-                tracing::warn!(
-                    target: "jfc::stream",
-                    error = %e,
-                    "stream rejected: prompt too long — requesting auto-compact"
-                );
-                let _ = tx
-                    .send(EngineEvent::Stream(StreamEvent::Error(format!(
-                        "auto-compact: {e}"
-                    ))))
-                    .await;
-                return;
-            } else {
-                if try_nonstreaming_fallback(
-                    provider.as_ref(),
-                    Arc::clone(&messages),
-                    &opts,
-                    &tx,
-                    &e.to_string(),
-                    prepared.metadata.advertised_tool_count,
-                    prepared.metadata.action_expected,
-                )
-                .await
-                {
+                    tracing::error!(target: "jfc::stream", error = %e, "stream open failed");
+                    let _ = tx
+                        .send(EngineEvent::Stream(StreamEvent::Error(e.to_string())))
+                        .await;
                     return;
                 }
-                tracing::error!(target: "jfc::stream", error = %e, "stream open failed");
-                let _ = tx
-                    .send(EngineEvent::Stream(StreamEvent::Error(e.to_string())))
-                    .await;
-                return;
             }
         }
     };

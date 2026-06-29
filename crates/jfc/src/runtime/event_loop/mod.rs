@@ -44,6 +44,56 @@ impl AppEvent {
     }
 }
 
+fn app_event_kind(event: &AppEvent) -> &'static str {
+    match event {
+        AppEvent::Ui(UiEvent::Term(term)) => term_event_kind(term),
+        AppEvent::Ui(UiEvent::Tick) => "ui.tick",
+        AppEvent::Engine(engine) => engine_event_kind(engine),
+    }
+}
+
+fn term_event_kind(event: &TermEvent) -> &'static str {
+    match event {
+        TermEvent::FocusGained => "ui.term.focus_gained",
+        TermEvent::FocusLost => "ui.term.focus_lost",
+        TermEvent::Key(_) => "ui.term.key",
+        TermEvent::Mouse(_) => "ui.term.mouse",
+        TermEvent::Paste(_) => "ui.term.paste",
+        TermEvent::Resize(_, _) => "ui.term.resize",
+    }
+}
+
+fn engine_event_kind(event: &EngineEvent) -> &'static str {
+    match event {
+        EngineEvent::ScopedStream { .. } => "engine.scoped_stream",
+        EngineEvent::Stream(_) => "engine.stream",
+        EngineEvent::Tool(_) => "engine.tool",
+        EngineEvent::Compaction(_) => "engine.compaction",
+        EngineEvent::Provider(_) => "engine.provider",
+        EngineEvent::Task(_) => "engine.task",
+        EngineEvent::Team(_) => "engine.team",
+        EngineEvent::Goal(_) => "engine.goal",
+        EngineEvent::Voice(_) => "engine.voice",
+        EngineEvent::WorkflowProgress(_) => "engine.workflow_progress",
+        EngineEvent::Control(_) => "engine.control",
+        EngineEvent::Frontend(_) => "engine.frontend",
+    }
+}
+
+fn event_burst_counts(events: &[AppEvent]) -> (u64, u64, u64) {
+    let mut term = 0u64;
+    let mut tick = 0u64;
+    let mut engine = 0u64;
+    for event in events {
+        match event {
+            AppEvent::Ui(UiEvent::Term(_)) => term = term.saturating_add(1),
+            AppEvent::Ui(UiEvent::Tick) => tick = tick.saturating_add(1),
+            AppEvent::Engine(_) => engine = engine.saturating_add(1),
+        }
+    }
+    (term, tick, engine)
+}
+
 pub(crate) mod handlers;
 
 fn prioritize_terminal_events(events: &mut Vec<AppEvent>) {
@@ -91,6 +141,8 @@ pub(crate) async fn run(
     initial_permission_mode: Option<crate::app::PermissionMode>,
     cli_config: crate::CliRuntimeConfig,
 ) -> anyhow::Result<()> {
+    let _linkscope_loop = linkscope::trace("ui.event_loop");
+    linkscope::record_rss("ui.event_loop.start");
     let (tx, mut rx): (EventSender, EventReceiver) = mpsc::channel(APP_EVENT_BUFFER);
     let (term_tx, mut term_rx) = mpsc::unbounded_channel::<event::Event>();
     // Frontend-local tick channel. Frame ticks never enter the engine bus —
@@ -237,8 +289,8 @@ pub(crate) async fn run(
         .is_some_and(|dashboard| dashboard.enabled)
     {
         // Turn on in-process pipeline profiling (near-zero cost otherwise) so the
-        // audit panel can show phase timings (turn.submit / turn.compact / …).
-        linkscope::enable();
+        // audit panel can show phase timings (turn.submit / turn.compact / ...).
+        crate::cli::profiling::enable_linkscope_for_dashboard();
         let port = startup_config
             .dashboard
             .as_ref()
@@ -973,10 +1025,32 @@ pub(crate) async fn run(
         // Burst-recv: block on the first event, then drain everything currently
         // queued without re-awaiting. Process them all, draw once at the end.
         // This collapses N rapid stream chunks into 1 frame instead of N frames.
-        let first_event = loop {
-            if !term_events_open {
+        let first_event = {
+            let _linkscope_wait = linkscope::phase("ui.event_wait");
+            loop {
+                if !term_events_open {
+                    tokio::select! {
+                        biased;
+                        ui = ui_rx.recv() => {
+                            if let Some(u) = ui { break AppEvent::Ui(u); }
+                        }
+                        app_event = rx.recv() => {
+                            break match app_event {
+                                Some(e) => AppEvent::Engine(e),
+                                None => break 'main_loop,
+                            };
+                        }
+                    }
+                    continue;
+                }
                 tokio::select! {
                     biased;
+                    term = term_rx.recv() => {
+                        match term {
+                            Some(ev) => break AppEvent::Ui(UiEvent::Term(ev)),
+                            None => term_events_open = false,
+                        }
+                    }
                     ui = ui_rx.recv() => {
                         if let Some(u) = ui { break AppEvent::Ui(u); }
                     }
@@ -986,25 +1060,6 @@ pub(crate) async fn run(
                             None => break 'main_loop,
                         };
                     }
-                }
-                continue;
-            }
-            tokio::select! {
-                biased;
-                term = term_rx.recv() => {
-                    match term {
-                        Some(ev) => break AppEvent::Ui(UiEvent::Term(ev)),
-                        None => term_events_open = false,
-                    }
-                }
-                ui = ui_rx.recv() => {
-                    if let Some(u) = ui { break AppEvent::Ui(u); }
-                }
-                app_event = rx.recv() => {
-                    break match app_event {
-                        Some(e) => AppEvent::Engine(e),
-                        None => break 'main_loop,
-                    };
                 }
             }
         };
@@ -1035,6 +1090,22 @@ pub(crate) async fn run(
             }
         }
         prioritize_terminal_events(&mut events);
+        let first_kind = app_event_kind(&events[0]);
+        let (term_events, tick_events, engine_events) = event_burst_counts(&events);
+        let event_count = usize_to_u64_saturating(events.len());
+        linkscope::record_items("ui.event_burst", event_count);
+        let _linkscope_burst = linkscope::phase("ui.event_burst");
+        let _linkscope_burst_trace = linkscope::trace_fields(
+            "ui.event_burst",
+            [
+                linkscope::TraceField::count("events", event_count),
+                linkscope::TraceField::count("term_events", term_events),
+                linkscope::TraceField::count("tick_events", tick_events),
+                linkscope::TraceField::count("engine_events", engine_events),
+                linkscope::TraceField::text("first_kind", first_kind),
+                linkscope::TraceField::count("term_events_open", u64::from(term_events_open)),
+            ],
+        );
 
         // Track whether any event in this burst dirties the screen. Pure Tick
         // events with no streaming/animation skip the draw entirely — eliminates
@@ -1044,6 +1115,15 @@ pub(crate) async fn run(
         let mut force_draw = false;
 
         for ev in events {
+            let event_kind = app_event_kind(&ev);
+            linkscope::detail_event_fields(
+                "ui.event.handle",
+                [
+                    linkscope::TraceField::text("kind", event_kind),
+                    linkscope::TraceField::count("pending_draw", u64::from(pending_draw)),
+                    linkscope::TraceField::count("needs_draw", u64::from(needs_draw)),
+                ],
+            );
             // Mirror engine events to remote-control clients. Non-blocking;
             // returns early when remote control is inactive. Frontend-local
             // events (keys, ticks) are never mirrored.
@@ -1180,10 +1260,29 @@ pub(crate) async fn run(
         }
 
         let elapsed_since_draw = last_draw.elapsed();
-        if needs_draw && (force_draw || elapsed_since_draw >= FRAME_BUDGET) {
+        let should_draw_now = needs_draw && (force_draw || elapsed_since_draw >= FRAME_BUDGET);
+        linkscope::detail_event_fields(
+            "ui.draw.decision",
+            [
+                linkscope::TraceField::count("needs_draw", u64::from(needs_draw)),
+                linkscope::TraceField::count("force_draw", u64::from(force_draw)),
+                linkscope::TraceField::count("pending_draw", u64::from(pending_draw)),
+                linkscope::TraceField::count(
+                    "want_streaming_cursor",
+                    u64::from(want_streaming_cursor),
+                ),
+                linkscope::TraceField::count(
+                    "elapsed_since_draw_ms",
+                    u64::try_from(elapsed_since_draw.as_millis()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::count("should_draw_now", u64::from(should_draw_now)),
+            ],
+        );
+        if should_draw_now {
             // `terminal.draw` flushes stdout synchronously; `block_in_place`
             // tells the multi-threaded runtime to migrate other tasks off this
             // worker so they keep running while we hold the I/O.
+            let _linkscope_blocking_draw = linkscope::phase("ui.draw.block_in_place");
             tokio::task::block_in_place(|| -> io::Result<()> {
                 app.engine.sync_task_completions();
                 draw_synchronized(terminal, &mut app)?;
@@ -1216,6 +1315,10 @@ pub(crate) async fn run(
     jfc_engine::learn_lifecycle::on_session_end(&app.engine.messages, &app.engine.cwd).await;
 
     Ok(())
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 /// Walk the config to pick the right `reasoning_effort` for `model`.

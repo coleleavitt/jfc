@@ -8,6 +8,7 @@ publish.workspace = true
 [dependencies]
 chrono = { workspace = true }
 dirs = "5"
+linkscope = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "time"] }
 serde = { workspace = true }

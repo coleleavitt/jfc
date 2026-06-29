@@ -7,6 +7,7 @@ edition.workspace = true
 dotenvy = "0.15"
 jfc-core = { path = "../jfc-core" }
 jfc-provider = { path = "../jfc-provider" }
+linkscope = { workspace = true }
 rmcp = { version = "1.7", default-features = false, features = [
     "client",
     "transport-child-process",

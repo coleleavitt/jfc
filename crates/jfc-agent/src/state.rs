@@ -16,6 +16,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::id::AgentId;
 
+mod trace;
+
 /// Lifecycle status shared by every agent, regardless of backend.
 ///
 /// Merges `AgentStatus` (engine), `BackgroundAgentStatus` (daemon),
@@ -43,18 +45,33 @@ pub enum AgentStatus {
 impl AgentStatus {
     /// Whether this is a terminal state (no further transitions expected).
     pub fn is_terminal(self) -> bool {
-        matches!(
+        let terminal = matches!(
             self,
             AgentStatus::Completed | AgentStatus::Failed | AgentStatus::Cancelled
-        )
+        );
+        trace::status_classification("agent.status.is_terminal", self, terminal);
+        terminal
     }
 
     /// Whether the agent is still alive (consuming resources).
     pub fn is_active(self) -> bool {
-        matches!(
+        let active = matches!(
             self,
             AgentStatus::Pending | AgentStatus::Running | AgentStatus::Idle
-        )
+        );
+        trace::status_classification("agent.status.is_active", self, active);
+        active
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            AgentStatus::Pending => "pending",
+            AgentStatus::Running => "running",
+            AgentStatus::Idle => "idle",
+            AgentStatus::Completed => "completed",
+            AgentStatus::Failed => "failed",
+            AgentStatus::Cancelled => "cancelled",
+        }
     }
 }
 
@@ -85,31 +102,37 @@ pub enum AgentRole {
 impl AgentRole {
     /// Short label for UI grouping (e.g. the roster panel headers).
     pub fn label(&self) -> &'static str {
-        match self {
+        let label = match self {
             AgentRole::Solo => "solo",
             AgentRole::Teammate { .. } => "teammate",
             AgentRole::Solver { .. } => "solver",
             AgentRole::Validator { .. } => "validator",
             AgentRole::Council { .. } => "council",
-        }
+        };
+        linkscope::record_items(trace::role_metric_label(label), 1);
+        label
     }
 
     /// The team this agent belongs to, if any.
     pub fn team_name(&self) -> Option<&str> {
-        match self {
+        let value = match self {
             AgentRole::Teammate { team_name } => Some(team_name.as_str()),
             _ => None,
-        }
+        };
+        trace::role_accessor("agent.role.team_name", self, value.map(str::len));
+        value
     }
 
     /// The bounty this agent is working on, if any.
     pub fn bounty_id(&self) -> Option<&str> {
-        match self {
+        let value = match self {
             AgentRole::Solver { bounty_id, .. } | AgentRole::Validator { bounty_id } => {
                 Some(bounty_id.as_str())
             }
             _ => None,
-        }
+        };
+        trace::role_accessor("agent.role.bounty_id", self, value.map(str::len));
+        value
     }
 }
 
@@ -157,11 +180,13 @@ pub struct AgentState {
 impl AgentState {
     /// Create a freshly-spawned agent in [`AgentStatus::Pending`].
     pub fn new(id: AgentId, role: AgentRole, description: impl Into<String>) -> Self {
-        Self {
+        let _linkscope_state = linkscope::phase("agent.state.new");
+        let description = description.into();
+        let state = Self {
             id,
             status: AgentStatus::Pending,
             role,
-            description: description.into(),
+            description,
             token_count: 0,
             tool_use_count: 0,
             last_tool: None,
@@ -172,27 +197,35 @@ impl AgentState {
             summary: None,
             trust_score: None,
             idle_reason: None,
-        }
+        };
+        trace::state("agent.state.new.detail", &state);
+        state
     }
 
     /// Mark the agent terminally completed with an optional summary.
     pub fn complete(&mut self, summary: Option<String>) {
+        let _linkscope_complete = linkscope::phase("agent.state.complete");
         self.status = AgentStatus::Completed;
         self.completed_at = Some(SystemTime::now());
         self.summary = summary;
+        trace::state("agent.state.complete.detail", self);
     }
 
     /// Mark the agent terminally failed with an error message.
     pub fn fail(&mut self, error: impl Into<String>) {
+        let _linkscope_fail = linkscope::phase("agent.state.fail");
         self.status = AgentStatus::Failed;
         self.completed_at = Some(SystemTime::now());
         self.error = Some(error.into());
+        trace::state("agent.state.fail.detail", self);
     }
 
     /// Mark the agent cancelled (user abort / takeover).
     pub fn cancel(&mut self) {
+        let _linkscope_cancel = linkscope::phase("agent.state.cancel");
         self.status = AgentStatus::Cancelled;
         self.completed_at = Some(SystemTime::now());
+        trace::state("agent.state.cancel.detail", self);
     }
 }
 
@@ -214,80 +247,4 @@ pub struct AgentResult {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::id::AgentId;
-
-    #[test]
-    fn status_terminal_classification_normal() {
-        assert!(AgentStatus::Completed.is_terminal());
-        assert!(AgentStatus::Failed.is_terminal());
-        assert!(AgentStatus::Cancelled.is_terminal());
-        assert!(!AgentStatus::Running.is_terminal());
-        assert!(!AgentStatus::Idle.is_terminal());
-        assert!(!AgentStatus::Pending.is_terminal());
-    }
-
-    #[test]
-    fn status_active_classification_normal() {
-        assert!(AgentStatus::Pending.is_active());
-        assert!(AgentStatus::Running.is_active());
-        assert!(AgentStatus::Idle.is_active());
-        assert!(!AgentStatus::Completed.is_active());
-    }
-
-    #[test]
-    fn role_accessors_normal() {
-        let team = AgentRole::Teammate {
-            team_name: "alpha".into(),
-        };
-        assert_eq!(team.team_name(), Some("alpha"));
-        assert_eq!(team.bounty_id(), None);
-        assert_eq!(team.label(), "teammate");
-
-        let solver = AgentRole::Solver {
-            bounty_id: "b1".into(),
-            worktree: None,
-        };
-        assert_eq!(solver.bounty_id(), Some("b1"));
-        assert_eq!(solver.team_name(), None);
-    }
-
-    #[test]
-    fn state_lifecycle_transitions_normal() {
-        let mut s = AgentState::new(AgentId::named("x"), AgentRole::Solo, "do work");
-        assert_eq!(s.status, AgentStatus::Pending);
-        s.status = AgentStatus::Running;
-        s.complete(Some("done".into()));
-        assert_eq!(s.status, AgentStatus::Completed);
-        assert!(s.completed_at.is_some());
-        assert_eq!(s.summary.as_deref(), Some("done"));
-    }
-
-    #[test]
-    fn state_fail_records_error_robust() {
-        let mut s = AgentState::new(AgentId::named("x"), AgentRole::Solo, "do work");
-        s.fail("boom");
-        assert_eq!(s.status, AgentStatus::Failed);
-        assert_eq!(s.error.as_deref(), Some("boom"));
-        assert!(s.completed_at.is_some());
-    }
-
-    #[test]
-    fn state_serde_roundtrip_with_role_payload_robust() {
-        let mut s = AgentState::new(
-            AgentId::stable("solver", 2),
-            AgentRole::Solver {
-                bounty_id: "b9".into(),
-                worktree: Some(PathBuf::from("/tmp/wt")),
-            },
-            "solve it",
-        );
-        s.trust_score = Some(7);
-        let json = serde_json::to_string(&s).unwrap();
-        let back: AgentState = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.id, s.id);
-        assert_eq!(back.role.bounty_id(), Some("b9"));
-        assert_eq!(back.trust_score, Some(7));
-    }
-}
+mod tests;

@@ -311,12 +311,26 @@ where
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = Result<T, RetryableError>>,
 {
+    let _linkscope_retry = linkscope::phase("retry.with_retry");
+    if linkscope::is_enabled() {
+        linkscope::event_fields(
+            "retry.start",
+            [linkscope::TraceField::text("operation", operation_name)],
+        );
+    }
     let mut last_error = String::new();
 
     for attempt in 0..=config.max_retries {
+        linkscope::record_items("retry.attempt", 1);
         match make_request().await {
-            Ok(val) => return Ok(val),
+            Ok(val) => {
+                if attempt > 0 {
+                    linkscope::record_items("retry.succeeded_after_retry", 1);
+                }
+                return Ok(val);
+            }
             Err(RetryableError::Retriable { status, message }) => {
+                linkscope::record_items("retry.retriable_error", 1);
                 last_error = message.clone();
                 if attempt < config.max_retries {
                     let delay = config.delay_for_attempt(attempt);
@@ -331,6 +345,7 @@ where
                     );
                     tokio::time::sleep(delay).await;
                 } else {
+                    linkscope::record_items("retry.exhausted", 1);
                     warn!(
                         target: "jfc::retry",
                         operation = operation_name,
@@ -340,6 +355,7 @@ where
                 }
             }
             Err(RetryableError::Fatal(msg)) => {
+                linkscope::record_items("retry.fatal", 1);
                 debug!(target: "jfc::retry", operation = operation_name, "fatal error — not retrying");
                 return Err(msg);
             }

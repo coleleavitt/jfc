@@ -14,6 +14,7 @@ mod openalex;
 mod primo;
 mod searxng;
 mod semantic_scholar;
+mod trace;
 mod wikipedia;
 
 pub use arxiv::ArXivBackend;

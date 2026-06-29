@@ -26,12 +26,29 @@ pub struct Tiered<T: ?Sized> {
 
 impl<T: ?Sized> Tiered<T> {
     pub fn new() -> Self {
+        let _linkscope_new = linkscope::phase("compress.signals.tiered.new");
+        linkscope::detail_event_fields(
+            "compress.signals.tiered.new",
+            [linkscope::TraceField::count("tiers", 0)],
+        );
         Self { tiers: Vec::new() }
     }
 
     /// Push a tier onto the stack. Order matters: most-precise first.
     pub fn with(mut self, tier: Box<T>) -> Self {
+        let _linkscope_with = linkscope::phase("compress.signals.tiered.with");
+        let before = self.tiers.len();
         self.tiers.push(tier);
+        linkscope::detail_event_fields(
+            "compress.signals.tiered.with",
+            [
+                linkscope::TraceField::count("before", u64::try_from(before).unwrap_or(u64::MAX)),
+                linkscope::TraceField::count(
+                    "after",
+                    u64::try_from(self.tiers.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         self
     }
 
@@ -52,16 +69,54 @@ impl<T: ?Sized> Default for Tiered<T> {
 
 impl LineImportanceDetector for Tiered<dyn LineImportanceDetector> {
     fn score(&self, line: &str, ctx: ImportanceContext) -> ImportanceSignal {
+        let _linkscope_score = linkscope::phase("compress.signals.tiered.score");
+        linkscope::detail_event_fields(
+            "compress.signals.tiered.score.start",
+            [
+                linkscope::TraceField::text("context", format!("{ctx:?}")),
+                linkscope::TraceField::count(
+                    "tiers",
+                    u64::try_from(self.tiers.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::bytes(
+                    "line_bytes",
+                    u64::try_from(line.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         let mut best = ImportanceSignal::neutral();
-        for tier in &self.tiers {
+        for (index, tier) in self.tiers.iter().enumerate() {
             let signal = tier.score(line, ctx);
             if signal.confidence >= ESCALATE_THRESHOLD {
+                linkscope::event_fields(
+                    "compress.signals.tiered.score.result",
+                    [
+                        linkscope::TraceField::text("outcome", "short_circuit"),
+                        linkscope::TraceField::count(
+                            "tier",
+                            u64::try_from(index).unwrap_or(u64::MAX),
+                        ),
+                        linkscope::TraceField::text("category", format!("{:?}", signal.category)),
+                        linkscope::TraceField::text(
+                            "confidence",
+                            format!("{:.3}", signal.confidence),
+                        ),
+                    ],
+                );
                 return signal;
             }
             if signal.confidence > best.confidence {
                 best = signal;
             }
         }
+        linkscope::detail_event_fields(
+            "compress.signals.tiered.score.result",
+            [
+                linkscope::TraceField::text("outcome", "best_seen"),
+                linkscope::TraceField::text("category", format!("{:?}", best.category)),
+                linkscope::TraceField::text("confidence", format!("{:.3}", best.confidence)),
+            ],
+        );
         best
     }
 }

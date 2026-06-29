@@ -39,6 +39,7 @@ static SANDBOX_ACTIVE: AtomicBool = AtomicBool::new(false);
 /// Mark the sandbox as active. Call this after successful landlock
 /// initialization at process startup.
 pub fn mark_sandbox_active() {
+    let _linkscope_active = linkscope::phase("engine.sandbox.mark_active");
     SANDBOX_ACTIVE.store(true, Ordering::Relaxed);
 }
 
@@ -138,6 +139,21 @@ static ACTIVE_BASH_SANDBOX: RwLock<Option<BashSandboxConfig>> = RwLock::new(None
 
 /// Install the current bash sandbox config (called when `/sandbox` toggles).
 pub fn install_bash_sandbox_config(cfg: BashSandboxConfig) {
+    let _linkscope_install = linkscope::phase("engine.sandbox.install_bash_config");
+    linkscope::event_fields(
+        "engine.sandbox.install_bash_config",
+        [
+            linkscope::TraceField::count("enabled", u64::from(cfg.enabled)),
+            linkscope::TraceField::count(
+                "allow_write",
+                u64::try_from(cfg.filesystem.allow_write.len()).unwrap_or(u64::MAX),
+            ),
+            linkscope::TraceField::count(
+                "allow_domains",
+                u64::try_from(cfg.network.allowed_domains.len()).unwrap_or(u64::MAX),
+            ),
+        ],
+    );
     if let Ok(mut guard) = ACTIVE_BASH_SANDBOX.write() {
         *guard = Some(cfg);
     }
@@ -145,6 +161,7 @@ pub fn install_bash_sandbox_config(cfg: BashSandboxConfig) {
 
 /// Get a snapshot of the active bash sandbox config.
 pub fn active_bash_sandbox_config() -> Option<BashSandboxConfig> {
+    let _linkscope_active = linkscope::phase("engine.sandbox.active_bash_config");
     ACTIVE_BASH_SANDBOX.read().ok().and_then(|g| g.clone())
 }
 
@@ -159,6 +176,7 @@ pub fn active_bash_sandbox_config() -> Option<BashSandboxConfig> {
 /// Test-support only — un-gated so downstream crates' suites can call it.
 #[doc(hidden)]
 pub fn reset_active_bash_sandbox_for_test() {
+    let _linkscope_reset = linkscope::phase("engine.sandbox.reset_active_bash_config_for_test");
     if let Ok(mut guard) = ACTIVE_BASH_SANDBOX.write() {
         *guard = None;
     }
@@ -170,7 +188,27 @@ pub fn reset_active_bash_sandbox_for_test() {
 /// Returns `Some(argv)` where `argv` is the full bwrap command to prepend
 /// before `["bash", "-c", command]`.
 pub fn build_bwrap_argv(cfg: &BashSandboxConfig, cwd: &std::path::Path) -> Option<Vec<String>> {
+    let _linkscope_build = linkscope::phase("engine.sandbox.build_bwrap_argv");
+    linkscope::event_fields(
+        "engine.sandbox.build_bwrap_argv",
+        [
+            linkscope::TraceField::count("enabled", u64::from(cfg.enabled)),
+            linkscope::TraceField::text("cwd", cwd.display().to_string()),
+            linkscope::TraceField::count(
+                "allow_write",
+                u64::try_from(cfg.filesystem.allow_write.len()).unwrap_or(u64::MAX),
+            ),
+            linkscope::TraceField::count(
+                "deny_read",
+                u64::try_from(cfg.filesystem.deny_read.len()).unwrap_or(u64::MAX),
+            ),
+        ],
+    );
     if !cfg.enabled {
+        linkscope::event_fields(
+            "engine.sandbox.build_bwrap_argv.result",
+            [linkscope::TraceField::text("status", "disabled")],
+        );
         return None;
     }
     let bwrap_path = cfg.bwrap_path.clone().or_else(find_bwrap)?;
@@ -256,6 +294,20 @@ pub fn build_bwrap_argv(cfg: &BashSandboxConfig, cwd: &std::path::Path) -> Optio
         argv.push("--tmpfs".into());
         argv.push(path.clone());
     }
+    linkscope::event_fields(
+        "engine.sandbox.build_bwrap_argv.result",
+        [
+            linkscope::TraceField::text(
+                "network",
+                if proxy_enforced {
+                    "proxy_enforced"
+                } else {
+                    "unshare_net"
+                },
+            ),
+            linkscope::TraceField::count("argv", u64::try_from(argv.len()).unwrap_or(u64::MAX)),
+        ],
+    );
     Some(argv)
 }
 
@@ -264,6 +316,7 @@ pub fn build_bwrap_argv(cfg: &BashSandboxConfig, cwd: &std::path::Path) -> Optio
 pub fn bash_sandbox_config_from_settings(
     settings: &crate::config::SandboxConfig,
 ) -> BashSandboxConfig {
+    let _linkscope_config = linkscope::phase("engine.sandbox.config_from_settings");
     BashSandboxConfig {
         enabled: settings.enabled.unwrap_or(true),
         fail_if_unavailable: settings.fail_if_unavailable.unwrap_or(false),
@@ -293,6 +346,7 @@ pub fn bash_sandbox_config_from_settings(
 }
 
 pub fn rsi_external_worker_sandbox(cwd: &Path) -> jfc_learn::RsiSandboxEnforcement {
+    let _linkscope_rsi = linkscope::phase("engine.sandbox.rsi_external_worker");
     let cfg = BashSandboxConfig {
         enabled: true,
         fail_if_unavailable: true,
@@ -314,6 +368,7 @@ pub fn rsi_external_worker_sandbox(cwd: &Path) -> jfc_learn::RsiSandboxEnforceme
 }
 
 pub fn rsi_curator_worker_config(cwd: &Path) -> Option<jfc_learn::RsiCuratorWorkerConfig> {
+    let _linkscope_rsi = linkscope::phase("engine.sandbox.rsi_curator_worker_config");
     let explicit = std::env::var_os("JFC_RSI_WORKER_BIN").map(PathBuf::from);
     if cfg!(test) && explicit.is_none() {
         return None;

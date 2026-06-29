@@ -1,3 +1,4 @@
+use crate::rsi_curator::ApplyToStore;
 use crate::rsi_curator::{
     RsiCurator, RsiCuratorConfig, RsiOutcome, RsiPromotionPolicy, RsiToolStep, RsiTrace,
 };

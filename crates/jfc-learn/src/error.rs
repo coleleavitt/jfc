@@ -36,4 +36,10 @@ pub enum LearnError {
 
     #[error("Contract violation: {message}")]
     ContractViolation { message: String },
+
+    #[error("RSI curator error: {source}")]
+    Rsi {
+        #[from]
+        source: rsi_rs::RsiError,
+    },
 }

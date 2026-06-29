@@ -21,6 +21,7 @@ fs2 = { workspace = true }
 gcp_auth = "0.12.7"
 hmac = "0.12"
 hex = { workspace = true }
+linkscope = { workspace = true }
 rand = "0.10"
 regex = { workspace = true }
 reqwest = { workspace = true }

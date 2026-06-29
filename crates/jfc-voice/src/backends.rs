@@ -18,6 +18,7 @@ use crate::config::{SttBackendKind, VoiceConfig};
 ///
 /// Returns `None` if the audio is silent or empty.
 pub async fn transcribe(pcm: &[u8], cfg: &VoiceConfig) -> anyhow::Result<Option<String>> {
+    let _linkscope_transcribe = linkscope::phase("voice.stt.transcribe");
     transcribe_with_token(pcm, cfg, None).await
 }
 
@@ -26,6 +27,15 @@ pub async fn transcribe_with_token(
     cfg: &VoiceConfig,
     oauth_token: Option<&str>,
 ) -> anyhow::Result<Option<String>> {
+    let _linkscope_transcribe = linkscope::phase("voice.stt.transcribe_with_token");
+    linkscope::event_fields(
+        "voice.stt.transcribe_with_token",
+        [
+            linkscope::TraceField::bytes("pcm_bytes", u64::try_from(pcm.len()).unwrap_or(u64::MAX)),
+            linkscope::TraceField::text("backend", format!("{:?}", cfg.effective_backend())),
+            linkscope::TraceField::count("oauth_token", u64::from(oauth_token.is_some())),
+        ],
+    );
     if pcm.is_empty() {
         debug!(target: "jfc::voice::stt", "transcribe called with empty PCM");
         return Ok(None);
@@ -152,6 +162,7 @@ async fn try_anthropic_ws(
     cfg: &VoiceConfig,
     oauth_token: Option<&str>,
 ) -> anyhow::Result<Option<String>> {
+    let _linkscope_ws = linkscope::phase("voice.stt.anthropic_ws");
     let token = resolve_oauth_token(oauth_token)?;
 
     let http = cfg
@@ -186,6 +197,7 @@ async fn try_anthropic_batch(
     cfg: &VoiceConfig,
     oauth_token: Option<&str>,
 ) -> anyhow::Result<Option<String>> {
+    let _linkscope_batch = linkscope::phase("voice.stt.anthropic_batch");
     // IMPORTANT — Anthropic has no public batch REST transcription endpoint.
     //
     // Claude Code does speech-to-text over a *WebSocket* stream
@@ -279,6 +291,7 @@ fn resolve_oauth_token(token: Option<&str>) -> anyhow::Result<std::borrow::Cow<'
 // ── OpenAI Whisper API ────────────────────────────────────────────────────────
 
 async fn try_openai_whisper(wav: &[u8], cfg: &VoiceConfig) -> anyhow::Result<Option<String>> {
+    let _linkscope_openai = linkscope::phase("voice.stt.openai_whisper");
     let api_key = cfg
         .openai_api_key
         .as_deref()
@@ -331,6 +344,7 @@ async fn try_openai_whisper(wav: &[u8], cfg: &VoiceConfig) -> anyhow::Result<Opt
 // ── Local whisper.cpp binary ──────────────────────────────────────────────────
 
 async fn try_local_whisper(wav: &[u8], cfg: &VoiceConfig) -> anyhow::Result<Option<String>> {
+    let _linkscope_local = linkscope::phase("voice.stt.local_whisper");
     // Find the binary
     let bin = cfg
         .local_whisper_bin
@@ -408,6 +422,7 @@ async fn try_local_whisper(wav: &[u8], cfg: &VoiceConfig) -> anyhow::Result<Opti
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn nonempty(s: String) -> Option<String> {
+    let _linkscope_nonempty = linkscope::phase("voice.stt.nonempty");
     let trimmed = collapse_repeats(s.trim());
     if trimmed.is_empty() {
         return None;
@@ -541,6 +556,7 @@ fn collapse_repeats(text: &str) -> String {
 use crate::platform::which;
 
 async fn write_temp_wav(wav: &[u8]) -> anyhow::Result<std::path::PathBuf> {
+    let _linkscope_temp = linkscope::phase("voice.stt.write_temp_wav");
     use std::time::{SystemTime, UNIX_EPOCH};
     let ts = SystemTime::now()
         .duration_since(UNIX_EPOCH)

@@ -12,6 +12,7 @@ use self::api::{discover_instances, fetch_page};
 use self::config::{
     FourGetRequest, configured_instances, configured_scrapers, instance_limit, page_fanout_limit,
 };
+use super::trace::{self, BackendResultTrace, BackendStart};
 
 pub struct FourGetBackend;
 
@@ -26,23 +27,33 @@ impl SearchBackend for FourGetBackend {
     }
 
     async fn search(&self, query: &str, max_results: usize) -> BackendResult {
+        let _linkscope_search = linkscope::phase("web.backend.fourget.search");
+        trace::backend_start(BackendStart {
+            backend: "fourget",
+            query,
+            max_results,
+        });
         search_fourget_structured(query, max_results).await
     }
 
     fn timeout(&self) -> Duration {
+        trace::timeout("fourget", Duration::from_secs(45));
         Duration::from_secs(45)
     }
 }
 
 pub async fn search_fourget_structured(query: &str, max_results: usize) -> BackendResult {
+    let _linkscope_search = linkscope::phase("web.backend.fourget.structured");
     let target = max_results.clamp(1, 100);
     let request = FourGetRequest::parse(query);
     let client = crate::http_client()?;
     let instances = discover_instances(&client, configured_instances(), instance_limit()).await;
+    trace::count("web.backend.fourget.instances", instances.len());
     let scrapers = request
         .scraper
         .map(|scraper| vec![scraper.to_owned()])
         .unwrap_or_else(configured_scrapers);
+    trace::count("web.backend.fourget.scrapers", scrapers.len());
     let mut states = SearchStates::new(instances, scrapers, page_fanout_limit());
 
     states.collect(&client, request.query, target).await
@@ -94,8 +105,10 @@ impl SearchStates {
         let mut seen = HashSet::new();
 
         while results.len() < target && self.states.iter().any(|state| !state.exhausted) {
+            let _linkscope_round = linkscope::phase("web.backend.fourget.collect_round");
             let mut progressed = false;
             let active = self.active_page_requests();
+            trace::count("web.backend.fourget.active_pages", active.len());
             let pages = futures::future::join_all(active.iter().map(
                 |(_, instance, scraper, next_page)| {
                     fetch_page(client, instance, query, scraper, next_page.as_deref())
@@ -112,17 +125,20 @@ impl SearchStates {
                         let page_results = page.into_results(target - results.len(), results.len());
                         let page_had_results = !page_results.is_empty();
                         push_unique(page_results, &mut seen, &mut results);
+                        trace::count("web.backend.fourget.results", results.len());
                         progressed |= results.len() > before;
                         if state.next_page.is_none() || !page_had_results {
                             state.exhausted = true;
                         }
                     }
                     Ok(page) => {
+                        linkscope::record_items("web.backend.fourget.page_status_error", 1);
                         self.errors
                             .push(format!("{} scraper {}: {}", instance, scraper, page.status));
                         state.exhausted = true;
                     }
                     Err(error) => {
+                        linkscope::record_items("web.backend.fourget.page_error", 1);
                         self.errors
                             .push(format!("{} scraper {}: {error}", instance, scraper));
                         state.exhausted = true;
@@ -138,6 +154,11 @@ impl SearchStates {
         }
 
         if results.is_empty() {
+            trace::backend_result(BackendResultTrace {
+                backend: "fourget",
+                status: "empty",
+                results: 0,
+            });
             Err(format!(
                 "4get failed: {}",
                 self.errors
@@ -148,6 +169,11 @@ impl SearchStates {
                     .join("; ")
             ))
         } else {
+            trace::backend_result(BackendResultTrace {
+                backend: "fourget",
+                status: "ok",
+                results: results.len(),
+            });
             Ok(results)
         }
     }

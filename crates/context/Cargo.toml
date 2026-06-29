@@ -6,6 +6,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+linkscope = { workspace = true }
 serde = { workspace = true }
 
 [dev-dependencies]

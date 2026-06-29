@@ -45,8 +45,15 @@ impl WsServer {
         addr: SocketAddr,
         token: String,
     ) -> std::io::Result<(Self, mpsc::Receiver<(TransportSender, TransportReceiver)>)> {
+        let _linkscope_bind = linkscope::phase("remote.ws.bind");
         let listener = TcpListener::bind(addr).await?;
         let local_addr = listener.local_addr()?;
+        if linkscope::is_enabled() {
+            linkscope::event_fields(
+                "remote.ws.bind.ok",
+                [linkscope::TraceField::text("addr", local_addr.to_string())],
+            );
+        }
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         let (client_tx, client_rx) = mpsc::channel(8);
 
@@ -74,6 +81,7 @@ async fn accept_loop(
     client_tx: mpsc::Sender<(TransportSender, TransportReceiver)>,
     mut shutdown_rx: watch::Receiver<bool>,
 ) {
+    let _linkscope_accept = linkscope::phase("remote.ws.accept_loop");
     loop {
         let accept_result = tokio::select! {
             result = listener.accept() => result,
@@ -87,10 +95,12 @@ async fn accept_loop(
         let (stream, peer) = match accept_result {
             Ok(x) => x,
             Err(e) => {
+                linkscope::record_items("remote.ws.accept_error", 1);
                 tracing::warn!(target: "jfc::remote", error = %e, "accept failed");
                 continue;
             }
         };
+        linkscope::record_items("remote.ws.accept", 1);
         let token = Arc::clone(&token);
         let tx = client_tx.clone();
         tokio::spawn(async move {
@@ -107,6 +117,13 @@ async fn handle_connection(
     token: &str,
     client_tx: mpsc::Sender<(TransportSender, TransportReceiver)>,
 ) -> Result<(), crate::transport::TransportError> {
+    let _linkscope_connection = linkscope::phase("remote.ws.connection");
+    if linkscope::is_enabled() {
+        linkscope::event_fields(
+            "remote.ws.connection.start",
+            [linkscope::TraceField::text("peer", peer.to_string())],
+        );
+    }
     let token_owned = token.to_string();
 
     let ws_stream = tokio_tungstenite::accept_hdr_async(
@@ -138,6 +155,7 @@ async fn handle_connection(
     .await
     .map_err(|e| crate::transport::TransportError::WebSocket(e.to_string()))?;
 
+    linkscope::record_items("remote.ws.connection.authenticated", 1);
     tracing::info!(target: "jfc::remote", %peer, "client connected");
 
     let (mut ws_tx, mut ws_rx) = ws_stream.split();
@@ -148,19 +166,31 @@ async fn handle_connection(
 
     // Outbound: transport → WS
     tokio::spawn(async move {
+        let _linkscope_outbound = linkscope::phase("remote.ws.outbound_loop");
         while let Some(frame) = outbound_rx.recv().await {
             let json = match serde_json::to_string(&frame) {
                 Ok(j) => j,
-                Err(_) => continue,
+                Err(_) => {
+                    linkscope::record_items("remote.ws.outbound.serialize_error", 1);
+                    continue;
+                }
             };
+            linkscope::record_items("remote.ws.outbound.frame", 1);
+            linkscope::record_bytes(
+                "remote.ws.outbound.bytes",
+                usize_to_u64_saturating(json.len()),
+            );
             if ws_tx.send(Message::Text(json)).await.is_err() {
+                linkscope::record_items("remote.ws.outbound.send_error", 1);
                 break;
             }
         }
+        linkscope::record_items("remote.ws.outbound.closed", 1);
     });
 
     // Inbound: WS → transport
     tokio::spawn(async move {
+        let _linkscope_inbound = linkscope::phase("remote.ws.inbound_loop");
         while let Some(Ok(msg)) = ws_rx.next().await {
             let text = match msg {
                 Message::Text(t) => t,
@@ -170,12 +200,22 @@ async fn handle_connection(
             };
             let frame: RemoteFrame = match serde_json::from_str(&text) {
                 Ok(f) => f,
-                Err(_) => continue,
+                Err(_) => {
+                    linkscope::record_items("remote.ws.inbound.parse_error", 1);
+                    continue;
+                }
             };
+            linkscope::record_items("remote.ws.inbound.frame", 1);
+            linkscope::record_bytes(
+                "remote.ws.inbound.bytes",
+                usize_to_u64_saturating(text.len()),
+            );
             if inbound_tx.send(frame).await.is_err() {
+                linkscope::record_items("remote.ws.inbound.channel_closed", 1);
                 break;
             }
         }
+        linkscope::record_items("remote.ws.inbound.closed", 1);
     });
 
     // Hand the transport pair to the caller. If the receiver is gone the
@@ -188,6 +228,7 @@ async fn handle_connection(
         .await
         .is_err()
     {
+        linkscope::record_items("remote.ws.host_receiver_dropped", 1);
         tracing::debug!(target: "jfc::remote", %peer, "host dropped client receiver");
     }
 
@@ -204,6 +245,13 @@ pub async fn connect(
     url: &str,
     token: &str,
 ) -> Result<(TransportSender, TransportReceiver), crate::transport::TransportError> {
+    let _linkscope_connect = linkscope::phase("remote.ws.connect");
+    if linkscope::is_enabled() {
+        linkscope::event_fields(
+            "remote.ws.connect.start",
+            [linkscope::TraceField::text("url", url.to_owned())],
+        );
+    }
     use tokio_tungstenite::tungstenite::http::Request as WsRequest;
 
     let subprotocol = format!("bearer.{token}");
@@ -226,6 +274,7 @@ pub async fn connect(
         .await
         .map_err(|e| crate::transport::TransportError::WebSocket(e.to_string()))?;
 
+    linkscope::record_items("remote.ws.connect.ok", 1);
     let (mut ws_tx, mut ws_rx) = ws_stream.split();
 
     let (outbound_tx, mut outbound_rx) = mpsc::channel::<RemoteFrame>(WS_BUF);
@@ -233,19 +282,31 @@ pub async fn connect(
 
     // Outbound: transport → WS
     tokio::spawn(async move {
+        let _linkscope_outbound = linkscope::phase("remote.ws.client_outbound_loop");
         while let Some(frame) = outbound_rx.recv().await {
             let json = match serde_json::to_string(&frame) {
                 Ok(j) => j,
-                Err(_) => continue,
+                Err(_) => {
+                    linkscope::record_items("remote.ws.client_outbound.serialize_error", 1);
+                    continue;
+                }
             };
+            linkscope::record_items("remote.ws.client_outbound.frame", 1);
+            linkscope::record_bytes(
+                "remote.ws.client_outbound.bytes",
+                usize_to_u64_saturating(json.len()),
+            );
             if ws_tx.send(Message::Text(json)).await.is_err() {
+                linkscope::record_items("remote.ws.client_outbound.send_error", 1);
                 break;
             }
         }
+        linkscope::record_items("remote.ws.client_outbound.closed", 1);
     });
 
     // Inbound: WS → transport
     tokio::spawn(async move {
+        let _linkscope_inbound = linkscope::phase("remote.ws.client_inbound_loop");
         while let Some(Ok(msg)) = ws_rx.next().await {
             let text = match msg {
                 Message::Text(t) => t,
@@ -255,18 +316,32 @@ pub async fn connect(
             };
             let frame: RemoteFrame = match serde_json::from_str(&text) {
                 Ok(f) => f,
-                Err(_) => continue,
+                Err(_) => {
+                    linkscope::record_items("remote.ws.client_inbound.parse_error", 1);
+                    continue;
+                }
             };
+            linkscope::record_items("remote.ws.client_inbound.frame", 1);
+            linkscope::record_bytes(
+                "remote.ws.client_inbound.bytes",
+                usize_to_u64_saturating(text.len()),
+            );
             if inbound_tx.send(frame).await.is_err() {
+                linkscope::record_items("remote.ws.client_inbound.channel_closed", 1);
                 break;
             }
         }
+        linkscope::record_items("remote.ws.client_inbound.closed", 1);
     });
 
     Ok((
         TransportSender::new(outbound_tx),
         TransportReceiver::new(inbound_rx),
     ))
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 fn extract_host(url: &str) -> String {

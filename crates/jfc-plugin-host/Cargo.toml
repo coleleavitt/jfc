@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 jfc-core = { path = "../jfc-core" }
 jfc-plugin-sdk = { path = "../jfc-plugin-sdk" }
+linkscope = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

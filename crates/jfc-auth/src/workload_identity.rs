@@ -163,12 +163,17 @@ pub fn resolve_profile_name(profile: Option<&str>) -> String {
 ///
 /// Reads `<config_dir>/configs/<profile>.json` and overlays env vars.
 pub fn load_profile_config(profile: Option<&str>) -> Result<AuthConfig> {
+    let _linkscope_load = linkscope::phase("auth.workload.load_profile");
     let profile_name = resolve_profile_name(profile);
     let dir = config_dir();
     let config_path = dir.join("configs").join(format!("{profile_name}.json"));
 
     let text = std::fs::read_to_string(&config_path)
         .map_err(|_| WorkloadIdentityError::ConfigNotFound(config_path.clone()))?;
+    linkscope::record_bytes(
+        "auth.workload.profile_read",
+        usize_to_u64_saturating(text.len()),
+    );
 
     let mut config: AuthConfig = serde_json::from_str(&text)
         .map_err(|e| WorkloadIdentityError::InvalidConfig(e.to_string()))?;
@@ -230,9 +235,16 @@ pub async fn resolve_credentials(
     client: &reqwest::Client,
     config: &AuthConfig,
 ) -> Result<ResolvedToken> {
+    let _linkscope_resolve = linkscope::phase("auth.workload.resolve_credentials");
     match &config.authentication {
-        AuthenticationType::OidcFederation(oidc) => exchange_oidc_token(client, config, oidc).await,
-        AuthenticationType::UserOauth(oauth) => resolve_user_oauth(client, config, oauth).await,
+        AuthenticationType::OidcFederation(oidc) => {
+            linkscope::record_items("auth.workload.oidc", 1);
+            exchange_oidc_token(client, config, oidc).await
+        }
+        AuthenticationType::UserOauth(oauth) => {
+            linkscope::record_items("auth.workload.user_oauth", 1);
+            resolve_user_oauth(client, config, oauth).await
+        }
     }
 }
 
@@ -300,6 +312,7 @@ async fn exchange_oidc_token(
     config: &AuthConfig,
     oidc: &OidcFederationAuth,
 ) -> Result<ResolvedToken> {
+    let _linkscope_exchange = linkscope::phase("auth.workload.exchange_oidc");
     let identity_token = read_identity_token(oidc)?;
     let token_url = format!("{}/v1/oauth/token", base_url(config));
 
@@ -334,11 +347,13 @@ async fn exchange_oidc_token(
 
     let status = resp.status().as_u16();
     if status >= 400 {
+        linkscope::record_items("auth.workload.exchange_oidc.error", 1);
         let body = resp.text().await.unwrap_or_default();
         return Err(WorkloadIdentityError::TokenExchangeFailed { status, body });
     }
 
     let token_resp: TokenResponse = resp.json().await?;
+    linkscope::record_items("auth.workload.exchange_oidc.ok", 1);
     Ok(ResolvedToken::from_response(&token_resp))
 }
 
@@ -348,12 +363,14 @@ async fn resolve_user_oauth(
     config: &AuthConfig,
     oauth: &UserOAuthAuth,
 ) -> Result<ResolvedToken> {
+    let _linkscope_resolve = linkscope::phase("auth.workload.resolve_user_oauth");
     let creds_path = resolve_credentials_path(oauth)?;
     let creds = load_stored_credentials(&creds_path)?;
 
     let now = now_secs();
     // If token hasn't expired (with 30s buffer), return as-is
     if creds.expires_at > now + 30 {
+        linkscope::record_items("auth.workload.user_oauth.cached", 1);
         return Ok(ResolvedToken {
             access_token: creds.access_token,
             expires_at: creds.expires_at,
@@ -363,6 +380,7 @@ async fn resolve_user_oauth(
 
     // Token expired or about to — refresh it
     let (resolved, token_resp) = refresh_oauth_token(client, config, oauth, &creds).await?;
+    linkscope::record_items("auth.workload.user_oauth.refreshed", 1);
 
     // Persist updated credentials
     let updated = StoredCredentials {
@@ -485,11 +503,13 @@ impl TokenCache {
     ///   and returns the current token.
     /// - If token expires within `FORCE_REFRESH_SECS`, performs a blocking refresh.
     pub async fn get_token(&self) -> Result<String> {
+        let _linkscope_get = linkscope::phase("auth.token_cache.get");
         // Fast path: read lock
         {
             let state = self.inner.state.read().await;
             if let Some(ref token) = state.token {
                 if !token.expires_within(PROACTIVE_REFRESH_SECS) {
+                    linkscope::record_items("auth.token_cache.fresh", 1);
                     // Token is fresh
                     return Ok(token.access_token.clone());
                 }
@@ -500,6 +520,7 @@ impl TokenCache {
                         drop(state);
                         self.spawn_background_refresh();
                     }
+                    linkscope::record_items("auth.token_cache.background_refresh", 1);
                     return Ok(access_token);
                 }
                 // Token critically close to expiry — fall through to blocking refresh
@@ -513,6 +534,7 @@ impl TokenCache {
     /// Force a token refresh (blocking). Always fetches, even if the cached
     /// token is still fresh.
     pub async fn force_refresh(&self) -> Result<String> {
+        let _linkscope_refresh = linkscope::phase("auth.token_cache.force_refresh");
         let mut state = self.inner.state.write().await;
         let token = resolve_credentials(&self.inner.client, &self.inner.config).await?;
         let access_token = token.access_token.clone();
@@ -522,6 +544,7 @@ impl TokenCache {
     }
 
     async fn refresh_blocking(&self) -> Result<String> {
+        let _linkscope_refresh = linkscope::phase("auth.token_cache.refresh_blocking");
         // Hold the write lock across the fetch so concurrent callers queue
         // behind one refresh instead of stampeding the token endpoint; the
         // recheck under the lock returns the token a winner just installed.
@@ -552,11 +575,13 @@ impl TokenCache {
 
             match resolve_credentials(&cache.inner.client, &cache.inner.config).await {
                 Ok(token) => {
+                    linkscope::record_items("auth.token_cache.background_refresh.ok", 1);
                     let mut state = cache.inner.state.write().await;
                     state.token = Some(token);
                     state.refreshing = false;
                 }
                 Err(_) => {
+                    linkscope::record_items("auth.token_cache.background_refresh.error", 1);
                     // Background refresh failed — leave existing token, clear flag
                     let mut state = cache.inner.state.write().await;
                     state.refreshing = false;
@@ -586,6 +611,10 @@ fn now_secs() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or(Duration::ZERO)
         .as_secs()
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]

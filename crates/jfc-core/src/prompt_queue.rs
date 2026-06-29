@@ -59,10 +59,23 @@ pub struct ToolUseSummary {
 /// front when the cap would be exceeded. A cap of zero intentionally retains
 /// nothing.
 pub fn push_bounded_drop_oldest<T>(queue: &mut VecDeque<T>, cap: usize, item: T) {
+    let _linkscope_push = linkscope::phase("queue.bounded_push");
+    let before = queue.len();
     queue.push_back(item);
+    let mut dropped = 0usize;
     while queue.len() > cap {
         queue.pop_front();
+        dropped += 1;
     }
+    linkscope::event_fields(
+        "queue.bounded_push.result",
+        [
+            linkscope::TraceField::count("before", u64::try_from(before).unwrap_or(u64::MAX)),
+            linkscope::TraceField::count("cap", u64::try_from(cap).unwrap_or(u64::MAX)),
+            linkscope::TraceField::count("after", u64::try_from(queue.len()).unwrap_or(u64::MAX)),
+            linkscope::TraceField::count("dropped", u64::try_from(dropped).unwrap_or(u64::MAX)),
+        ],
+    );
 }
 
 /// Whether a queued prompt should be preserved across active compaction.
@@ -71,7 +84,16 @@ pub fn push_bounded_drop_oldest<T>(queue: &mut VecDeque<T>, cap: usize, item: T)
 /// `Next` survive, while `Later` may be deferred. With no compaction, every
 /// prompt is preserved.
 pub fn should_preserve_prompt(prompt: &QueuedPrompt, compaction_active: bool) -> bool {
-    !compaction_active || prompt.priority >= QueuePriority::Next
+    let preserve = !compaction_active || prompt.priority >= QueuePriority::Next;
+    linkscope::detail_event_fields(
+        "queue.prompt.preserve",
+        [
+            linkscope::TraceField::text("priority", format!("{:?}", prompt.priority)),
+            linkscope::TraceField::count("compaction_active", u64::from(compaction_active)),
+            linkscope::TraceField::count("preserve", u64::from(preserve)),
+        ],
+    );
+    preserve
 }
 
 /// Priority-based prompt queue. Higher priority prompts are popped first, and
@@ -89,10 +111,38 @@ impl MessageQueue {
     }
 
     pub fn push(&mut self, prompt: QueuedPrompt) {
+        let _linkscope_push = linkscope::phase("message_queue.push");
+        linkscope::record_items(
+            "message_queue.depth_before",
+            u64::try_from(self.entries.len()).unwrap_or(u64::MAX),
+        );
         self.entries.push_back(prompt);
+        linkscope::record_items(
+            "message_queue.depth_after",
+            u64::try_from(self.entries.len()).unwrap_or(u64::MAX),
+        );
     }
 
     pub fn push_later(&mut self, text: String, is_meta: bool, attachments: Vec<Attachment>) {
+        let _linkscope_push = linkscope::phase("message_queue.push_later");
+        linkscope::event_fields(
+            "message_queue.push_later",
+            [
+                linkscope::TraceField::bytes(
+                    "text_bytes",
+                    u64::try_from(text.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::count("is_meta", u64::from(is_meta)),
+                linkscope::TraceField::count(
+                    "attachments",
+                    u64::try_from(attachments.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::count(
+                    "depth_before",
+                    u64::try_from(self.entries.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         self.entries.push_back(QueuedPrompt {
             text,
             is_meta,
@@ -102,15 +152,31 @@ impl MessageQueue {
     }
 
     pub fn pop_max_priority(&mut self) -> Option<QueuedPrompt> {
+        let _linkscope_pop = linkscope::phase("message_queue.pop_max_priority");
+        let before = self.entries.len();
         let max_priority = self.entries.iter().map(|entry| entry.priority).max()?;
         let max_idx = self
             .entries
             .iter()
             .position(|entry| entry.priority == max_priority)?;
-        self.entries.remove(max_idx)
+        let prompt = self.entries.remove(max_idx);
+        linkscope::event_fields(
+            "message_queue.pop_max_priority.result",
+            [
+                linkscope::TraceField::count("before", u64::try_from(before).unwrap_or(u64::MAX)),
+                linkscope::TraceField::count(
+                    "after",
+                    u64::try_from(self.entries.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::text("priority", format!("{max_priority:?}")),
+            ],
+        );
+        prompt
     }
 
     pub fn drain_at_least(&mut self, min_priority: QueuePriority) -> Vec<QueuedPrompt> {
+        let _linkscope_drain = linkscope::phase("message_queue.drain_at_least");
+        let before = self.entries.len();
         let mut drained = Vec::new();
         let mut remaining = VecDeque::new();
         for entry in self.entries.drain(..) {
@@ -122,21 +188,65 @@ impl MessageQueue {
         }
         self.entries = remaining;
         drained.sort_by_key(|entry| std::cmp::Reverse(entry.priority));
+        linkscope::event_fields(
+            "message_queue.drain_at_least.result",
+            [
+                linkscope::TraceField::text("min_priority", format!("{min_priority:?}")),
+                linkscope::TraceField::count("before", u64::try_from(before).unwrap_or(u64::MAX)),
+                linkscope::TraceField::count(
+                    "drained",
+                    u64::try_from(drained.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::count(
+                    "remaining",
+                    u64::try_from(self.entries.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         drained
     }
 
     pub fn drain_all(&mut self) -> Vec<QueuedPrompt> {
+        let _linkscope_drain = linkscope::phase("message_queue.drain_all");
         let mut drained: Vec<QueuedPrompt> = self.entries.drain(..).collect();
         drained.sort_by_key(|entry| std::cmp::Reverse(entry.priority));
+        linkscope::record_items(
+            "message_queue.drained",
+            u64::try_from(drained.len()).unwrap_or(u64::MAX),
+        );
         drained
     }
 
     pub fn pop_back(&mut self) -> Option<QueuedPrompt> {
-        self.entries.pop_back()
+        let _linkscope_pop = linkscope::phase("message_queue.pop_back");
+        let prompt = self.entries.pop_back();
+        linkscope::detail_event_fields(
+            "message_queue.pop_back.result",
+            [
+                linkscope::TraceField::count("hit", u64::from(prompt.is_some())),
+                linkscope::TraceField::count(
+                    "after",
+                    u64::try_from(self.entries.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
+        prompt
     }
 
     pub fn pop_front(&mut self) -> Option<QueuedPrompt> {
-        self.entries.pop_front()
+        let _linkscope_pop = linkscope::phase("message_queue.pop_front");
+        let prompt = self.entries.pop_front();
+        linkscope::detail_event_fields(
+            "message_queue.pop_front.result",
+            [
+                linkscope::TraceField::count("hit", u64::from(prompt.is_some())),
+                linkscope::TraceField::count(
+                    "after",
+                    u64::try_from(self.entries.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
+        prompt
     }
 
     pub fn is_empty(&self) -> bool {

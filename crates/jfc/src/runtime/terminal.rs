@@ -12,9 +12,29 @@ pub(crate) fn draw_synchronized(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut App,
 ) -> io::Result<()> {
-    let _ = execute!(io::stdout(), BeginSynchronizedUpdate);
-    let result = terminal.draw(|frame| render::frame(frame, app));
-    let _ = execute!(io::stdout(), EndSynchronizedUpdate);
+    let message_count = usize_to_u64_saturating(app.engine.messages.len());
+    let total_lines = usize_to_u64_saturating(app.total_lines);
+    let _linkscope_draw = linkscope::phase("ui.draw");
+    let _linkscope_draw_trace = linkscope::trace_fields(
+        "ui.draw",
+        [
+            linkscope::TraceField::count("messages", message_count),
+            linkscope::TraceField::count("total_lines", total_lines),
+        ],
+    );
+    linkscope::record_items("ui.draw", 1);
+    {
+        let _linkscope_begin = linkscope::phase("ui.draw.begin_synchronized_update");
+        let _ = execute!(io::stdout(), BeginSynchronizedUpdate);
+    }
+    let result = {
+        let _linkscope_render = linkscope::phase("ui.draw.render_frame");
+        terminal.draw(|frame| render::frame(frame, app))
+    };
+    {
+        let _linkscope_end = linkscope::phase("ui.draw.end_synchronized_update");
+        let _ = execute!(io::stdout(), EndSynchronizedUpdate);
+    }
     result.map(|_| ())
 }
 
@@ -60,4 +80,8 @@ pub(crate) fn set_terminal_title(app: &App) {
     }
     *guard = title.clone();
     let _ = execute!(io::stdout(), SetTitle(title));
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }

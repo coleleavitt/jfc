@@ -203,6 +203,32 @@ pub fn microcompact_if_helpful(
     actual_tokens
 }
 
+/// Speculative idle microcompaction: run the cheap, local tool-result trim when
+/// the context is at the `Precompute` band (≈80% of the compact threshold) and
+/// the system is idle, BEFORE the user's next submit needs it. This is purely
+/// local (truncates stale tool outputs in place; no provider call, no
+/// concurrency), so it never stalls the input stream the way the submit-path
+/// compaction does. Returns tokens saved (0 when not at Precompute or nothing to
+/// trim). Distinct from [`microcompact_if_helpful`], which gates on the heavier
+/// `Warn|Compact|Blocked` bands on the submit path.
+pub fn microcompact_speculative(
+    messages: &mut [ChatMessage],
+    approx_tokens: &mut usize,
+    level: CompactLevel,
+) -> usize {
+    if !matches!(level, CompactLevel::Precompute) {
+        return 0;
+    }
+    let savings_chars = microcompact_savings(messages);
+    let savings_tokens = savings_chars / CHARS_PER_TOKEN;
+    if savings_tokens < MIN_SAVINGS_TOKENS {
+        return 0;
+    }
+    let actual_tokens = microcompact(messages) / CHARS_PER_TOKEN;
+    *approx_tokens = approx_tokens.saturating_sub(actual_tokens);
+    actual_tokens
+}
+
 pub fn microcompact_savings(messages: &[ChatMessage]) -> usize {
     if messages.len() <= PROTECT_RECENT_MESSAGES {
         return 0;
@@ -301,6 +327,44 @@ mod tests {
     // Content-aware: a build error in the MIDDLE of a long log survives
     // microcompaction, where the old blind head/tail cut would have elided
     // it. This is the headline win of the jfc-compress port.
+    // Normal: speculative microcompaction runs at the Precompute band and
+    // reclaims tokens, updating the approx_tokens estimate.
+    #[test]
+    fn microcompact_speculative_runs_at_precompute_normal() {
+        // Several large old tool results so net savings clear the 4k-token gate.
+        let mut messages = vec![
+            tool_msg(ToolOutput::Text("B".repeat(40_000))),
+            tool_msg(ToolOutput::Text("C".repeat(40_000))),
+        ];
+        messages.extend(padding(PROTECT_RECENT_MESSAGES + 1));
+        let mut approx = 100_000usize;
+        let saved =
+            super::microcompact_speculative(&mut messages, &mut approx, CompactLevel::Precompute);
+        assert!(saved > 0, "should reclaim at Precompute");
+        assert_eq!(
+            approx,
+            100_000 - saved,
+            "approx_tokens decremented by savings"
+        );
+    }
+
+    // Robust: speculative microcompaction is a no-op outside the Precompute band
+    // (Ok stays untouched; the heavier bands go through the submit path).
+    #[test]
+    fn microcompact_speculative_noop_off_precompute_robust() {
+        let mut messages = vec![tool_msg(ToolOutput::Text("B".repeat(8_000)))];
+        messages.extend(padding(PROTECT_RECENT_MESSAGES + 1));
+        let mut approx = 10_000usize;
+        for level in [CompactLevel::Ok, CompactLevel::Warn, CompactLevel::Compact] {
+            let saved = super::microcompact_speculative(&mut messages, &mut approx, level);
+            assert_eq!(
+                saved, 0,
+                "speculative pass only fires at Precompute, not {level:?}"
+            );
+        }
+        assert_eq!(approx, 10_000);
+    }
+
     #[test]
     fn microcompact_keeps_mid_log_error_robust() {
         // Realistic cargo/pytest-style run: status/warn lines throughout so

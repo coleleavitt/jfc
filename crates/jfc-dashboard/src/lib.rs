@@ -18,6 +18,7 @@ use std::sync::{Arc, Mutex};
 use serde::Serialize;
 
 mod server;
+mod trace;
 
 pub use server::{DashboardServer, spawn};
 
@@ -27,12 +28,15 @@ pub type DashboardHandle = Arc<Mutex<DashboardSnapshot>>;
 /// Create an empty handle. The engine stores one end; [`spawn`] holds the other.
 #[must_use]
 pub fn new_handle() -> DashboardHandle {
+    let _linkscope_handle = linkscope::phase("dashboard.new_handle");
     Arc::new(Mutex::new(DashboardSnapshot::default()))
 }
 
 /// Publish a fresh snapshot. Never panics: a poisoned lock is recovered so a
 /// prior panic on the server side can't wedge the engine.
 pub fn publish(handle: &DashboardHandle, snapshot: DashboardSnapshot) {
+    let _linkscope_publish = linkscope::phase("dashboard.publish");
+    trace::record_snapshot("dashboard.publish.shape", &snapshot);
     let mut guard = match handle.lock() {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
@@ -65,6 +69,11 @@ pub struct DashboardSnapshot {
     /// promoted definitions. Grows as RSI verifies and promotes more.
     pub rsi_prompt_sections: u64,
     pub rsi_tool_visibility_rules: u64,
+    /// DB-sourced RSI candidate→verified→active funnel. Unlike the per-request
+    /// `rsi_*` counts above (which read the live request metadata and are 0
+    /// between turns), this reads the knowledge store directly so the panel
+    /// shows the *standing* self-improvement state and whether it's progressing.
+    pub rsi_funnel: RsiFunnel,
     /// Per-request token/cost timeline (oldest → newest), for debugging where
     /// input/output tokens go over the session. Bounded ring; see
     /// [`TimelineSample`].
@@ -120,6 +129,36 @@ pub struct TimelineSample {
     pub rsi_tool_visibility_rules: u64,
 }
 
+/// The RSI candidate→active funnel, sourced from the knowledge store. Tells the
+/// honest story the per-request counts can't: how many self-improvement
+/// definitions are staged, how many carry promotion-grade verification evidence,
+/// and how many are live in the prompt. A growing `active` count over sessions
+/// is "RSI improving over time"; a large `candidates` with `verified == 0` means
+/// the loop is *generating* but not *proving* (the common stuck state).
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct RsiFunnel {
+    /// Staged candidate definitions awaiting promotion evidence (status=candidate).
+    pub candidates: u64,
+    /// Candidates whose metadata satisfies the promotion gate (trust=verified,
+    /// fixtures pass, research verified) — eligible to promote right now.
+    pub verified: u64,
+    /// Promoted, runtime-active definitions (status=active) — injected into the
+    /// system prompt. This is what `rsi_prompt_sections` reflects per-request.
+    pub active: u64,
+    /// Per-kind staged-candidate breakdown (e.g. `system_prompt`,
+    /// `reasoning_policy`), newest-heavy first. Lets the panel show *what* the
+    /// system keeps proposing for itself.
+    pub by_kind: Vec<RsiKindCount>,
+}
+
+/// One RSI definition-kind row in the funnel breakdown.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct RsiKindCount {
+    pub kind: String,
+    pub candidates: u64,
+    pub active: u64,
+}
+
 /// Rollup of the owned [`jfc_context::CompartmentSequence`] by tier.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct CompartmentSummary {
@@ -136,6 +175,7 @@ impl CompartmentSummary {
     /// Build a tier rollup from an owned compartment sequence.
     #[must_use]
     pub fn from_sequence(sequence: &jfc_context::CompartmentSequence, total_tokens: u64) -> Self {
+        let _linkscope_summary = linkscope::phase("dashboard.compartment_summary.from_sequence");
         use jfc_context::CompartmentTier;
         let mut summary = Self {
             total_tokens,
@@ -150,7 +190,74 @@ impl CompartmentSummary {
                 CompartmentTier::Archived => summary.archived += 1,
             }
         }
+        linkscope::event_fields(
+            "dashboard.compartment_summary.result",
+            [
+                linkscope::TraceField::count(
+                    "count",
+                    u64::try_from(summary.count).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::count("total_tokens", summary.total_tokens),
+            ],
+        );
         summary
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn publish_trace_records_snapshot_shape_without_payload_normal() {
+        linkscope::trace_detail_enable();
+        let handle = new_handle();
+        let snapshot = DashboardSnapshot {
+            session_id: Some("private-session-id".to_owned()),
+            model: Some("private-model-name".to_owned()),
+            context_window_tokens: 100,
+            context_used_tokens: 42,
+            usage_by_model: vec![ModelUsageRow {
+                model: "private-row-model".to_owned(),
+                input_tokens: 1,
+                ..Default::default()
+            }],
+            timeline: vec![TimelineSample {
+                prompt: Some("private prompt text".to_owned()),
+                flags: vec!["private_flag".to_owned()],
+                ..Default::default()
+            }],
+            profile: vec![ProfilePhase {
+                name: "private-phase-name".to_owned(),
+                spans: 1,
+                ..Default::default()
+            }],
+            rsi_funnel: RsiFunnel {
+                candidates: 3,
+                verified: 2,
+                active: 1,
+                by_kind: vec![RsiKindCount {
+                    kind: "private-kind".to_owned(),
+                    candidates: 3,
+                    active: 1,
+                }],
+            },
+            ..Default::default()
+        };
+
+        publish(&handle, snapshot);
+
+        let rendered = format!("{:?}", linkscope::snapshot());
+        assert!(rendered.contains("dashboard.publish.shape"));
+        assert!(rendered.contains("timeline_flags"));
+        assert!(rendered.contains("rsi_candidates"));
+        assert!(!rendered.contains("private-session-id"));
+        assert!(!rendered.contains("private-model-name"));
+        assert!(!rendered.contains("private-row-model"));
+        assert!(!rendered.contains("private prompt text"));
+        assert!(!rendered.contains("private_flag"));
+        assert!(!rendered.contains("private-phase-name"));
+        assert!(!rendered.contains("private-kind"));
     }
 }
 

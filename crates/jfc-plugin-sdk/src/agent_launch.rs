@@ -20,10 +20,19 @@ pub struct AgentLaunchExecutorDescriptor {
 
 impl AgentLaunchExecutorDescriptor {
     pub fn new(kind: AgentLaunchExecutorKind, handler: impl Into<String>) -> Self {
-        Self {
-            kind,
-            handler: handler.into(),
-        }
+        let _linkscope_executor = linkscope::phase("plugin_sdk.agent_launch.executor.new");
+        let handler = handler.into();
+        linkscope::detail_event_fields(
+            "plugin_sdk.agent_launch.executor.new",
+            [
+                linkscope::TraceField::text("kind", format!("{kind:?}")),
+                linkscope::TraceField::bytes(
+                    "handler_bytes",
+                    u64::try_from(handler.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
+        Self { kind, handler }
     }
 
     pub fn built_in(handler: impl Into<String>) -> Self {
@@ -53,11 +62,30 @@ impl AgentLaunchDescriptor {
         label: impl Into<String>,
         description: impl Into<String>,
     ) -> Self {
+        let _linkscope_descriptor = linkscope::phase("plugin_sdk.agent_launch.descriptor.new");
+        let name = name.into();
+        let label = label.into();
+        let description = description.into();
+        linkscope::event_fields(
+            "plugin_sdk.agent_launch.descriptor.new",
+            [
+                linkscope::TraceField::text("plugin_id", plugin_id.as_str().to_owned()),
+                linkscope::TraceField::text("name", name.clone()),
+                linkscope::TraceField::bytes(
+                    "label_bytes",
+                    u64::try_from(label.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::bytes(
+                    "description_bytes",
+                    u64::try_from(description.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         Self {
             plugin_id,
-            name: name.into(),
-            label: label.into(),
-            description: description.into(),
+            name,
+            label,
+            description,
             visibility: DescriptorVisibility::HostVisible,
             executor: AgentLaunchExecutorDescriptor::built_in(""),
         }
@@ -95,8 +123,24 @@ pub struct BridgeAgentLaunchRequest {
 
 impl BridgeAgentLaunchRequest {
     pub fn new(launcher: impl Into<String>, task: TaskInput) -> Self {
+        let _linkscope_request = linkscope::phase("plugin_sdk.agent_launch.request.new");
+        let launcher = launcher.into();
+        linkscope::event_fields(
+            "plugin_sdk.agent_launch.request.new",
+            [
+                linkscope::TraceField::text("launcher", launcher.clone()),
+                linkscope::TraceField::bytes(
+                    "description_bytes",
+                    u64::try_from(task.description.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::bytes(
+                    "prompt_bytes",
+                    u64::try_from(task.prompt.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         Self {
-            launcher: launcher.into(),
+            launcher,
             task_id: None,
             task,
             cwd: None,
@@ -150,16 +194,34 @@ pub struct BridgeAgentLaunchResult {
 
 impl BridgeAgentLaunchResult {
     pub fn success(output: impl Into<String>) -> Self {
+        let _linkscope_result = linkscope::phase("plugin_sdk.agent_launch.result.success");
+        let output = output.into();
+        linkscope::event_fields(
+            "plugin_sdk.agent_launch.result.success",
+            [linkscope::TraceField::bytes(
+                "output_bytes",
+                u64::try_from(output.len()).unwrap_or(u64::MAX),
+            )],
+        );
         Self {
-            output: output.into(),
+            output,
             is_error: false,
             payload: None,
         }
     }
 
     pub fn failure(output: impl Into<String>) -> Self {
+        let _linkscope_result = linkscope::phase("plugin_sdk.agent_launch.result.failure");
+        let output = output.into();
+        linkscope::event_fields(
+            "plugin_sdk.agent_launch.result.failure",
+            [linkscope::TraceField::bytes(
+                "output_bytes",
+                u64::try_from(output.len()).unwrap_or(u64::MAX),
+            )],
+        );
         Self {
-            output: output.into(),
+            output,
             is_error: true,
             payload: None,
         }

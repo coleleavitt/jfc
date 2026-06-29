@@ -1565,6 +1565,15 @@ mod render_snapshot_tests {
                 project_instructions_tokens: 4_000,
                 user_message_tokens: 16_000,
             }),
+            context_pressure_nudge: Some(jfc_engine::context_accounting::ContextPressureNudge {
+                kind: jfc_engine::context_accounting::ContextPressureNudgeKind::ChannelTwo,
+                level: jfc_engine::compact::CompactLevel::Compact,
+                raw_tokens: 187_000,
+                effective_tokens: 280_500,
+                window_tokens: 200_000,
+                threshold_tokens: 178_808,
+                reclaim_floor_tokens: 8_193,
+            }),
             provider_history_archive_recall_ids: Vec::new(),
             rsi_prompt_sections: 0,
             rsi_tool_visibility_rules: 0,
@@ -1579,6 +1588,10 @@ mod render_snapshot_tests {
         assert!(
             text.contains("▼ Context"),
             "wide frame should render the plugin-style context card:\n{text}"
+        );
+        assert!(
+            text.contains("ctx_reduce") && text.contains("ch2") && text.contains("drop 8,193"),
+            "context sidebar should expose active ctx_reduce pressure nudge:\n{text}"
         );
         assert!(
             text.contains("System")

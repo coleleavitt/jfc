@@ -9,8 +9,9 @@ use jfc_provider::ProviderMessage;
 use model::{ArchivedProviderMessage, ProviderHistoryArchive};
 use render::render_archive;
 pub(crate) use search::{
-    list_provider_history_archives, provider_history_archive_recall_block,
-    search_provider_history_archives,
+    ProviderHistoryArchiveHit, list_provider_history_archives,
+    provider_history_archive_recall_block, search_provider_history_archives,
+    search_provider_history_archives_in,
 };
 pub(crate) use seen::{
     load_session_provider_history_archive_seen, persist_session_provider_history_archive_seen,

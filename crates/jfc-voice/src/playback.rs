@@ -15,10 +15,17 @@ impl PlaybackCommand {
         program: impl Into<String>,
         args: impl IntoIterator<Item = impl Into<String>>,
     ) -> Self {
-        Self {
-            program: program.into(),
-            args: args.into_iter().map(Into::into).collect(),
-        }
+        let _linkscope_command = linkscope::phase("voice.playback.command.new");
+        let program = program.into();
+        let args = args.into_iter().map(Into::into).collect::<Vec<_>>();
+        linkscope::detail_event_fields(
+            "voice.playback.command.new",
+            [
+                linkscope::TraceField::text("program", program.clone()),
+                linkscope::TraceField::count("args", u64::try_from(args.len()).unwrap_or(u64::MAX)),
+            ],
+        );
+        Self { program, args }
     }
 }
 
@@ -30,6 +37,7 @@ pub struct PcmPlayback {
 
 impl PcmPlayback {
     pub fn start(cfg: &VoiceConfig) -> Result<Self> {
+        let _linkscope_start = linkscope::phase("voice.playback.start");
         let command = detect_playback_command(
             cfg.tts_playback_command.as_deref(),
             cfg.selected_speaker_device_id.as_deref(),
@@ -39,6 +47,17 @@ impl PcmPlayback {
     }
 
     pub fn start_command(command: PlaybackCommand) -> Result<Self> {
+        let _linkscope_start = linkscope::phase("voice.playback.start_command");
+        linkscope::event_fields(
+            "voice.playback.start_command",
+            [
+                linkscope::TraceField::text("program", command.program.clone()),
+                linkscope::TraceField::count(
+                    "args",
+                    u64::try_from(command.args.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         let mut child = Command::new(&command.program)
             .args(&command.args)
             .stdin(std::process::Stdio::piped())
@@ -58,6 +77,11 @@ impl PcmPlayback {
     }
 
     pub async fn write_audio(&mut self, pcm: &[u8]) -> Result<()> {
+        let _linkscope_write = linkscope::phase("voice.playback.write_audio");
+        linkscope::record_bytes(
+            "voice.playback.audio_bytes",
+            u64::try_from(pcm.len()).unwrap_or(u64::MAX),
+        );
         let stdin = self
             .stdin
             .as_mut()
@@ -69,11 +93,13 @@ impl PcmPlayback {
     /// Kill the playback process immediately (barge-in). Drops any buffered
     /// audio still queued in the player rather than letting it drain.
     pub fn kill(&mut self) {
+        let _linkscope_kill = linkscope::phase("voice.playback.kill");
         drop(self.stdin.take());
         let _ = self.child.start_kill();
     }
 
     pub async fn finish(mut self) -> Result<()> {
+        let _linkscope_finish = linkscope::phase("voice.playback.finish");
         drop(self.stdin.take());
         let status = self
             .child
@@ -86,6 +112,10 @@ impl PcmPlayback {
                 self.program
             ));
         }
+        linkscope::event_fields(
+            "voice.playback.finish.result",
+            [linkscope::TraceField::count("success", 1)],
+        );
         Ok(())
     }
 }
@@ -119,7 +149,12 @@ pub fn detect_playback_command(
     override_cmd: Option<&str>,
     speaker_device_id: Option<&str>,
 ) -> Option<PlaybackCommand> {
+    let _linkscope_detect = linkscope::phase("voice.playback.detect_command");
     if let Some(cmd) = override_cmd.map(str::trim).filter(|cmd| !cmd.is_empty()) {
+        linkscope::event_fields(
+            "voice.playback.detect_command.result",
+            [linkscope::TraceField::text("kind", "override")],
+        );
         return Some(PlaybackCommand::new("sh", ["-lc", cmd]));
     }
     if let Some(device_id) = speaker_device_id
@@ -127,6 +162,10 @@ pub fn detect_playback_command(
         .filter(|device_id| !device_id.is_empty())
     {
         if crate::platform::which("paplay") {
+            linkscope::event_fields(
+                "voice.playback.detect_command.result",
+                [linkscope::TraceField::text("kind", "paplay_device")],
+            );
             return Some(PlaybackCommand::new(
                 "paplay",
                 [
@@ -139,6 +178,10 @@ pub fn detect_playback_command(
             ));
         }
         if crate::platform::which("aplay") {
+            linkscope::event_fields(
+                "voice.playback.detect_command.result",
+                [linkscope::TraceField::text("kind", "aplay_device")],
+            );
             return Some(PlaybackCommand::new(
                 "aplay",
                 [
@@ -156,9 +199,17 @@ pub fn detect_playback_command(
         }
     }
     if crate::platform::which("ffplay") {
+        linkscope::event_fields(
+            "voice.playback.detect_command.result",
+            [linkscope::TraceField::text("kind", "ffplay")],
+        );
         return Some(ffplay_pcm_command());
     }
     if crate::platform::which("mpv") {
+        linkscope::event_fields(
+            "voice.playback.detect_command.result",
+            [linkscope::TraceField::text("kind", "mpv")],
+        );
         return Some(PlaybackCommand::new(
             "mpv",
             [
@@ -173,17 +224,29 @@ pub fn detect_playback_command(
         ));
     }
     if crate::platform::which("paplay") {
+        linkscope::event_fields(
+            "voice.playback.detect_command.result",
+            [linkscope::TraceField::text("kind", "paplay")],
+        );
         return Some(PlaybackCommand::new(
             "paplay",
             ["--raw", "--rate=16000", "--channels=1", "--format=s16le"],
         ));
     }
     if crate::platform::which("aplay") {
+        linkscope::event_fields(
+            "voice.playback.detect_command.result",
+            [linkscope::TraceField::text("kind", "aplay")],
+        );
         return Some(PlaybackCommand::new(
             "aplay",
             ["-q", "-f", "S16_LE", "-r", "16000", "-c", "1"],
         ));
     }
+    linkscope::event_fields(
+        "voice.playback.detect_command.result",
+        [linkscope::TraceField::text("kind", "none")],
+    );
     None
 }
 
@@ -193,6 +256,21 @@ pub async fn speak_anthropic_tts(
     user_agent: &str,
     text: &str,
 ) -> Result<crate::tts::TtsStats> {
+    let _linkscope_speak = linkscope::phase("voice.playback.speak_anthropic_tts");
+    linkscope::event_fields(
+        "voice.playback.speak_anthropic_tts",
+        [
+            linkscope::TraceField::bytes(
+                "text_bytes",
+                u64::try_from(text.len()).unwrap_or(u64::MAX),
+            ),
+            linkscope::TraceField::bytes(
+                "token_bytes",
+                u64::try_from(token.len()).unwrap_or(u64::MAX),
+            ),
+            linkscope::TraceField::text("user_agent", user_agent.to_owned()),
+        ],
+    );
     let mut player = PcmPlayback::start(cfg)?;
     let stdin = player
         .stdin

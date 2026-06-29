@@ -403,6 +403,7 @@ where
 /// Load daemon state from the DB. Returns `None` when the row is missing
 /// or unparseable; callers should fall back to `DaemonState::default()`.
 pub fn load_state(paths: &DaemonPaths) -> Option<DaemonState> {
+    let _linkscope_load = linkscope::phase("daemon.state.load");
     match load_state_row(paths).ok()? {
         Some(row) => serde_json::from_str(&row.value_json).ok(),
         None => import_legacy_state(paths).ok().flatten(),
@@ -412,6 +413,7 @@ pub fn load_state(paths: &DaemonPaths) -> Option<DaemonState> {
 /// Load daemon state for a read-modify-write cycle. Unlike [`load_state`], this
 /// distinguishes a genuinely-absent row from a corrupt/unreadable row.
 pub fn load_state_for_update(paths: &DaemonPaths) -> std::io::Result<DaemonState> {
+    let _linkscope_load = linkscope::phase("daemon.state.load_for_update");
     let Some(row) = load_state_row(paths).map_err(std::io::Error::other)? else {
         return import_legacy_state(paths).map(|state| state.unwrap_or_default());
     };
@@ -546,6 +548,7 @@ pub fn load_state_if_changed(
     paths: &DaemonPaths,
     cached: Option<SystemTime>,
 ) -> Option<(DaemonState, SystemTime)> {
+    let _linkscope_load = linkscope::phase("daemon.state.load_if_changed");
     let mtime = state_file_mtime(paths)?;
     if Some(mtime) == cached {
         return None;
@@ -556,6 +559,11 @@ pub fn load_state_if_changed(
 
 /// Save daemon state to the DB.
 pub fn save_state(paths: &DaemonPaths, state: &DaemonState) -> std::io::Result<()> {
+    let _linkscope_save = linkscope::phase("daemon.state.save");
+    linkscope::record_items(
+        "daemon.state.background_agents",
+        usize_to_u64_saturating(state.background_agents.len()),
+    );
     paths.ensure_dirs()?;
     let json = serde_json::to_string_pretty(state).map_err(std::io::Error::other)?;
     let store = daemon_state_store(paths).map_err(std::io::Error::other)?;
@@ -570,6 +578,10 @@ pub fn save_state(paths: &DaemonPaths, state: &DaemonState) -> std::io::Result<(
             .await
     })
     .map_err(std::io::Error::other)
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]

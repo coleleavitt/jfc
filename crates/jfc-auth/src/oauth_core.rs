@@ -101,39 +101,62 @@ impl TokenStore {
     }
 
     pub fn load(&self) -> std::io::Result<TokenStoreFile> {
+        let _linkscope_load = linkscope::phase("auth.token_store.load");
         match std::fs::File::open(&self.path) {
             Ok(mut file) => {
                 let mut raw = String::new();
                 file.read_to_string(&mut raw)?;
+                linkscope::record_bytes(
+                    "auth.token_store.read",
+                    usize_to_u64_saturating(raw.len()),
+                );
                 serde_json::from_str(&raw).map_err(std::io::Error::other)
             }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(TokenStoreFile::default()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                linkscope::record_items("auth.token_store.missing", 1);
+                Ok(TokenStoreFile::default())
+            }
             Err(e) => Err(e),
         }
     }
 
     pub fn get(&self, provider: &str) -> std::io::Result<Option<AuthMethod>> {
-        Ok(self.load()?.providers.get(provider).cloned())
+        let _linkscope_get = linkscope::phase("auth.token_store.get");
+        let auth = self.load()?.providers.get(provider).cloned();
+        if auth.is_some() {
+            linkscope::record_items("auth.token_store.hit", 1);
+        } else {
+            linkscope::record_items("auth.token_store.miss", 1);
+        }
+        Ok(auth)
     }
 
     pub fn set(&self, provider: &str, auth: AuthMethod) -> std::io::Result<()> {
+        let _linkscope_set = linkscope::phase("auth.token_store.set");
         let mut store = self.load()?;
         store.providers.insert(provider.to_owned(), auth);
         self.save(&store)
     }
 
     pub fn remove(&self, provider: &str) -> std::io::Result<bool> {
+        let _linkscope_remove = linkscope::phase("auth.token_store.remove");
         let mut store = self.load()?;
         let removed = store.providers.remove(provider).is_some();
         self.save(&store)?;
+        linkscope::record_items("auth.token_store.removed", if removed { 1 } else { 0 });
         Ok(removed)
     }
 
     pub fn save(&self, store: &TokenStoreFile) -> std::io::Result<()> {
+        let _linkscope_save = linkscope::phase("auth.token_store.save");
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent)?;
         }
         let json = serde_json::to_vec_pretty(store).map_err(std::io::Error::other)?;
+        linkscope::record_bytes(
+            "auth.token_store.write",
+            usize_to_u64_saturating(json.len()),
+        );
         let tmp = self.path.with_extension("json.tmp");
         {
             let mut opts = std::fs::OpenOptions::new();
@@ -156,6 +179,10 @@ impl TokenStore {
         }
         Ok(())
     }
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 impl From<PathBuf> for TokenStore {

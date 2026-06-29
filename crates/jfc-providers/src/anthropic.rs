@@ -10,6 +10,8 @@ use super::sse;
 const API_URL: &str = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 const ANTHROPIC_BETA: &str = "interleaved-thinking-2025-05-14";
+const PROMPT_CACHING_SCOPE_BETA: &str = "prompt-caching-scope-2026-01-05";
+const EXTENDED_CACHE_TTL_BETA: &str = "extended-cache-ttl-2025-04-11";
 const CACHE_DIAGNOSIS_BETA: &str = "cache-diagnosis-2026-04-07";
 const CONTEXT_MANAGEMENT_BETA: &str = "context-management-2025-06-27";
 const NARRATION_SUMMARIES_BETA: &str = jfc_anthropic_sdk::beta::NARRATION_SUMMARIES;
@@ -133,6 +135,8 @@ fn build_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -> serde_jso
     }
 
     let has_thinking = opts.adaptive_thinking || opts.thinking_budget.is_some();
+    let model_supports_context_management =
+        super::anthropic_models::model_supports_context_management(opts.model.as_str());
     // Anthropic rejects sampling overrides while extended thinking is on:
     // `temperature` may only be 1, and `top_p`/`top_k` must be unset. We drop
     // BOTH here so a configured `top_p` doesn't 400 the request the moment
@@ -180,7 +184,7 @@ fn build_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -> serde_jso
     }
     // Claude Code 2.1.177 sends a context-management edit while thinking is
     // active so old thinking blocks do not accumulate in the model context.
-    if has_thinking {
+    if has_thinking && model_supports_context_management {
         body["context_management"] = json!({
             "edits": [{ "type": "clear_thinking_20251015", "keep": "all" }]
         });
@@ -264,6 +268,7 @@ impl Provider for AnthropicProvider {
     }
 
     async fn fetch_models(&self) -> anyhow::Result<Vec<ModelInfo>> {
+        let _linkscope_fetch = linkscope::phase("provider.anthropic.fetch_models");
         // Union the live models.dev catalog into the curated canonical list.
         // Replacing canonical wholesale (the old behaviour) lost the alias rows
         // (`↗ Opus / Sonnet / Haiku (latest)`) the picker leads with, because
@@ -295,10 +300,25 @@ impl Provider for AnthropicProvider {
         messages: Vec<ProviderMessage>,
         options: &StreamOptions,
     ) -> anyhow::Result<EventStream> {
+        let message_count = usize_to_u64_saturating(messages.len());
+        let _linkscope_stream = linkscope::phase("provider.anthropic.stream");
+        if linkscope::is_enabled() {
+            linkscope::event_fields(
+                "provider.anthropic.stream.start",
+                [
+                    linkscope::TraceField::text("model", options.model.to_string()),
+                    linkscope::TraceField::count("messages", message_count),
+                    linkscope::TraceField::count(
+                        "tools",
+                        usize_to_u64_saturating(options.tools.len()),
+                    ),
+                ],
+            );
+        }
         let body = build_body(messages, options);
         maybe_warn_volatile_cache_content(&body);
 
-        let beta_header = build_beta_header(options);
+        let beta_header = build_beta_header_for_body(options, &body);
 
         let send_started = std::time::Instant::now();
         let resp = match jfc_provider::http::send_with_retry("anthropic.messages", || {
@@ -405,6 +425,10 @@ impl Provider for AnthropicProvider {
     }
 }
 
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
+}
+
 fn append_custom_betas(header: &mut String, custom_betas: &[String]) {
     for beta in custom_betas {
         let beta = beta.trim();
@@ -416,8 +440,25 @@ fn append_custom_betas(header: &mut String, custom_betas: &[String]) {
     }
 }
 
+#[cfg(test)]
 fn build_beta_header(options: &StreamOptions) -> String {
+    build_beta_header_with_cache_ttl(options, false)
+}
+
+fn build_beta_header_for_body(options: &StreamOptions, body: &serde_json::Value) -> String {
+    build_beta_header_with_cache_ttl(options, sse::has_cache_control_ttl(body))
+}
+
+fn build_beta_header_with_cache_ttl(options: &StreamOptions, extended_cache_ttl: bool) -> String {
     let mut betas = ANTHROPIC_BETA.to_owned();
+    if options.prompt_caching_scope {
+        betas.push(',');
+        betas.push_str(PROMPT_CACHING_SCOPE_BETA);
+    }
+    if extended_cache_ttl {
+        betas.push(',');
+        betas.push_str(EXTENDED_CACHE_TTL_BETA);
+    }
     if super::anthropic_oauth::mid_conversation_system_enabled(&options.model) {
         betas.push_str(",mid-conversation-system-2026-04-07");
     }
@@ -427,7 +468,9 @@ fn build_beta_header(options: &StreamOptions) -> String {
     if options.task_budget_tokens.is_some() {
         betas.push_str(",task-budgets-2026-03-13");
     }
-    if options.adaptive_thinking || options.thinking_budget.is_some() {
+    if (options.adaptive_thinking || options.thinking_budget.is_some())
+        && super::anthropic_models::model_supports_context_management(options.model.as_str())
+    {
         betas.push(',');
         betas.push_str(CONTEXT_MANAGEMENT_BETA);
     }
@@ -510,9 +553,58 @@ mod tests {
     }
 
     #[test]
+    fn build_beta_header_includes_prompt_caching_scope_by_default_normal() {
+        let header = build_beta_header(&opts("claude-opus-4-7"));
+        assert!(header.contains(PROMPT_CACHING_SCOPE_BETA));
+    }
+
+    #[test]
+    fn build_beta_header_omits_prompt_caching_scope_when_disabled_robust() {
+        let mut options = opts("claude-opus-4-7");
+        options.prompt_caching_scope = false;
+        let header = build_beta_header(&options);
+        assert!(!header.contains(PROMPT_CACHING_SCOPE_BETA));
+    }
+
+    #[test]
+    fn build_beta_header_includes_extended_cache_ttl_for_ttl_body_normal() {
+        let body = serde_json::json!({
+            "system": [{
+                "type": "text",
+                "text": "stable",
+                "cache_control": { "type": "ephemeral", "ttl": "1h" }
+            }]
+        });
+        let header = build_beta_header_for_body(&opts("claude-opus-4-7"), &body);
+        assert!(header.contains(EXTENDED_CACHE_TTL_BETA));
+    }
+
+    #[test]
+    fn build_beta_header_omits_extended_cache_ttl_for_plain_cache_robust() {
+        let body = build_body(vec![make_user_msg("hi")], &opts("claude-opus-4-7"));
+        let header = build_beta_header_for_body(&opts("claude-opus-4-7"), &body);
+        assert!(!header.contains(EXTENDED_CACHE_TTL_BETA));
+    }
+
+    #[test]
     fn build_beta_header_includes_context_management_for_thinking_normal() {
         let header = build_beta_header(&opts("claude-opus-4-7").adaptive());
         assert!(header.contains(CONTEXT_MANAGEMENT_BETA));
+    }
+
+    #[test]
+    fn build_beta_header_omits_context_management_for_haiku_thinking_regression() {
+        let header = build_beta_header(&opts("claude-haiku-4-5").thinking(4096));
+        assert!(!header.contains(CONTEXT_MANAGEMENT_BETA));
+    }
+
+    #[test]
+    fn build_body_omits_context_management_for_haiku_thinking_regression() {
+        let body = build_body(
+            vec![make_user_msg("hi")],
+            &opts("claude-haiku-4-5").thinking(4096),
+        );
+        assert!(body.get("context_management").is_none());
     }
 
     #[test]
@@ -789,7 +881,10 @@ mod tests {
 
     #[test]
     fn build_body_thinking_clears_old_thinking_context_normal() {
-        let body = build_body(vec![make_user_msg("hi")], &opts("m").adaptive());
+        let body = build_body(
+            vec![make_user_msg("hi")],
+            &opts("claude-opus-4-7").adaptive(),
+        );
         assert_eq!(
             body["context_management"]["edits"][0]["type"],
             "clear_thinking_20251015"

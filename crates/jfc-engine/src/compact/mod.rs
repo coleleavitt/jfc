@@ -269,4 +269,6 @@ mod engine;
 pub mod microcompact;
 
 pub use engine::{CompactProgressCb, CompactResult, compact};
-pub use microcompact::{microcompact, microcompact_if_helpful, microcompact_savings};
+pub use microcompact::{
+    microcompact, microcompact_if_helpful, microcompact_savings, microcompact_speculative,
+};

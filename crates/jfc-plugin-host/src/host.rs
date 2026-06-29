@@ -33,8 +33,19 @@ impl PluginHost {
     where
         P: InternalPlugin + 'static,
     {
+        let _linkscope_register = linkscope::phase("plugin_host.register_internal");
         let plugin_id = plugin.manifest().id.clone();
         let key = plugin_id.as_str().to_owned();
+        linkscope::event_fields(
+            "plugin_host.register_internal",
+            [
+                linkscope::TraceField::text("plugin_id", key.clone()),
+                linkscope::TraceField::count(
+                    "plugins_before",
+                    u64::try_from(self.plugins.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         if self.plugins.contains_key(&key) {
             return Err(PluginHostError::DuplicatePluginId { plugin_id: key });
         }
@@ -63,6 +74,10 @@ impl PluginHost {
         };
         self.next_registration_sequence = self.next_registration_sequence.saturating_add(1);
         self.plugins.insert(key, entry);
+        linkscope::record_items(
+            "plugin_host.registered",
+            u64::try_from(self.plugins.len()).unwrap_or(u64::MAX),
+        );
         Ok(())
     }
 
@@ -83,15 +98,38 @@ impl PluginHost {
     where
         F: FnMut(&HookValue) -> bool,
     {
+        let _linkscope_hook = linkscope::phase("plugin_host.trigger_hook");
         let plan = self.hook_plan(name);
+        linkscope::event_fields(
+            "plugin_host.trigger_hook.plan",
+            [
+                linkscope::TraceField::text("hook", format!("{name:?}")),
+                linkscope::TraceField::count(
+                    "callbacks",
+                    u64::try_from(plan.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         let mut current_value = value;
 
         for hook in plan {
+            let _linkscope_callback = linkscope::phase("plugin_host.hook_callback");
+            linkscope::detail_event_fields(
+                "plugin_host.hook_callback",
+                [
+                    linkscope::TraceField::text("plugin_id", hook.plugin_id.as_str().to_owned()),
+                    linkscope::TraceField::text("hook", format!("{name:?}")),
+                ],
+            );
             let invocation = HookInvocation::new(&hook.plugin_id, name, &current_value);
             match (hook.callback)(invocation) {
                 Ok(next_value) => {
                     current_value = next_value;
                     if should_stop(&current_value) {
+                        linkscope::event_fields(
+                            "plugin_host.trigger_hook.stop",
+                            [linkscope::TraceField::text("hook", format!("{name:?}"))],
+                        );
                         break;
                     }
                 }
@@ -118,6 +156,7 @@ impl PluginHost {
     }
 
     pub fn status_snapshot(&self) -> PluginHostSnapshot {
+        let _linkscope_snapshot = linkscope::phase("plugin_host.status_snapshot");
         let mut plugins = self
             .plugins
             .values()
@@ -127,10 +166,15 @@ impl PluginHost {
             (left.activation_order, left.plugin_id.as_str())
                 .cmp(&(right.activation_order, right.plugin_id.as_str()))
         });
+        linkscope::record_items(
+            "plugin_host.snapshot.plugins",
+            u64::try_from(plugins.len()).unwrap_or(u64::MAX),
+        );
         PluginHostSnapshot { plugins }
     }
 
     fn hook_plan(&self, name: HookName) -> Vec<ActivatedHook> {
+        let _linkscope_plan = linkscope::phase("plugin_host.hook_plan");
         let mut hooks = self
             .plugins
             .values()
@@ -155,6 +199,10 @@ impl PluginHost {
                     right.plugin_id.as_str(),
                 ))
         });
+        linkscope::record_items(
+            "plugin_host.hook_plan.callbacks",
+            u64::try_from(hooks.len()).unwrap_or(u64::MAX),
+        );
         hooks
     }
 
@@ -164,6 +212,18 @@ impl PluginHost {
         phase: PluginErrorPhase,
         message: String,
     ) {
+        let _linkscope_error = linkscope::phase("plugin_host.record_error");
+        linkscope::event_fields(
+            "plugin_host.record_error",
+            [
+                linkscope::TraceField::text("plugin_id", plugin_id.as_str().to_owned()),
+                linkscope::TraceField::text("phase", format!("{phase:?}")),
+                linkscope::TraceField::bytes(
+                    "message_bytes",
+                    u64::try_from(message.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         if let Some(entry) = self.plugins.get_mut(plugin_id.as_str()) {
             entry.errors.push(PluginErrorReport {
                 plugin_id: plugin_id.clone(),

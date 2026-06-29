@@ -36,6 +36,14 @@ impl VadDetector {
     /// Choose the engine from config, falling back to the energy detector if
     /// neural is requested but unavailable (feature off, or model load failed).
     fn select(cfg: &VoiceConfig) -> Self {
+        let _linkscope_select = linkscope::phase("voice.vad_detector.select");
+        linkscope::event_fields(
+            "voice.vad_detector.select",
+            [linkscope::TraceField::text(
+                "engine",
+                format!("{:?}", cfg.vad_engine),
+            )],
+        );
         match cfg.vad_engine {
             VadEngine::Neural => {
                 if !VadEngine::neural_runtime_enabled() {
@@ -76,6 +84,7 @@ impl VadDetector {
     }
 
     fn push(&mut self, pcm: &[u8]) -> Vec<VadEvent> {
+        let _linkscope_push = linkscope::phase("voice.vad_detector.push");
         match self {
             Self::Energy(v) => v.push(pcm),
             #[cfg(feature = "vad-neural")]
@@ -84,6 +93,7 @@ impl VadDetector {
     }
 
     fn reset(&mut self) {
+        let _linkscope_reset = linkscope::phase("voice.vad_detector.reset");
         match self {
             Self::Energy(v) => v.reset(),
             #[cfg(feature = "vad-neural")]
@@ -92,6 +102,7 @@ impl VadDetector {
     }
 
     fn force_end(&mut self) -> bool {
+        let _linkscope_force = linkscope::phase("voice.vad_detector.force_end");
         match self {
             Self::Energy(v) => v.force_end(),
             #[cfg(feature = "vad-neural")]
@@ -125,12 +136,17 @@ impl SpeakerGate {
     /// come from the legacy single `speaker_profile.json` PLUS every profile in
     /// the `speakers/` dir; reject profiles from the `reject/` dir.
     fn from_config(cfg: &VoiceConfig) -> Self {
+        let _linkscope_gate = linkscope::phase("voice.speaker_gate.from_config");
         let inert = || Self {
             accept: Vec::new(),
             reject: Vec::new(),
             embedder: Box::new(crate::speaker::NullEmbedder),
         };
         if !cfg.speaker_gate {
+            linkscope::event_fields(
+                "voice.speaker_gate.from_config",
+                [linkscope::TraceField::count("enabled", 0)],
+            );
             return inert();
         }
         let speaker_model_path = cfg.speaker_model_path.as_ref().map(std::path::Path::new);
@@ -162,6 +178,21 @@ impl SpeakerGate {
             );
             return inert();
         }
+        linkscope::event_fields(
+            "voice.speaker_gate.from_config",
+            [
+                linkscope::TraceField::count("enabled", 1),
+                linkscope::TraceField::count(
+                    "accept",
+                    u64::try_from(accept.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::count(
+                    "reject",
+                    u64::try_from(reject.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::text("backend", embedder.name().to_owned()),
+            ],
+        );
         info!(
             target: "jfc::voice::speaker",
             accept = accept.len(),
@@ -213,6 +244,7 @@ impl SpeakerGate {
     /// (transcribe) when the gate is inert or the utterance matches one of our
     /// speakers; `false` to drop the assistant's own voice or a background voice.
     fn admits(&self, pcm: &[u8]) -> bool {
+        let _linkscope_admits = linkscope::phase("voice.speaker_gate.admits");
         let decision = self.decide(pcm);
         if !decision.admitted() {
             info!(
@@ -221,6 +253,16 @@ impl SpeakerGate {
                 "dropped an utterance (not one of our speakers / own TTS voice)"
             );
         }
+        linkscope::event_fields(
+            "voice.speaker_gate.admits.result",
+            [
+                linkscope::TraceField::count("admitted", u64::from(decision.admitted())),
+                linkscope::TraceField::bytes(
+                    "pcm_bytes",
+                    u64::try_from(pcm.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         decision.admitted()
     }
 }
@@ -266,6 +308,7 @@ fn sanitize_profile_name(name: &str) -> String {
 
 /// Capture ~`secs` seconds of microphone PCM (16 kHz mono S16LE).
 async fn capture_pcm(secs: f64) -> Result<Vec<u8>, String> {
+    let _linkscope_capture = linkscope::phase("voice.capture_pcm");
     let backend = AudioCapture::detect_backend()
         .await
         .ok_or_else(|| "no audio capture backend available".to_owned())?;
@@ -283,6 +326,10 @@ async fn capture_pcm(secs: f64) -> Result<Vec<u8>, String> {
         }
     }
     pcm.extend_from_slice(&capture.stop().await);
+    linkscope::record_bytes(
+        "voice.capture_pcm.bytes",
+        u64::try_from(pcm.len()).unwrap_or(u64::MAX),
+    );
     Ok(pcm)
 }
 
@@ -311,6 +358,7 @@ pub async fn enroll_primary_speaker(
     cfg: &VoiceConfig,
     secs: f64,
 ) -> Result<std::path::PathBuf, String> {
+    let _linkscope_enroll = linkscope::phase("voice.enroll_primary_speaker");
     let pcm = capture_pcm(secs).await?;
     let path = SpeakerGate::profile_path(cfg);
     let profile = build_and_save_profile(cfg, &pcm, &path)?;
@@ -333,6 +381,11 @@ pub async fn enroll_speaker(
     name: &str,
     secs: f64,
 ) -> Result<std::path::PathBuf, String> {
+    let _linkscope_enroll = linkscope::phase("voice.enroll_speaker");
+    linkscope::event_fields(
+        "voice.enroll_speaker",
+        [linkscope::TraceField::text("name", name.to_owned())],
+    );
     let pcm = capture_pcm(secs).await?;
     let path = SpeakerGate::profile_dir(cfg)
         .join("speakers")
@@ -367,6 +420,14 @@ pub fn save_reject_profile_from_pcm(
     key: &str,
     pcm: &[u8],
 ) -> Result<std::path::PathBuf, String> {
+    let _linkscope_save = linkscope::phase("voice.save_reject_profile");
+    linkscope::event_fields(
+        "voice.save_reject_profile",
+        [
+            linkscope::TraceField::text("key", key.to_owned()),
+            linkscope::TraceField::bytes("pcm_bytes", u64::try_from(pcm.len()).unwrap_or(u64::MAX)),
+        ],
+    );
     let path = reject_profile_path(cfg, key);
     build_and_save_profile(cfg, pcm, &path)?;
     info!(
@@ -388,6 +449,7 @@ pub async fn enroll_self_voice(
     token: &str,
     user_agent: &str,
 ) -> Result<std::path::PathBuf, String> {
+    let _linkscope_enroll = linkscope::phase("voice.enroll_self_voice");
     // Two sentences → a few seconds of voiced audio (enroll needs ~0.5 s voiced).
     const PHRASE: &str = "The quick brown fox jumps over the lazy dog. \
         I am the assistant; this is the sound of my own voice, so I can recognize \
@@ -525,6 +587,15 @@ pub struct VoiceRecorder {
 
 impl VoiceRecorder {
     pub fn new(cfg: VoiceConfig, events: mpsc::UnboundedSender<VoiceTranscriptEvent>) -> Self {
+        let _linkscope_recorder = linkscope::phase("voice.recorder.new");
+        linkscope::event_fields(
+            "voice.recorder.new",
+            [
+                linkscope::TraceField::count("enabled", u64::from(cfg.enabled)),
+                linkscope::TraceField::text("mode", format!("{:?}", cfg.mode)),
+                linkscope::TraceField::text("backend", format!("{:?}", cfg.effective_backend())),
+            ],
+        );
         Self {
             cfg,
             state: Arc::new(Mutex::new(VoiceState::Idle)),
@@ -545,6 +616,14 @@ impl VoiceRecorder {
     }
 
     pub fn reconfigure(&mut self, cfg: VoiceConfig) {
+        let _linkscope_reconfigure = linkscope::phase("voice.recorder.reconfigure");
+        linkscope::event_fields(
+            "voice.recorder.reconfigure",
+            [
+                linkscope::TraceField::count("enabled", u64::from(cfg.enabled)),
+                linkscope::TraceField::text("mode", format!("{:?}", cfg.mode)),
+            ],
+        );
         if !cfg.enabled || cfg.mode != VoiceMode::Vad {
             if let Some(tx) = self.vad_stop_tx.take() {
                 let _ = tx.send(());
@@ -557,6 +636,7 @@ impl VoiceRecorder {
     }
 
     async fn resolve_token(&self) -> Option<String> {
+        let _linkscope_token = linkscope::phase("voice.recorder.resolve_token");
         let provider = self.token_provider.as_ref()?;
         provider().await
     }
@@ -564,8 +644,13 @@ impl VoiceRecorder {
     /// Start the VAD listen loop (VAD mode only).
     /// The loop runs continuously until `cancel()` is called.
     pub async fn start_vad_loop(&mut self) {
+        let _linkscope_start = linkscope::phase("voice.recorder.start_vad_loop");
         self.clear_stale_vad_loop_handles();
         if self.vad_stop_tx.is_some() {
+            linkscope::event_fields(
+                "voice.recorder.start_vad_loop.result",
+                [linkscope::TraceField::text("status", "already_running")],
+            );
             return; // already running
         }
         let backend = match AudioCapture::detect_backend().await {
@@ -580,6 +665,13 @@ impl VoiceRecorder {
                 return;
             }
         };
+        linkscope::event_fields(
+            "voice.recorder.start_vad_loop.result",
+            [
+                linkscope::TraceField::text("status", "starting"),
+                linkscope::TraceField::text("backend", backend.label().to_owned()),
+            ],
+        );
         info!(target: "jfc::voice", backend = %backend.label(), "starting VAD listen loop");
         let (vad_stop_tx, vad_stop_rx) = tokio::sync::oneshot::channel::<()>();
         let (vad_force_end_tx, vad_force_end_rx) = mpsc::unbounded_channel::<()>();
@@ -622,7 +714,16 @@ impl VoiceRecorder {
     /// - Hold mode: call `activate(true)` on key-down, `activate(false)` on key-up.
     /// - Tap mode: `activate(true)` on each tap (toggles recording).
     pub async fn activate(&mut self, pressed: bool) {
+        let _linkscope_activate = linkscope::phase("voice.recorder.activate");
         let state = *self.state.lock().await;
+        linkscope::event_fields(
+            "voice.recorder.activate",
+            [
+                linkscope::TraceField::text("mode", format!("{:?}", self.cfg.mode)),
+                linkscope::TraceField::count("pressed", u64::from(pressed)),
+                linkscope::TraceField::text("state", format!("{state:?}")),
+            ],
+        );
         match (self.cfg.mode, pressed, state) {
             (VoiceMode::Hold, true, VoiceState::Idle) => self.start_recording().await,
             (VoiceMode::Hold, false, VoiceState::Recording) => self.stop_recording().await,
@@ -648,6 +749,7 @@ impl VoiceRecorder {
     }
 
     async fn start_recording(&mut self) {
+        let _linkscope_start = linkscope::phase("voice.recorder.start_recording");
         info!(target: "jfc::voice", "start_recording");
         self.set_state(VoiceState::Recording).await;
 
@@ -661,6 +763,13 @@ impl VoiceRecorder {
                 return;
             }
         };
+        linkscope::event_fields(
+            "voice.recorder.start_recording.backend",
+            [linkscope::TraceField::text(
+                "backend",
+                backend.label().to_owned(),
+            )],
+        );
 
         // Resolve the OAuth token up front so the streaming session can use the
         // live Anthropic voice stream when signed in.
@@ -684,6 +793,7 @@ impl VoiceRecorder {
     }
 
     async fn stop_recording(&mut self) {
+        let _linkscope_stop = linkscope::phase("voice.recorder.stop_recording");
         info!(target: "jfc::voice", "stop_recording");
         // Signal the streaming task to finish; it transitions Recording →
         // Processing → Idle and emits the Final transcript itself.
@@ -695,6 +805,7 @@ impl VoiceRecorder {
     }
 
     fn force_end_vad_utterance(&mut self) {
+        let _linkscope_force = linkscope::phase("voice.recorder.force_end_vad_utterance");
         self.clear_stale_vad_loop_handles();
         let Some(tx) = self.vad_force_end_tx.as_ref() else {
             debug!(
@@ -725,6 +836,7 @@ impl VoiceRecorder {
     /// listen loop is left running). Used on a manual submit (Enter) so voice
     /// doesn't auto-submit a duplicate of what the user just sent.
     pub async fn discard_recording(&mut self) {
+        let _linkscope_discard = linkscope::phase("voice.recorder.discard_recording");
         if let Some(tx) = self.stop_tx.take() {
             info!(target: "jfc::voice", "discard_recording (manual submit)");
             self.cancel_flag
@@ -757,6 +869,11 @@ impl VoiceRecorder {
     }
 
     async fn set_state(&self, s: VoiceState) {
+        let _linkscope_state = linkscope::phase("voice.recorder.set_state");
+        linkscope::event_fields(
+            "voice.recorder.state",
+            [linkscope::TraceField::text("state", format!("{s:?}"))],
+        );
         *self.state.lock().await = s;
         self.events
             .send(VoiceTranscriptEvent::StateChanged(s))
@@ -772,6 +889,7 @@ impl VoiceRecorder {
     /// `/voice off` left the VAD loop running in the background (mic stayed hot,
     /// utterances kept being transcribed after the user turned voice off).
     pub async fn cancel(&mut self) {
+        let _linkscope_cancel = linkscope::phase("voice.recorder.cancel");
         // Mark discard BEFORE signalling stop so the recording task sees it and
         // drops the utterance instead of finalizing + emitting a `Final` (which
         // would auto-submit a duplicate after a manual Enter submit).
@@ -798,6 +916,7 @@ impl VoiceRecorder {
     }
 
     fn clear_stale_vad_loop_handles(&mut self) {
+        let _linkscope_clear = linkscope::phase("voice.recorder.clear_stale_vad_loop_handles");
         if self
             .vad_stop_tx
             .as_ref()
@@ -928,6 +1047,15 @@ async fn vad_listen_loop(
     vad_discard: Arc<std::sync::atomic::AtomicBool>,
     token_provider: Option<TokenProvider>,
 ) {
+    let _linkscope_loop = linkscope::phase("voice.vad.listen_loop");
+    linkscope::event_fields(
+        "voice.vad.listen_loop.start",
+        [
+            linkscope::TraceField::text("backend", backend.label().to_owned()),
+            linkscope::TraceField::text("mode", format!("{:?}", cfg.mode)),
+            linkscope::TraceField::text("backend_kind", format!("{:?}", cfg.effective_backend())),
+        ],
+    );
     debug!(target: "jfc::voice::vad", "VAD loop starting");
     tokio::pin!(stop_rx);
 
@@ -937,6 +1065,7 @@ async fn vad_listen_loop(
     let speaker_gate = SpeakerGate::from_config(&cfg);
 
     loop {
+        let _linkscope_iteration = linkscope::phase("voice.vad.listen_iteration");
         // ── Listening phase (Idle) ─────────────────────────────────────────
         let mut capture = match AudioCapture::start(backend).await {
             Ok(c) => c,
@@ -1012,6 +1141,16 @@ async fn vad_listen_loop(
                             }
                             let vad_events = detector.push(frame);
                             if vad_events.contains(&VadEvent::SpeechStart) {
+                                linkscope::event_fields(
+                                    "voice.vad.listen_loop.speech_start",
+                                    [linkscope::TraceField::bytes(
+                                        "preroll_bytes",
+                                        u64::try_from(
+                                            preroll.iter().map(Vec::len).sum::<usize>(),
+                                        )
+                                        .unwrap_or(u64::MAX),
+                                    )],
+                                );
                                 // Prepend the buffered pre-onset audio so the first
                                 // phoneme isn't clipped, then the onset frame itself.
                                 for pf in preroll.drain(..) {
@@ -1051,6 +1190,13 @@ async fn vad_listen_loop(
             Some(provider) => provider().await,
             None => None,
         };
+        linkscope::event_fields(
+            "voice.vad.listen_loop.token",
+            [linkscope::TraceField::count(
+                "available",
+                u64::from(token.is_some()),
+            )],
+        );
 
         // Decide whether to STREAM this utterance to the live voice_stream WS as
         // it is captured (transcript ready ~immediately at SpeechEnd, no replay
@@ -1074,6 +1220,7 @@ async fn vad_listen_loop(
         // batch fallback still transcribes it (self-correcting), so a wrong
         // onset decision never loses real speech — it only costs live interims.
         if want_stream && speaker_gate.is_active() {
+            let _linkscope_pregate = linkscope::phase("voice.vad.pregate");
             let pregate_target = utterance_buf.len() + pregate_window_bytes();
             let pregated = loop {
                 if utterance_buf.len() >= pregate_target {
@@ -1118,6 +1265,10 @@ async fn vad_listen_loop(
                 // recording loop below still captures the rest (silently) and the
                 // end-gate confirms the drop — emitting no Final.
                 want_stream = false;
+                linkscope::event_fields(
+                    "voice.vad.pregate.result",
+                    [linkscope::TraceField::count("admitted", 0)],
+                );
                 info!(
                     target: "jfc::voice::vad",
                     onset_bytes = utterance_buf.len(),
@@ -1130,6 +1281,7 @@ async fn vad_listen_loop(
             mpsc::UnboundedReceiver<crate::anthropic_ws::StreamMsg>,
         )> = None;
         if want_stream {
+            let _linkscope_connect = linkscope::phase("voice.vad.live_connect");
             let base = crate::stream_record::resolve_ws_base(&cfg);
             let user_agent = format!("jfc-voice/{}", env!("CARGO_PKG_VERSION"));
             let opts = crate::anthropic_ws::StreamOpts {
@@ -1159,12 +1311,20 @@ async fn vad_listen_loop(
                         "streaming utterance live to voice_stream during capture"
                     );
                     live = Some((stream, ev_rx));
+                    linkscope::event_fields(
+                        "voice.vad.live_connect.result",
+                        [linkscope::TraceField::count("connected", 1)],
+                    );
                 }
                 Err(err) => {
                     warn!(
                         target: "jfc::voice::vad",
                         error = %err,
                         "live voice_stream connect failed — using batch transcribe"
+                    );
+                    linkscope::event_fields(
+                        "voice.vad.live_connect.result",
+                        [linkscope::TraceField::count("connected", 0)],
                     );
                 }
             }
@@ -1273,6 +1433,18 @@ async fn vad_listen_loop(
                         // and what RMS it's reading (helps diagnose a high
                         // noise floor that prevents SpeechEnd).
                         if frames_seen.is_multiple_of(50) {
+                            linkscope::event_fields(
+                                "voice.vad.recording_heartbeat",
+                                [
+                                    linkscope::TraceField::count("frames", frames_seen),
+                                    linkscope::TraceField::count("frame_rms", u64::from(rms)),
+                                    linkscope::TraceField::count("max_rms", u64::from(max_rms)),
+                                    linkscope::TraceField::bytes(
+                                        "buf_bytes",
+                                        u64::try_from(utterance_buf.len()).unwrap_or(u64::MAX),
+                                    ),
+                                ],
+                            );
                             debug!(
                                 target: "jfc::voice::vad",
                                 frames = frames_seen,
@@ -1310,6 +1482,18 @@ async fn vad_listen_loop(
             bytes = utterance_buf.len(),
             speech_ended,
             "recording phase ended"
+        );
+        linkscope::event_fields(
+            "voice.vad.recording_ended",
+            [
+                linkscope::TraceField::count("frames", frames_seen),
+                linkscope::TraceField::count("max_rms", u64::from(max_rms)),
+                linkscope::TraceField::bytes(
+                    "bytes",
+                    u64::try_from(utterance_buf.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::count("speech_ended", u64::from(speech_ended)),
+            ],
         );
 
         // Drain the capture subprocess
@@ -1396,6 +1580,7 @@ async fn vad_listen_loop(
         }
 
         if admitted && transcript.is_none() {
+            let _linkscope_batch = linkscope::phase("voice.vad.batch_transcribe");
             // Batch fallback. The speaker gate already ran above, so go straight
             // to transcription here.
             let pcm = std::mem::take(&mut utterance_buf);
@@ -1957,7 +2142,7 @@ mod tests {
         // is active (will filter), even with no accept-list enrolled.
         let gate = SpeakerGate::from_config(&VoiceConfig {
             speaker_gate: true,
-            ..cfg.clone()
+            ..cfg
         });
         assert!(gate.is_active(), "reject-only gate must be active");
         assert_eq!(gate.reject.len(), 1);

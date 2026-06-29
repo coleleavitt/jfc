@@ -161,6 +161,7 @@ fn amount_as_i64(amount: u64) -> i64 {
 
 impl TokenLedger {
     pub fn new(total_budget: u64, daily_burn_cap: u64, spawn_fee: u64) -> Self {
+        linkscope::record_items("economy.ledger.new", 1);
         Self {
             total_budget,
             total_spent: 0,
@@ -180,12 +181,14 @@ impl TokenLedger {
         estimated_input: u64,
         estimated_output: u64,
     ) -> Result<u64, BudgetError> {
+        let _linkscope_gate = linkscope::phase("economy.ledger.gate_check");
         let estimated_cost = self
             .oracle
             .estimate_cost(model, estimated_input, estimated_output);
         let remaining = self.total_budget.saturating_sub(self.total_spent);
 
         if estimated_cost > remaining {
+            linkscope::record_items("economy.ledger.gate.exhausted", 1);
             return Err(BudgetError::Exhausted {
                 remaining,
                 requested: estimated_cost,
@@ -193,19 +196,23 @@ impl TokenLedger {
         }
 
         if self.today_spent + estimated_cost > self.daily_burn_cap {
+            linkscope::record_items("economy.ledger.gate.daily_cap", 1);
             return Err(BudgetError::DailyCapExceeded {
                 cap: self.daily_burn_cap,
                 today: self.today_spent,
             });
         }
 
+        linkscope::record_items("economy.ledger.gate.ok", 1);
         Ok(estimated_cost)
     }
 
     /// Debit the spawn fee when an agent is created.
     pub fn debit_spawn(&mut self, agent_id: &AgentId) -> Result<(), BudgetError> {
+        let _linkscope_debit = linkscope::phase("economy.ledger.debit_spawn");
         let remaining = self.total_budget.saturating_sub(self.total_spent);
         if self.spawn_fee > remaining {
+            linkscope::record_items("economy.ledger.debit_spawn.exhausted", 1);
             return Err(BudgetError::Exhausted {
                 remaining,
                 requested: self.spawn_fee,
@@ -227,6 +234,7 @@ impl TokenLedger {
             output_tokens: None,
         });
 
+        linkscope::record_items("economy.ledger.debit_spawn.ok", 1);
         Ok(())
     }
 
@@ -238,6 +246,7 @@ impl TokenLedger {
         input_tokens: u64,
         output_tokens: u64,
     ) {
+        let _linkscope_usage = linkscope::phase("economy.ledger.record_usage");
         let cost = self.oracle.actual_cost(model, input_tokens, output_tokens);
         self.total_spent = self.total_spent.saturating_add(cost);
         self.today_spent = self.today_spent.saturating_add(cost);
@@ -253,10 +262,12 @@ impl TokenLedger {
             input_tokens: Some(input_tokens),
             output_tokens: Some(output_tokens),
         });
+        linkscope::record_items("economy.ledger.usage.recorded", 1);
     }
 
     /// Credit tokens to an agent (bounty reward, validation reward, refund).
     pub fn credit(&mut self, agent_id: &AgentId, amount: u64, purpose: TransactionPurpose) {
+        let _linkscope_credit = linkscope::phase("economy.ledger.credit");
         let amount_i64 = amount_as_i64(amount);
         *self.balances.entry(agent_id.clone()).or_insert(0) += amount_i64;
 
@@ -269,6 +280,7 @@ impl TokenLedger {
             input_tokens: None,
             output_tokens: None,
         });
+        linkscope::record_items("economy.ledger.credit.recorded", 1);
     }
 
     /// Remaining budget (total - spent).
@@ -298,6 +310,7 @@ impl TokenLedger {
 
     /// Reset daily spend counter (call at day boundary).
     pub fn reset_daily(&mut self) {
+        linkscope::record_items("economy.ledger.reset_daily", 1);
         self.today_spent = 0;
     }
 }

@@ -41,18 +41,56 @@ impl StoreApplyReport {
     }
 }
 
-impl RsiCuratorReport {
-    pub async fn apply_to_store(
+/// Persist a curator report to the knowledge store. An extension trait (not an
+/// inherent impl) because `RsiCuratorReport` now lives in the external `rsi-rs`
+/// crate, and Rust's orphan rule forbids inherent impls on foreign types.
+#[allow(async_fn_in_trait)] // internal-use trait; callers await inline, no Send bound needed
+pub trait ApplyToStore {
+    async fn apply_to_store(
+        &self,
+        store: &jfc_knowledge::KnowledgeStore,
+        project_key: &str,
+    ) -> Result<StoreApplyReport, LearnError>;
+}
+
+impl ApplyToStore for RsiCuratorReport {
+    async fn apply_to_store(
         &self,
         store: &jfc_knowledge::KnowledgeStore,
         project_key: &str,
     ) -> Result<StoreApplyReport, LearnError> {
+        let _linkscope_apply = linkscope::phase("learn.rsi_store.apply_report");
+        linkscope::event_fields(
+            "learn.rsi_store.apply_report",
+            [
+                linkscope::TraceField::text("project_key", project_key.to_owned()),
+                linkscope::TraceField::count(
+                    "candidates",
+                    u64::try_from(self.candidates.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::count(
+                    "trace_count",
+                    u64::try_from(self.experiment_dashboard.trace_count).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         let mut report = StoreApplyReport::default();
         let preflight_ready = self.experiment_dashboard.trace_count == 0
             || self.experiment_job.preflight.status == RsiJobPreflightStatus::Ready;
         if preflight_ready {
             for candidate in &self.candidates {
                 let control = assess_control(candidate);
+                linkscope::detail_event_fields(
+                    "learn.rsi_store.candidate",
+                    [
+                        linkscope::TraceField::text("id", candidate.id.clone()),
+                        linkscope::TraceField::text("kind", candidate.kind.slug().to_owned()),
+                        linkscope::TraceField::text(
+                            "activation",
+                            control.activation_status.slug().to_owned(),
+                        ),
+                    ],
+                );
                 record_learning_event(
                     store,
                     project_key,
@@ -109,6 +147,23 @@ impl RsiCuratorReport {
             upsert_experiment_loop_state(store, project_key, &state).await?;
             report.experiment_loop_states += 1;
         }
+        linkscope::event_fields(
+            "learn.rsi_store.apply_report.result",
+            [
+                linkscope::TraceField::count(
+                    "actions",
+                    u64::try_from(report.actions()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::count(
+                    "definitions",
+                    u64::try_from(report.definitions).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::count(
+                    "memories",
+                    u64::try_from(report.memories).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         Ok(report)
     }
 }
@@ -120,6 +175,7 @@ async fn record_learning_event(
     graph: &super::ExperienceGraph,
     control: &ControlAssessment,
 ) -> Result<(), LearnError> {
+    let _linkscope_event = linkscope::phase("learn.rsi_store.record_learning_event");
     let now = now_ms();
     let row = jfc_knowledge::LearningEventRow {
         id: format!("rsi:{}", candidate.id),
@@ -156,6 +212,14 @@ async fn insert_memory_rule(
     project_key: &str,
     candidate: &CandidateChange,
 ) -> Result<(), LearnError> {
+    let _linkscope_memory = linkscope::phase("learn.rsi_store.insert_memory_rule");
+    linkscope::event_fields(
+        "learn.rsi_store.insert_memory_rule",
+        [
+            linkscope::TraceField::text("project_key", project_key.to_owned()),
+            linkscope::TraceField::text("candidate_id", candidate.id.clone()),
+        ],
+    );
     let mut record = jfc_knowledge::KnowledgeRecord::new(
         jfc_knowledge::Kind::Finding,
         jfc_knowledge::Scope::Project,
@@ -180,9 +244,22 @@ async fn upsert_definition(
     graph: &super::ExperienceGraph,
     control: &ControlAssessment,
 ) -> Result<(), LearnError> {
+    let _linkscope_definition = linkscope::phase("learn.rsi_store.upsert_definition");
     let Some(kind) = candidate.kind.definition_kind() else {
+        linkscope::event_fields(
+            "learn.rsi_store.upsert_definition.result",
+            [linkscope::TraceField::text("status", "no_definition_kind")],
+        );
         return Ok(());
     };
+    linkscope::event_fields(
+        "learn.rsi_store.upsert_definition",
+        [
+            linkscope::TraceField::text("project_key", project_key.to_owned()),
+            linkscope::TraceField::text("kind", kind.to_owned()),
+            linkscope::TraceField::text("candidate_id", candidate.id.clone()),
+        ],
+    );
     let prior = store
         .get_definition_by_name(
             kind,

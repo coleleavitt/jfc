@@ -16,7 +16,13 @@ pub enum ContextSkeletonError {
     GappedCompartmentRange,
     IncompleteCompartmentEvents,
     EmptyReducePlan,
+    EmptyContextDropSpec,
+    InvalidContextDropSpec,
     InvalidContextDropRange,
+    InvalidContextDropReplayMode,
+    InvalidContextTagId,
+    UnknownContextTag,
+    CompactedContextTag,
     ProtectedTailStartRequired,
     InvalidProtectedTailStart,
     UnexpectedProtectedTailStart,
@@ -44,7 +50,13 @@ impl Display for ContextSkeletonError {
             Self::GappedCompartmentRange => "compartment ranges must be contiguous",
             Self::IncompleteCompartmentEvents => "compartment events must exactly cover the range",
             Self::EmptyReducePlan => "reduce plan cannot be empty",
+            Self::EmptyContextDropSpec => "context drop spec cannot be empty",
+            Self::InvalidContextDropSpec => "context drop spec is invalid",
             Self::InvalidContextDropRange => "context drop range is invalid",
+            Self::InvalidContextDropReplayMode => "context drop replay mode is invalid",
+            Self::InvalidContextTagId => "context tag id must be non-zero",
+            Self::UnknownContextTag => "context tag does not exist",
+            Self::CompactedContextTag => "context tag is already compacted",
             Self::ProtectedTailStartRequired => {
                 "protected tail skip requires a protected tail start"
             }

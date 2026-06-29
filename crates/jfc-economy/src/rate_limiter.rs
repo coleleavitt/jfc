@@ -38,6 +38,14 @@ pub struct ItemExponentialBackoff<K> {
 
 impl<K: Eq + Hash + Clone> ItemExponentialBackoff<K> {
     pub fn new(base: Duration, max: Duration) -> Self {
+        let _linkscope_new = linkscope::phase("economy.rate_limiter.item_backoff.new");
+        linkscope::event_fields(
+            "economy.rate_limiter.item_backoff.new",
+            [
+                linkscope::TraceField::count("base_ms", duration_millis_u64(base)),
+                linkscope::TraceField::count("max_ms", duration_millis_u64(max)),
+            ],
+        );
         Self {
             base,
             max,
@@ -50,10 +58,19 @@ impl<K: Eq + Hash + Clone> ItemExponentialBackoff<K> {
     /// at `max`. Matches k8s: the failure count is read, *then* incremented, so
     /// the first call returns `base * 2^0 = base`.
     pub fn when(&mut self, item: &K) -> Duration {
+        let _linkscope_when = linkscope::phase("economy.rate_limiter.item_backoff.when");
         let exp = self.failures.entry(item.clone()).or_insert(0);
         let cur = *exp;
         *exp = exp.saturating_add(1);
-        backoff_for(self.base, self.max, cur)
+        let delay = backoff_for(self.base, self.max, cur);
+        linkscope::event_fields(
+            "economy.rate_limiter.item_backoff.when",
+            [
+                linkscope::TraceField::count("attempt", u64::from(cur)),
+                linkscope::TraceField::count("delay_ms", duration_millis_u64(delay)),
+            ],
+        );
+        delay
     }
 
     /// Number of times `item` has been requeued so far.
@@ -97,6 +114,14 @@ pub struct TokenBucket {
 impl TokenBucket {
     /// `qps` tokens per second, up to `burst` accumulated. Starts full.
     pub fn new(qps: f64, burst: u32) -> Self {
+        let _linkscope_new = linkscope::phase("economy.rate_limiter.token_bucket.new");
+        linkscope::event_fields(
+            "economy.rate_limiter.token_bucket.new",
+            [
+                linkscope::TraceField::text("qps", format!("{qps:.3}")),
+                linkscope::TraceField::count("burst", u64::from(burst)),
+            ],
+        );
         Self {
             qps,
             burst: burst as f64,
@@ -109,6 +134,7 @@ impl TokenBucket {
     /// return how long the caller must wait before acting. Refills lazily based
     /// on elapsed time, clamped to `burst`.
     pub fn reserve(&mut self, now_secs: f64) -> Duration {
+        let _linkscope_reserve = linkscope::phase("economy.rate_limiter.token_bucket.reserve");
         // Refill for elapsed time (guard against a non-monotonic clock).
         if now_secs > self.last_secs {
             self.tokens = (self.tokens + (now_secs - self.last_secs) * self.qps).min(self.burst);
@@ -123,7 +149,15 @@ impl TokenBucket {
             f64::MAX
         };
         self.tokens -= 1.0;
-        Duration::from_secs_f64(wait.clamp(0.0, Duration::MAX.as_secs_f64()))
+        let delay = Duration::from_secs_f64(wait.clamp(0.0, Duration::MAX.as_secs_f64()));
+        linkscope::detail_event_fields(
+            "economy.rate_limiter.token_bucket.reserve",
+            [
+                linkscope::TraceField::text("tokens_after", format!("{:.3}", self.tokens)),
+                linkscope::TraceField::count("delay_ms", duration_millis_u64(delay)),
+            ],
+        );
+        delay
     }
 }
 
@@ -140,6 +174,16 @@ pub struct RetryRateLimiter<K> {
 impl<K: Eq + Hash + Clone> RetryRateLimiter<K> {
     /// Build from explicit parameters.
     pub fn new(base: Duration, max: Duration, qps: f64, burst: u32) -> Self {
+        let _linkscope_new = linkscope::phase("economy.rate_limiter.retry.new");
+        linkscope::event_fields(
+            "economy.rate_limiter.retry.new",
+            [
+                linkscope::TraceField::count("base_ms", duration_millis_u64(base)),
+                linkscope::TraceField::count("max_ms", duration_millis_u64(max)),
+                linkscope::TraceField::text("qps", format!("{qps:.3}")),
+                linkscope::TraceField::count("burst", u64::from(burst)),
+            ],
+        );
         Self {
             item: ItemExponentialBackoff::new(base, max),
             bucket: TokenBucket::new(qps, burst),
@@ -170,9 +214,19 @@ impl<K: Eq + Hash + Clone> RetryRateLimiter<K> {
     /// As [`Self::when`] but with an explicit logical timestamp (monotonic
     /// seconds) for the token bucket, making the result deterministic.
     pub fn when_at(&mut self, item: &K, now_secs: f64) -> Duration {
+        let _linkscope_when = linkscope::phase("economy.rate_limiter.retry.when_at");
         let item_delay = self.item.when(item);
         let bucket_delay = self.bucket.reserve(now_secs);
-        item_delay.max(bucket_delay)
+        let delay = item_delay.max(bucket_delay);
+        linkscope::event_fields(
+            "economy.rate_limiter.retry.when_at",
+            [
+                linkscope::TraceField::count("item_delay_ms", duration_millis_u64(item_delay)),
+                linkscope::TraceField::count("bucket_delay_ms", duration_millis_u64(bucket_delay)),
+                linkscope::TraceField::count("delay_ms", duration_millis_u64(delay)),
+            ],
+        );
+        delay
     }
 
     /// Retry count for `item`.
@@ -186,6 +240,10 @@ impl<K: Eq + Hash + Clone> RetryRateLimiter<K> {
     pub fn forget(&mut self, item: &K) {
         self.item.forget(item);
     }
+}
+
+fn duration_millis_u64(duration: Duration) -> u64 {
+    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]

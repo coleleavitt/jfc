@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::LearnError;
 use crate::historian::CandidateFact;
-use crate::rsi_curator::{RsiCurator, RsiCuratorJob, RsiCuratorReport};
+use crate::rsi_curator::{ApplyToStore, RsiCurator, RsiCuratorJob, RsiCuratorReport};
 use crate::variant_selector::{PromptVariant, Teleprompter, VariantEvaluator};
 use crate::verifier::{LlmVerifier, PromotionVerifier, VerifierVerdict};
 
@@ -122,6 +122,14 @@ pub struct SkillInductionJob {
 
 impl Dreamer {
     pub fn new(lease_path: PathBuf) -> Self {
+        let _linkscope_new = linkscope::phase("learn.dreamer.new");
+        linkscope::event_fields(
+            "learn.dreamer.new",
+            [linkscope::TraceField::text(
+                "lease_path",
+                lease_path.display().to_string(),
+            )],
+        );
         Self {
             lease_path,
             project_root: None,
@@ -136,6 +144,20 @@ impl Dreamer {
     /// Builder hook: configure skill induction so [`DreamerTask::InduceSkills`]
     /// mines the supplied session traces during a cycle.
     pub fn with_skill_induction(mut self, job: SkillInductionJob) -> Self {
+        let _linkscope_config = linkscope::phase("learn.dreamer.with_skill_induction");
+        linkscope::event_fields(
+            "learn.dreamer.with_skill_induction",
+            [
+                linkscope::TraceField::count(
+                    "traces",
+                    u64::try_from(job.traces.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::count(
+                    "max_proposals",
+                    u64::try_from(job.config.max_proposals).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         self.skill_induction = Some(job);
         self
     }
@@ -143,6 +165,7 @@ impl Dreamer {
     /// The proposals produced by the most recent [`DreamerTask::InduceSkills`]
     /// run. Cloned out so callers can surface them without holding the lock.
     pub fn skill_proposals(&self) -> Vec<crate::skill_induction::SkillProposal> {
+        let _linkscope_read = linkscope::phase("learn.dreamer.skill_proposals");
         self.skill_proposals
             .lock()
             .map(|g| g.clone())
@@ -150,11 +173,24 @@ impl Dreamer {
     }
 
     pub fn with_rsi_curator(mut self, job: RsiCuratorJob) -> Self {
+        let _linkscope_config = linkscope::phase("learn.dreamer.with_rsi_curator");
+        linkscope::event_fields(
+            "learn.dreamer.with_rsi_curator",
+            [
+                linkscope::TraceField::count(
+                    "traces",
+                    u64::try_from(job.traces.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::count("worker", u64::from(job.worker.is_some())),
+                linkscope::TraceField::count("project_key", u64::from(job.project_key.is_some())),
+            ],
+        );
         self.rsi_curator = Some(job);
         self
     }
 
     pub fn rsi_reports(&self) -> Vec<RsiCuratorReport> {
+        let _linkscope_read = linkscope::phase("learn.dreamer.rsi_reports");
         self.rsi_reports
             .lock()
             .map(|g| g.clone())
@@ -165,6 +201,14 @@ impl Dreamer {
     /// [`DreamerTask::CompilePrompts`] selects the best variant against its
     /// eval set during a cycle.
     pub fn with_prompt_compile(mut self, job: PromptCompileJob) -> Self {
+        let _linkscope_config = linkscope::phase("learn.dreamer.with_prompt_compile");
+        linkscope::event_fields(
+            "learn.dreamer.with_prompt_compile",
+            [linkscope::TraceField::count(
+                "variants",
+                u64::try_from(job.variants.len()).unwrap_or(u64::MAX),
+            )],
+        );
         self.prompt_compile = Some(job);
         self
     }
@@ -173,6 +217,14 @@ impl Dreamer {
     /// `<project_root>/.jfc/ARCHITECTURE.md` summarising the in-memory record
     /// set. Without this, `maintain_docs` is a stub returning `Ok(0)`.
     pub fn with_project_root(mut self, root: PathBuf) -> Self {
+        let _linkscope_config = linkscope::phase("learn.dreamer.with_project_root");
+        linkscope::event_fields(
+            "learn.dreamer.with_project_root",
+            [linkscope::TraceField::text(
+                "root",
+                root.display().to_string(),
+            )],
+        );
         self.project_root = Some(root);
         self
     }
@@ -183,11 +235,38 @@ impl Dreamer {
         tasks: &[DreamerTask],
         memories: &mut [MemoryRecord],
     ) -> Result<DreamerReport, LearnError> {
+        let _linkscope_cycle = linkscope::phase("learn.dreamer.run_cycle");
+        linkscope::event_fields(
+            "learn.dreamer.run_cycle",
+            [
+                linkscope::TraceField::count(
+                    "tasks",
+                    u64::try_from(tasks.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::count(
+                    "memories",
+                    u64::try_from(memories.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         let mut results = Vec::new();
         let mut consecutive_failures = 0;
 
         for task in tasks {
             if consecutive_failures >= CIRCUIT_BREAKER_THRESHOLD {
+                linkscope::event_fields(
+                    "learn.dreamer.circuit_breaker",
+                    [
+                        linkscope::TraceField::count(
+                            "tasks_run",
+                            u64::try_from(results.len()).unwrap_or(u64::MAX),
+                        ),
+                        linkscope::TraceField::count(
+                            "consecutive_failures",
+                            u64::try_from(consecutive_failures).unwrap_or(u64::MAX),
+                        ),
+                    ],
+                );
                 return Ok(DreamerReport {
                     tasks_run: results,
                     circuit_breaker_fired: true,
@@ -195,19 +274,38 @@ impl Dreamer {
             }
 
             let start = now_ms();
-            let task_result = match task {
-                DreamerTask::Consolidate => self.consolidate(memories),
-                DreamerTask::ArchiveStale => self.archive_stale(memories),
-                DreamerTask::Verify => self.verify(),
-                DreamerTask::Improve => self.improve(),
-                DreamerTask::MaintainDocs => self.maintain_docs(memories),
-                DreamerTask::CompilePrompts => self.compile_prompts(),
-                DreamerTask::InduceSkills => self.induce_skills(),
+            let task_result = {
+                let _linkscope_task = linkscope::phase("learn.dreamer.task");
+                linkscope::event_fields(
+                    "learn.dreamer.task",
+                    [linkscope::TraceField::text("task", format!("{task:?}"))],
+                );
+                match task {
+                    DreamerTask::Consolidate => self.consolidate(memories),
+                    DreamerTask::ArchiveStale => self.archive_stale(memories),
+                    DreamerTask::Verify => self.verify(),
+                    DreamerTask::Improve => self.improve(),
+                    DreamerTask::MaintainDocs => self.maintain_docs(memories),
+                    DreamerTask::CompilePrompts => self.compile_prompts(),
+                    DreamerTask::InduceSkills => self.induce_skills(),
+                }
             };
             let duration_ms = now_ms() - start;
 
             match task_result {
                 Ok(actions) => {
+                    linkscope::event_fields(
+                        "learn.dreamer.task.result",
+                        [
+                            linkscope::TraceField::text("task", format!("{task:?}")),
+                            linkscope::TraceField::text("status", "ok"),
+                            linkscope::TraceField::count("duration_ms", duration_ms),
+                            linkscope::TraceField::count(
+                                "actions",
+                                u64::try_from(actions).unwrap_or(u64::MAX),
+                            ),
+                        ],
+                    );
                     consecutive_failures = 0;
                     results.push(DreamerTaskResult {
                         task: task.clone(),
@@ -217,6 +315,15 @@ impl Dreamer {
                     });
                 }
                 Err(e) => {
+                    linkscope::event_fields(
+                        "learn.dreamer.task.result",
+                        [
+                            linkscope::TraceField::text("task", format!("{task:?}")),
+                            linkscope::TraceField::text("status", "error"),
+                            linkscope::TraceField::count("duration_ms", duration_ms),
+                            linkscope::TraceField::text("error", e.to_string()),
+                        ],
+                    );
                     consecutive_failures += 1;
                     results.push(DreamerTaskResult {
                         task: task.clone(),
@@ -228,6 +335,13 @@ impl Dreamer {
             }
         }
 
+        linkscope::event_fields(
+            "learn.dreamer.run_cycle.result",
+            [linkscope::TraceField::count(
+                "tasks_run",
+                u64::try_from(results.len()).unwrap_or(u64::MAX),
+            )],
+        );
         Ok(DreamerReport {
             tasks_run: results,
             circuit_breaker_fired: false,
@@ -241,7 +355,12 @@ impl Dreamer {
     /// when no [`SkillInductionJob`] is configured. Proposals are surfaced, not
     /// installed — confirmation happens downstream.
     fn induce_skills(&self) -> Result<usize, LearnError> {
+        let _linkscope_induce = linkscope::phase("learn.dreamer.induce_skills");
         let Some(job) = &self.skill_induction else {
+            linkscope::event_fields(
+                "learn.dreamer.induce_skills.result",
+                [linkscope::TraceField::text("status", "not_configured")],
+            );
             return Ok(0);
         };
         let proposals = crate::skill_induction::induce_skills(&job.traces, &job.config);
@@ -249,6 +368,13 @@ impl Dreamer {
         if let Ok(mut slot) = self.skill_proposals.lock() {
             *slot = proposals;
         }
+        linkscope::event_fields(
+            "learn.dreamer.induce_skills.result",
+            [linkscope::TraceField::count(
+                "proposals",
+                u64::try_from(count).unwrap_or(u64::MAX),
+            )],
+        );
         Ok(count)
     }
 
@@ -257,7 +383,12 @@ impl Dreamer {
     /// variants evaluated (the "actions taken" for the cycle report). A no-op
     /// returning `Ok(0)` when no [`PromptCompileJob`] is configured.
     fn compile_prompts(&self) -> Result<usize, LearnError> {
+        let _linkscope_compile = linkscope::phase("learn.dreamer.compile_prompts");
         let Some(job) = &self.prompt_compile else {
+            linkscope::event_fields(
+                "learn.dreamer.compile_prompts.result",
+                [linkscope::TraceField::text("status", "not_configured")],
+            );
             return Ok(0);
         };
         let report = job
@@ -277,11 +408,22 @@ impl Dreamer {
                 "prompt compile found no qualifying variant"
             );
         }
+        linkscope::event_fields(
+            "learn.dreamer.compile_prompts.result",
+            [
+                linkscope::TraceField::count(
+                    "ranked",
+                    u64::try_from(report.ranked.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::count("winner", u64::from(report.winner.is_some())),
+            ],
+        );
         Ok(report.ranked.len())
     }
 
     /// Consolidate: find duplicate memories by normalized_hash within same category, archive dupes.
     fn consolidate(&self, memories: &mut [MemoryRecord]) -> Result<usize, LearnError> {
+        let _linkscope_consolidate = linkscope::phase("learn.dreamer.consolidate");
         use std::collections::HashMap;
         use std::collections::hash_map::Entry;
 
@@ -305,11 +447,19 @@ impl Dreamer {
             memories[*idx].memory_status = Some("archived".to_string());
         }
 
+        linkscope::event_fields(
+            "learn.dreamer.consolidate.result",
+            [linkscope::TraceField::count(
+                "archived",
+                u64::try_from(actions).unwrap_or(u64::MAX),
+            )],
+        );
         Ok(actions)
     }
 
     /// Archive stale: memories with last_seen_at > 120 days ago.
     fn archive_stale(&self, memories: &mut [MemoryRecord]) -> Result<usize, LearnError> {
+        let _linkscope_archive = linkscope::phase("learn.dreamer.archive_stale");
         let now = now_ms();
         let threshold = 120 * 24 * 60 * 60 * 1000; // 120 days in ms
         let mut actions = 0;
@@ -324,6 +474,13 @@ impl Dreamer {
             }
         }
 
+        linkscope::event_fields(
+            "learn.dreamer.archive_stale.result",
+            [linkscope::TraceField::count(
+                "archived",
+                u64::try_from(actions).unwrap_or(u64::MAX),
+            )],
+        );
         Ok(actions)
     }
 
@@ -333,6 +490,7 @@ impl Dreamer {
     /// and PlanDreamer schedule call directly with a [`PromotionVerifier`] +
     /// [`LlmVerifier`].
     fn verify(&self) -> Result<usize, LearnError> {
+        let _linkscope_verify = linkscope::phase("learn.dreamer.verify_noop");
         Ok(0)
     }
 
@@ -353,6 +511,7 @@ impl Dreamer {
         verifier: &PromotionVerifier,
         llm: &dyn LlmVerifier,
     ) -> Result<usize, LearnError> {
+        let _linkscope_verify = linkscope::phase("learn.dreamer.verify_memories");
         let mut actions = 0;
         for mem in memories.iter_mut() {
             let status = mem.memory_status.as_deref().unwrap_or("active");
@@ -379,15 +538,45 @@ impl Dreamer {
                 actions += 1;
             }
         }
+        linkscope::event_fields(
+            "learn.dreamer.verify_memories.result",
+            [linkscope::TraceField::count(
+                "changed",
+                u64::try_from(actions).unwrap_or(u64::MAX),
+            )],
+        );
         Ok(actions)
     }
 
     fn improve(&self) -> Result<usize, LearnError> {
+        let _linkscope_improve = linkscope::phase("learn.dreamer.improve");
         let Some(job) = &self.rsi_curator else {
+            linkscope::event_fields(
+                "learn.dreamer.improve.result",
+                [linkscope::TraceField::text("status", "not_configured")],
+            );
             return Ok(0);
         };
         if job.worker.is_some() {
             let output = crate::rsi_curator::run_rsi_worker_job(job)?;
+            linkscope::event_fields(
+                "learn.dreamer.improve.result",
+                [
+                    linkscope::TraceField::text("status", "worker"),
+                    linkscope::TraceField::count(
+                        "actions",
+                        u64::try_from(output.actions).unwrap_or(u64::MAX),
+                    ),
+                    linkscope::TraceField::count(
+                        "traces_scored",
+                        u64::try_from(output.traces_scored).unwrap_or(u64::MAX),
+                    ),
+                    linkscope::TraceField::count(
+                        "candidates_seen",
+                        u64::try_from(output.candidates_seen).unwrap_or(u64::MAX),
+                    ),
+                ],
+            );
             return Ok(output.actions);
         }
         let curator = RsiCurator::new(job.config.clone(), job.promotion_policy.clone());
@@ -407,6 +596,13 @@ impl Dreamer {
         if let Ok(mut reports) = self.rsi_reports.lock() {
             reports.push(report);
         }
+        linkscope::event_fields(
+            "learn.dreamer.improve.result",
+            [
+                linkscope::TraceField::text("status", "inline"),
+                linkscope::TraceField::count("actions", u64::try_from(actions).unwrap_or(u64::MAX)),
+            ],
+        );
         Ok(actions)
     }
 
@@ -423,7 +619,12 @@ impl Dreamer {
     ///
     /// Returns `1` if a file was written, `0` otherwise.
     fn maintain_docs(&self, memories: &[MemoryRecord]) -> Result<usize, LearnError> {
+        let _linkscope_docs = linkscope::phase("learn.dreamer.maintain_docs");
         let Some(root) = &self.project_root else {
+            linkscope::event_fields(
+                "learn.dreamer.maintain_docs.result",
+                [linkscope::TraceField::text("status", "no_project_root")],
+            );
             return Ok(0);
         };
 
@@ -434,6 +635,10 @@ impl Dreamer {
             .filter(|m| m.memory_status.as_deref().unwrap_or("active") == "active")
             .collect();
         if active.is_empty() {
+            linkscope::event_fields(
+                "learn.dreamer.maintain_docs.result",
+                [linkscope::TraceField::text("status", "no_active_memories")],
+            );
             return Ok(0);
         }
 
@@ -469,6 +674,13 @@ impl Dreamer {
         fs::create_dir_all(&out_dir)?;
         let out_path = out_dir.join("ARCHITECTURE.md");
         fs::write(&out_path, doc)?;
+        linkscope::event_fields(
+            "learn.dreamer.maintain_docs.result",
+            [
+                linkscope::TraceField::text("status", "written"),
+                linkscope::TraceField::text("path", out_path.display().to_string()),
+            ],
+        );
         Ok(1)
     }
 }
@@ -477,6 +689,7 @@ impl Dreamer {
 
 /// Acquire a lease. Returns the lease on success.
 pub async fn acquire_lease(lease_path: &Path) -> Result<DreamerLease, LearnError> {
+    let _linkscope_lease = linkscope::phase("learn.dreamer.acquire_lease");
     let lease = DreamerLease {
         holder_id: uuid::Uuid::new_v4().to_string(),
         expiry_ms: now_ms() + DEFAULT_LEASE_DURATION_MS,
@@ -517,6 +730,7 @@ pub async fn acquire_lease(lease_path: &Path) -> Result<DreamerLease, LearnError
 
 /// Release a lease (only the holder can release).
 pub async fn release_lease(lease_path: &Path, holder_id: &str) -> Result<(), LearnError> {
+    let _linkscope_lease = linkscope::phase("learn.dreamer.release_lease");
     let store = jfc_knowledge::KnowledgeStore::open_default()
         .await
         .map_err(|e| LearnError::Io {
@@ -554,6 +768,7 @@ pub async fn release_lease(lease_path: &Path, holder_id: &str) -> Result<(), Lea
 
 /// Renew a lease (extend expiry).
 pub async fn renew_lease(lease_path: &Path, holder_id: &str) -> Result<(), LearnError> {
+    let _linkscope_lease = linkscope::phase("learn.dreamer.renew_lease");
     let store = jfc_knowledge::KnowledgeStore::open_default()
         .await
         .map_err(|e| LearnError::Io {

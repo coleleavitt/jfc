@@ -35,6 +35,15 @@ use super::worker_state::{
 };
 
 pub fn spawn_background_agent_worker(launch: BackgroundAgentLaunch) -> std::io::Result<u32> {
+    let _linkscope_spawn = linkscope::phase("engine.worker.spawn_background_agent_worker");
+    linkscope::event_fields(
+        "engine.worker.spawn_background_agent_worker",
+        [
+            linkscope::TraceField::text("task_id", launch.task_id.clone()),
+            linkscope::TraceField::text("cwd", launch.cwd.display().to_string()),
+            linkscope::TraceField::text("model", launch.model.as_str().to_owned()),
+        ],
+    );
     jfc_daemon::spawn_background_agent_worker(launch)
 }
 
@@ -45,11 +54,35 @@ pub fn spawn_background_agent_worker(launch: BackgroundAgentLaunch) -> std::io::
 /// Worker-side entry: re-enter from `jfc daemon worker --launch <path>`,
 /// rebuild providers, drive `execute_task`, and write terminal state.
 pub async fn run_background_agent_worker(launch_path: PathBuf) -> std::io::Result<()> {
+    let _linkscope_worker = linkscope::phase("engine.worker.run_background_agent_worker");
+    linkscope::event_fields(
+        "engine.worker.run_background_agent_worker",
+        [linkscope::TraceField::text(
+            "launch_path",
+            launch_path.display().to_string(),
+        )],
+    );
     let paths = DaemonPaths::default_user();
     paths.ensure_dirs()?;
     let launch = jfc_daemon::worker::load_background_agent_launch(&paths, &launch_path)?;
+    linkscope::event_fields(
+        "engine.worker.launch_loaded",
+        [
+            linkscope::TraceField::text("task_id", launch.task_id.clone()),
+            linkscope::TraceField::text("cwd", launch.cwd.display().to_string()),
+            linkscope::TraceField::text("model", launch.model.as_str().to_owned()),
+            linkscope::TraceField::count("worker_epoch", launch.worker_epoch),
+        ],
+    );
 
     if let Err(e) = std::env::set_current_dir(&launch.cwd) {
+        linkscope::event_fields(
+            "engine.worker.cwd.result",
+            [
+                linkscope::TraceField::text("status", "failed"),
+                linkscope::TraceField::text("error", e.to_string()),
+            ],
+        );
         let msg = format!("worker failed to enter cwd {}: {e}", launch.cwd.display());
         mark_background_agent_spawn_failed(&paths, &launch.task_id, &msg)?;
         return Err(e);
@@ -82,6 +115,17 @@ pub async fn run_background_agent_worker(launch_path: PathBuf) -> std::io::Resul
             )
         })
         .unwrap_or_else(|| provider_init.providers[provider_init.active_idx].clone());
+    linkscope::event_fields(
+        "engine.worker.provider_selected",
+        [
+            linkscope::TraceField::text("provider", provider.name().to_owned()),
+            linkscope::TraceField::text(
+                "requested_provider",
+                launch.provider_name.clone().unwrap_or_default(),
+            ),
+            linkscope::TraceField::text("model", launch.model.as_str().to_owned()),
+        ],
+    );
 
     record_background_agent_started_at(
         &paths,
@@ -107,6 +151,7 @@ pub async fn run_background_agent_worker(launch_path: PathBuf) -> std::io::Resul
     let heartbeat_task_id = launch.task_id.clone();
     let heartbeat_log_path = background_agent_log_path(&paths, &launch.task_id);
     let heartbeat = tokio::spawn(async move {
+        let _linkscope_heartbeat = linkscope::phase("engine.worker.heartbeat_task");
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
@@ -122,6 +167,19 @@ pub async fn run_background_agent_worker(launch_path: PathBuf) -> std::io::Resul
     });
     let (configured_mcp_servers, active_mcp_servers) =
         register_background_worker_mcp_registry().await;
+    linkscope::event_fields(
+        "engine.worker.mcp_registered",
+        [
+            linkscope::TraceField::count(
+                "configured",
+                u64::try_from(configured_mcp_servers).unwrap_or(u64::MAX),
+            ),
+            linkscope::TraceField::count(
+                "active",
+                u64::try_from(active_mcp_servers).unwrap_or(u64::MAX),
+            ),
+        ],
+    );
     if configured_mcp_servers > 0 {
         append_log_line(
             &background_agent_log_path(&paths, &launch.task_id),
@@ -134,6 +192,13 @@ pub async fn run_background_agent_worker(launch_path: PathBuf) -> std::io::Resul
     let (worktree_info, cwd_override) = match prepare_background_worktree(&launch).await {
         BackgroundIsolation::Proceed(wt, cwd) => (wt, cwd),
         BackgroundIsolation::FailClosed(msg) => {
+            linkscope::event_fields(
+                "engine.worker.result",
+                [linkscope::TraceField::text(
+                    "status",
+                    "worktree_fail_closed",
+                )],
+            );
             // Isolation requested, creation failed, fail-closed policy: record
             // the spawn failure and exit rather than mutate the main checkout.
             mark_background_agent_spawn_failed(&paths, &launch.task_id, &msg)?;
@@ -163,6 +228,7 @@ pub async fn run_background_agent_worker(launch_path: PathBuf) -> std::io::Resul
     let (tx, mut rx) = tokio::sync::mpsc::channel::<crate::runtime::EngineEvent>(512);
     let event_task_id = launch.task_id.clone();
     let event_collector = tokio::spawn(async move {
+        let _linkscope_events = linkscope::phase("engine.worker.event_collector");
         while let Some(event) = rx.recv().await {
             match event {
                 crate::runtime::EngineEvent::Task(crate::runtime::TaskEvent::AgentChunk {
@@ -216,29 +282,34 @@ pub async fn run_background_agent_worker(launch_path: PathBuf) -> std::io::Resul
     };
     let project_root = cwd_override.as_deref().unwrap_or(&launch.cwd);
     let started = Instant::now();
-    let result = match crate::agents::select_background_task_agent_launch_plan(
-        &launch.task_input,
-        project_root,
-    ) {
-        Ok(plan) => {
-            let worker_task_input =
-                crate::agents::background_worker_execution_task_input(&launch.task_input, &plan);
-            crate::tools::execute_task(
-                &worker_task_input,
-                provider.as_ref(),
-                launch.model.clone(),
-                Some(&tx),
-                Some(&launch.task_id),
-                launch.agent_def.as_ref(),
-                cwd_override.clone(),
-                task_store,
-                launch.active_team_name.as_deref(),
-            )
-            .await
+    let result = {
+        let _linkscope_execute = linkscope::phase("engine.worker.execute_task");
+        match crate::agents::select_background_task_agent_launch_plan(
+            &launch.task_input,
+            project_root,
+        ) {
+            Ok(plan) => {
+                let worker_task_input = crate::agents::background_worker_execution_task_input(
+                    &launch.task_input,
+                    &plan,
+                );
+                crate::tools::execute_task(
+                    &worker_task_input,
+                    provider.as_ref(),
+                    launch.model.clone(),
+                    Some(&tx),
+                    Some(&launch.task_id),
+                    launch.agent_def.as_ref(),
+                    cwd_override.clone(),
+                    task_store,
+                    launch.active_team_name.as_deref(),
+                )
+                .await
+            }
+            Err(error) => crate::runtime::ExecutionResult::failure(format!(
+                "background agent launch descriptor unavailable: {error}"
+            )),
         }
-        Err(error) => crate::runtime::ExecutionResult::failure(format!(
-            "background agent launch descriptor unavailable: {error}"
-        )),
     };
     drop(tx);
     let _ = event_collector.await;
@@ -263,6 +334,21 @@ pub async fn run_background_agent_worker(launch_path: PathBuf) -> std::io::Resul
             },
             &result.output,
         );
+        linkscope::event_fields(
+            "engine.worker.result",
+            [
+                linkscope::TraceField::text(
+                    "status",
+                    if was_cancelled { "cancelled" } else { "failed" },
+                ),
+                linkscope::TraceField::count("recorded", u64::from(recorded)),
+                linkscope::TraceField::count("elapsed_ms", elapsed_ms),
+                linkscope::TraceField::bytes(
+                    "output_bytes",
+                    u64::try_from(result.output.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         if !recorded {
             append_log_line(
                 &background_agent_log_path(&paths, &launch.task_id),
@@ -275,6 +361,18 @@ pub async fn run_background_agent_worker(launch_path: PathBuf) -> std::io::Resul
             worker_epoch,
             BackgroundAgentStatus::Completed,
             &result.output,
+        );
+        linkscope::event_fields(
+            "engine.worker.result",
+            [
+                linkscope::TraceField::text("status", "completed"),
+                linkscope::TraceField::count("recorded", u64::from(recorded)),
+                linkscope::TraceField::count("elapsed_ms", elapsed_ms),
+                linkscope::TraceField::bytes(
+                    "output_bytes",
+                    u64::try_from(result.output.len()).unwrap_or(u64::MAX),
+                ),
+            ],
         );
         if !recorded {
             append_log_line(

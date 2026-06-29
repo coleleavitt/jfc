@@ -61,6 +61,21 @@ pub fn record_background_agent_started_at(
     worktree_path: Option<PathBuf>,
     pid: Option<u32>,
 ) {
+    let _linkscope_started = linkscope::phase("daemon.agent.started");
+    linkscope::event_fields(
+        "daemon.agent.started.start",
+        [
+            linkscope::TraceField::text("id", id.to_owned()),
+            linkscope::TraceField::count("has_parent", u64::from(parent_session_id.is_some())),
+            linkscope::TraceField::count("has_model", u64::from(model.is_some())),
+            linkscope::TraceField::count("has_worktree", u64::from(worktree_path.is_some())),
+            linkscope::TraceField::count("pid", pid.map(u64::from).unwrap_or(0)),
+            linkscope::TraceField::bytes(
+                "description_bytes",
+                usize_to_u64_saturating(description.len()),
+            ),
+        ],
+    );
     let id = id.to_owned();
     let description_owned = description.to_owned();
     let result = with_state_lock(paths, || {
@@ -145,7 +160,25 @@ pub fn record_background_agent_started_at(
         let _ = save_state(paths, &state);
         Some((log_path, existed))
     });
-    if let Some((log_path, false)) = result {
+    if let Some((log_path, existed)) = result.as_ref() {
+        linkscope::event_fields(
+            "daemon.agent.started.result",
+            [
+                linkscope::TraceField::text("status", "ok"),
+                linkscope::TraceField::count("existed", u64::from(*existed)),
+                linkscope::TraceField::text("log_path", log_path.display().to_string()),
+            ],
+        );
+    } else {
+        linkscope::event_fields(
+            "daemon.agent.started.result",
+            [
+                linkscope::TraceField::text("status", "state_error"),
+                linkscope::TraceField::text("id", id),
+            ],
+        );
+    }
+    if let Some((log_path, false)) = result.as_ref() {
         append_log_line(&log_path, &format!("[started] {description}"));
     }
 }
@@ -177,6 +210,19 @@ pub fn record_background_agent_log(id: &str, text: &str) {
 }
 
 pub fn record_background_agent_log_at_epoch(id: &str, worker_epoch: u64, text: &str) -> bool {
+    let _linkscope_log = linkscope::phase("daemon.agent.log_chunk");
+    linkscope::record_bytes(
+        "daemon.agent.log_chunk.input",
+        usize_to_u64_saturating(text.len()),
+    );
+    linkscope::detail_event_fields(
+        "daemon.agent.log_chunk.start",
+        [
+            linkscope::TraceField::text("id", id.to_owned()),
+            linkscope::TraceField::count("worker_epoch", worker_epoch),
+            linkscope::TraceField::bytes("bytes", usize_to_u64_saturating(text.len())),
+        ],
+    );
     let paths = DaemonPaths::default_user();
     let log_path = with_state_lock(&paths, || {
         let mut state = match load_state_for_update(&paths) {
@@ -232,6 +278,14 @@ pub fn record_background_agent_log_at_epoch(id: &str, worker_epoch: u64, text: &
     // " the full SPIR-V lif", "ter with…"). Writing one `writeln!` per
     // chunk turned the rendered task view into a column of 1-3-word
     // fragments. Append raw so only the model's own `\n` bytes break lines.
+    let ok = log_path.is_some();
+    linkscope::detail_event_fields(
+        "daemon.agent.log_chunk.result",
+        [
+            linkscope::TraceField::text("id", id.to_owned()),
+            linkscope::TraceField::count("accepted", u64::from(ok)),
+        ],
+    );
     if let Some(log_path) = log_path {
         append_chunk_raw(&log_path, text);
         true
@@ -302,6 +356,20 @@ pub fn record_background_agent_progress_at_epoch_with_paths(
     latest_cache_write_tokens: Option<u64>,
     output_tokens_delta: Option<u64>,
 ) -> std::io::Result<bool> {
+    let _linkscope_progress = linkscope::phase("daemon.agent.progress");
+    linkscope::event_fields(
+        "daemon.agent.progress.start",
+        [
+            linkscope::TraceField::text("id", id.to_owned()),
+            linkscope::TraceField::count("worker_epoch", worker_epoch),
+            linkscope::TraceField::count("has_last_tool", u64::from(last_tool.is_some())),
+            linkscope::TraceField::count("has_tool_info", u64::from(last_tool_info.is_some())),
+            linkscope::TraceField::count(
+                "has_output_delta",
+                u64::from(output_tokens_delta.is_some()),
+            ),
+        ],
+    );
     let log_path = with_state_lock(paths, || {
         let mut state = match load_state_for_update(paths) {
             Ok(s) => s,
@@ -343,6 +411,19 @@ pub fn record_background_agent_progress_at_epoch_with_paths(
         Some(log_path)
     });
     let ok = log_path.is_some();
+    linkscope::event_fields(
+        "daemon.agent.progress.result",
+        [
+            linkscope::TraceField::text("id", id.to_owned()),
+            linkscope::TraceField::count("accepted", u64::from(ok)),
+            linkscope::TraceField::count(
+                "tool_use_count",
+                tool_use_count.map(u64::from).unwrap_or(0),
+            ),
+            linkscope::TraceField::count("input_tokens", latest_input_tokens.unwrap_or(0)),
+            linkscope::TraceField::count("output_delta", output_tokens_delta.unwrap_or(0)),
+        ],
+    );
     if let (Some(log_path), Some(tool)) = (log_path.as_ref(), last_tool_info.or(last_tool)) {
         append_log_line(log_path, &format!("[tool] {tool}"));
     }
@@ -381,6 +462,19 @@ pub fn record_background_agent_finished_at_epoch_with_paths(
     status: BackgroundAgentStatus,
     summary_or_error: &str,
 ) -> std::io::Result<bool> {
+    let _linkscope_finished = linkscope::phase("daemon.agent.finished");
+    linkscope::event_fields(
+        "daemon.agent.finished.start",
+        [
+            linkscope::TraceField::text("id", id.to_owned()),
+            linkscope::TraceField::count("worker_epoch", worker_epoch),
+            linkscope::TraceField::text("status", format!("{status:?}")),
+            linkscope::TraceField::bytes(
+                "summary_or_error_bytes",
+                usize_to_u64_saturating(summary_or_error.len()),
+            ),
+        ],
+    );
     let log_path = with_state_lock(paths, || {
         let mut state = match load_state_for_update(paths) {
             Ok(s) => s,
@@ -410,6 +504,14 @@ pub fn record_background_agent_finished_at_epoch_with_paths(
         Some(log_path)
     });
     let ok = log_path.is_some();
+    linkscope::event_fields(
+        "daemon.agent.finished.result",
+        [
+            linkscope::TraceField::text("id", id.to_owned()),
+            linkscope::TraceField::text("status", format!("{status:?}")),
+            linkscope::TraceField::count("accepted", u64::from(ok)),
+        ],
+    );
     if let Some(log_path) = log_path.as_ref() {
         append_log_line(
             log_path,
@@ -431,7 +533,16 @@ pub fn record_background_agent_heartbeat_at(
     worker_epoch: u64,
     pid: u32,
 ) -> std::io::Result<bool> {
-    with_state_lock(paths, || -> std::io::Result<bool> {
+    let _linkscope_heartbeat = linkscope::phase("daemon.agent.heartbeat");
+    linkscope::detail_event_fields(
+        "daemon.agent.heartbeat.start",
+        [
+            linkscope::TraceField::text("id", id.to_owned()),
+            linkscope::TraceField::count("worker_epoch", worker_epoch),
+            linkscope::TraceField::count("pid", u64::from(pid)),
+        ],
+    );
+    let result = with_state_lock(paths, || -> std::io::Result<bool> {
         let mut state = load_state_for_update(paths)?;
         let Some(agent) = state.background_agents.get_mut(id) else {
             return Ok(false);
@@ -446,7 +557,18 @@ pub fn record_background_agent_heartbeat_at(
         agent.last_heartbeat_at = Some(now);
         save_state(paths, &state)?;
         Ok(true)
-    })
+    });
+    linkscope::detail_event_fields(
+        "daemon.agent.heartbeat.result",
+        [
+            linkscope::TraceField::text("id", id.to_owned()),
+            linkscope::TraceField::count(
+                "accepted",
+                u64::from(result.as_ref().copied().unwrap_or(false)),
+            ),
+        ],
+    );
+    result
 }
 
 pub fn background_agent_cancel_requested(id: &str) -> bool {
@@ -460,6 +582,11 @@ pub fn background_agent_cancel_requested(id: &str) -> bool {
 }
 
 pub fn request_background_agent_cancel(paths: &DaemonPaths, id: &str) -> std::io::Result<()> {
+    let _linkscope_cancel = linkscope::phase("daemon.agent.cancel");
+    linkscope::event_fields(
+        "daemon.agent.cancel.start",
+        [linkscope::TraceField::text("id", id.to_owned())],
+    );
     let result = with_state_lock(paths, || -> std::io::Result<Option<PathBuf>> {
         let mut state = load_state_for_update(paths)?;
         let Some(agent) = state.background_agents.get_mut(id) else {
@@ -478,16 +605,44 @@ pub fn request_background_agent_cancel(paths: &DaemonPaths, id: &str) -> std::io
         Ok(Some(log_path))
     })?;
     if let Some(log_path) = result {
+        linkscope::event_fields(
+            "daemon.agent.cancel.result",
+            [
+                linkscope::TraceField::text("status", "requested"),
+                linkscope::TraceField::text("log_path", log_path.display().to_string()),
+            ],
+        );
         append_log_line(&log_path, "[cancel-requested]");
+    } else {
+        linkscope::event_fields(
+            "daemon.agent.cancel.result",
+            [linkscope::TraceField::text("status", "terminal")],
+        );
     }
     Ok(())
 }
 
 pub fn background_agents_string(paths: &DaemonPaths) -> String {
+    let _linkscope_list = linkscope::phase("daemon.agent.list_string");
     let state = reconcile_background_agents(paths).unwrap_or_default();
     let mut agents: Vec<_> = state.background_agents.values().collect();
     agents.sort_by_key(|a| a.started_at);
     agents.reverse();
+    linkscope::event_fields(
+        "daemon.agent.list_string.state",
+        [
+            linkscope::TraceField::count("agents", usize_to_u64_saturating(agents.len())),
+            linkscope::TraceField::count(
+                "running",
+                usize_to_u64_saturating(
+                    agents
+                        .iter()
+                        .filter(|agent| agent.status == BackgroundAgentStatus::Running)
+                        .count(),
+                ),
+            ),
+        ],
+    );
     let mut s = String::new();
     s.push_str("background agents:\n");
     if agents.is_empty() {
@@ -536,8 +691,23 @@ pub fn background_agents_string(paths: &DaemonPaths) -> String {
 }
 
 pub fn background_agent_logs_string(paths: &DaemonPaths, id: &str, lines: usize) -> String {
+    let _linkscope_logs = linkscope::phase("daemon.agent.logs_string");
+    linkscope::event_fields(
+        "daemon.agent.logs_string.start",
+        [
+            linkscope::TraceField::text("id", id.to_owned()),
+            linkscope::TraceField::count("lines", usize_to_u64_saturating(lines)),
+        ],
+    );
     let state = reconcile_background_agents(paths).unwrap_or_default();
     let Some(agent) = state.background_agents.get(id) else {
+        linkscope::event_fields(
+            "daemon.agent.logs_string.result",
+            [
+                linkscope::TraceField::text("id", id.to_owned()),
+                linkscope::TraceField::text("status", "missing"),
+            ],
+        );
         return format!("no background agent `{id}`\n");
     };
     let mut s = format!(
@@ -548,6 +718,14 @@ pub fn background_agent_logs_string(paths: &DaemonPaths, id: &str, lines: usize)
         s.push_str(&line);
         s.push('\n');
     }
+    linkscope::event_fields(
+        "daemon.agent.logs_string.result",
+        [
+            linkscope::TraceField::text("id", id.to_owned()),
+            linkscope::TraceField::text("status", format!("{:?}", agent.status)),
+            linkscope::TraceField::text("log_path", agent.log_path.display().to_string()),
+        ],
+    );
     s
 }
 
@@ -556,6 +734,7 @@ pub fn background_agents_for_restore(
     parent_session_id: Option<&str>,
     limit: usize,
 ) -> Vec<BackgroundAgentInfo> {
+    let _linkscope_restore = linkscope::phase("daemon.agent.restore_candidates");
     let state = reconcile_background_agents(paths).unwrap_or_default();
     let mut agents: Vec<_> = state
         .background_agents
@@ -569,7 +748,20 @@ pub fn background_agents_for_restore(
     agents.reverse();
     let (active, terminal): (Vec<_>, Vec<_>) =
         agents.into_iter().partition(|a| !a.status.is_terminal());
-    active.into_iter().chain(terminal).take(limit).collect()
+    let restored = active
+        .into_iter()
+        .chain(terminal)
+        .take(limit)
+        .collect::<Vec<_>>();
+    linkscope::event_fields(
+        "daemon.agent.restore_candidates.result",
+        [
+            linkscope::TraceField::count("limit", usize_to_u64_saturating(limit)),
+            linkscope::TraceField::count("returned", usize_to_u64_saturating(restored.len())),
+            linkscope::TraceField::count("has_parent", u64::from(parent_session_id.is_some())),
+        ],
+    );
+    restored
 }
 
 pub async fn wait_background_agent_cli(
@@ -577,6 +769,14 @@ pub async fn wait_background_agent_cli(
     id: &str,
     timeout: Duration,
 ) -> std::io::Result<String> {
+    let _linkscope_wait = linkscope::phase("daemon.agent.wait_cli");
+    linkscope::event_fields(
+        "daemon.agent.wait_cli.start",
+        [
+            linkscope::TraceField::text("id", id.to_owned()),
+            linkscope::TraceField::count("timeout_ms", duration_millis_u64(timeout)),
+        ],
+    );
     let started = Instant::now();
     loop {
         let state = reconcile_background_agents(paths).unwrap_or_default();
@@ -587,6 +787,17 @@ pub async fn wait_background_agent_cli(
             )
         })?;
         if agent.status.is_terminal() {
+            linkscope::event_fields(
+                "daemon.agent.wait_cli.result",
+                [
+                    linkscope::TraceField::text("id", id.to_owned()),
+                    linkscope::TraceField::text("status", format!("{:?}", agent.status)),
+                    linkscope::TraceField::count(
+                        "elapsed_ms",
+                        duration_millis_u64(started.elapsed()),
+                    ),
+                ],
+            );
             return Ok(format!(
                 "{} finished with {:?}: {}\n",
                 agent.id,
@@ -599,6 +810,18 @@ pub async fn wait_background_agent_cli(
             ));
         }
         if started.elapsed() >= timeout {
+            linkscope::event_fields(
+                "daemon.agent.wait_cli.result",
+                [
+                    linkscope::TraceField::text("id", id.to_owned()),
+                    linkscope::TraceField::text("status", format!("{:?}", agent.status)),
+                    linkscope::TraceField::text("outcome", "timeout"),
+                    linkscope::TraceField::count(
+                        "elapsed_ms",
+                        duration_millis_u64(started.elapsed()),
+                    ),
+                ],
+            );
             return Ok(format!("{} still {:?}\n", agent.id, agent.status));
         }
         tokio::time::sleep(Duration::from_millis(250)).await;
@@ -610,6 +833,14 @@ pub async fn attach_background_agent_cli(
     id: &str,
     lines: usize,
 ) -> std::io::Result<()> {
+    let _linkscope_attach = linkscope::phase("daemon.agent.attach_cli");
+    linkscope::event_fields(
+        "daemon.agent.attach_cli.start",
+        [
+            linkscope::TraceField::text("id", id.to_owned()),
+            linkscope::TraceField::count("lines", usize_to_u64_saturating(lines)),
+        ],
+    );
     use std::io::{Read, Seek, Write};
 
     let state = reconcile_background_agents(paths)?;
@@ -632,6 +863,14 @@ pub async fn attach_background_agent_cli(
     let mut last_progress = Instant::now();
     let mut stall_reported = false;
     if agent.status.is_terminal() {
+        linkscope::event_fields(
+            "daemon.agent.attach_cli.result",
+            [
+                linkscope::TraceField::text("id", id.to_owned()),
+                linkscope::TraceField::text("status", format!("{:?}", agent.status)),
+                linkscope::TraceField::text("outcome", "already_terminal"),
+            ],
+        );
         return Ok(());
     }
 
@@ -652,6 +891,15 @@ pub async fn attach_background_agent_cli(
                 file.seek(std::io::SeekFrom::Start(offset))?;
                 let mut buf = String::new();
                 file.read_to_string(&mut buf)?;
+                linkscope::event_fields(
+                    "daemon.agent.attach_cli.chunk",
+                    [
+                        linkscope::TraceField::text("id", id.to_owned()),
+                        linkscope::TraceField::bytes("bytes", usize_to_u64_saturating(buf.len())),
+                        linkscope::TraceField::count("offset", offset),
+                        linkscope::TraceField::count("len", len),
+                    ],
+                );
                 print!("{buf}");
                 std::io::stdout().flush()?;
                 offset = len;
@@ -660,6 +908,14 @@ pub async fn attach_background_agent_cli(
             }
         }
         if agent.status.is_terminal() {
+            linkscope::event_fields(
+                "daemon.agent.attach_cli.result",
+                [
+                    linkscope::TraceField::text("id", id.to_owned()),
+                    linkscope::TraceField::text("status", format!("{:?}", agent.status)),
+                    linkscope::TraceField::text("outcome", "terminal"),
+                ],
+            );
             println!("[{:?}]", agent.status);
             return Ok(());
         }
@@ -671,6 +927,14 @@ pub async fn attach_background_agent_cli(
                 "[attach-stall] no new log output for {}ms; worker is still {:?}",
                 stall_after.as_millis(),
                 agent.status
+            );
+            linkscope::event_fields(
+                "daemon.agent.attach_cli.stall",
+                [
+                    linkscope::TraceField::text("id", id.to_owned()),
+                    linkscope::TraceField::text("status", format!("{:?}", agent.status)),
+                    linkscope::TraceField::count("stall_ms", duration_millis_u64(stall_after)),
+                ],
             );
             std::io::stdout().flush()?;
             stall_reported = true;
@@ -685,4 +949,12 @@ fn attach_stall_after() -> Option<Duration> {
         .and_then(|v| v.parse::<u64>().ok())
         .filter(|ms| *ms > 0)
         .map(Duration::from_millis)
+}
+
+fn duration_millis_u64(duration: Duration) -> u64 {
+    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }

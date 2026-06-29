@@ -48,10 +48,16 @@ pub struct ToolStep {
 
 impl ToolStep {
     pub fn new(tool: impl Into<String>, success: bool) -> Self {
-        Self {
-            tool: tool.into(),
-            success,
-        }
+        let _linkscope_step = linkscope::phase("learn.skill_induction.tool_step.new");
+        let tool = tool.into();
+        linkscope::detail_event_fields(
+            "learn.skill_induction.tool_step.new",
+            [
+                linkscope::TraceField::text("tool", tool.clone()),
+                linkscope::TraceField::count("success", u64::from(success)),
+            ],
+        );
+        Self { tool, success }
     }
 }
 
@@ -68,10 +74,19 @@ pub struct SessionTrace {
 
 impl SessionTrace {
     pub fn new(session_id: impl Into<String>, steps: Vec<ToolStep>) -> Self {
-        Self {
-            session_id: session_id.into(),
-            steps,
-        }
+        let _linkscope_trace = linkscope::phase("learn.skill_induction.session_trace.new");
+        let session_id = session_id.into();
+        linkscope::event_fields(
+            "learn.skill_induction.session_trace.new",
+            [
+                linkscope::TraceField::text("session_id", session_id.clone()),
+                linkscope::TraceField::count(
+                    "steps",
+                    u64::try_from(steps.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
+        Self { session_id, steps }
     }
 }
 
@@ -153,6 +168,21 @@ impl SeqStats {
 /// return ranked [`SkillProposal`]s. Pure and deterministic: same input →
 /// same output (proposals sorted by score desc, then sequence for stability).
 pub fn induce_skills(traces: &[SessionTrace], config: &InductionConfig) -> Vec<SkillProposal> {
+    let _linkscope_induce = linkscope::phase("learn.skill_induction.induce_skills");
+    linkscope::event_fields(
+        "learn.skill_induction.induce_skills",
+        [
+            linkscope::TraceField::count("traces", u64::try_from(traces.len()).unwrap_or(u64::MAX)),
+            linkscope::TraceField::count(
+                "min_support",
+                u64::try_from(config.min_support).unwrap_or(u64::MAX),
+            ),
+            linkscope::TraceField::count(
+                "max_proposals",
+                u64::try_from(config.max_proposals).unwrap_or(u64::MAX),
+            ),
+        ],
+    );
     // Aggregate every contiguous n-gram (MIN_SEQ_LEN..=MAX_SEQ_LEN) across all
     // sessions. Key is the joined tool names; value accumulates support stats.
     let mut stats: HashMap<Vec<String>, SeqStats> = HashMap::new();
@@ -177,6 +207,7 @@ pub fn induce_skills(traces: &[SessionTrace], config: &InductionConfig) -> Vec<S
         }
     }
 
+    let stats_count = stats.len();
     let mut proposals: Vec<SkillProposal> = stats
         .into_iter()
         .filter_map(|(sequence, st)| {
@@ -228,6 +259,16 @@ pub fn induce_skills(traces: &[SessionTrace], config: &InductionConfig) -> Vec<S
             break;
         }
     }
+    linkscope::event_fields(
+        "learn.skill_induction.induce_skills.result",
+        [
+            linkscope::TraceField::count("stats", u64::try_from(stats_count).unwrap_or(u64::MAX)),
+            linkscope::TraceField::count(
+                "proposals",
+                u64::try_from(kept.len()).unwrap_or(u64::MAX),
+            ),
+        ],
+    );
     kept
 }
 

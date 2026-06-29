@@ -11,6 +11,7 @@ dirs = "5"
 tracing = { workspace = true }
 jfc-knowledge = { path = "../jfc-knowledge" }
 jfc-mcp = { path = "../jfc-mcp" }
+linkscope = { workspace = true }
 
 [features]
 default = ["hooks", "permission-automation", "intent-gate"]

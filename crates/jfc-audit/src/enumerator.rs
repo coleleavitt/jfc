@@ -53,17 +53,22 @@ pub struct SourceEnumerator<G: GraphQuery> {
 
 impl<G: GraphQuery> SourceEnumerator<G> {
     pub fn new(graph: G) -> Self {
+        linkscope::record_items("audit.enumerator.new", 1);
         Self { graph }
     }
 
     /// Enumerate all entry points from the project graph.
     pub fn enumerate(&self) -> Result<Vec<EntryPoint>> {
-        self.graph.entrypoints()
+        let _linkscope_enumerate = linkscope::phase("audit.enumerator.enumerate");
+        let entries = self.graph.entrypoints()?;
+        linkscope::record_items("audit.entrypoints", usize_to_u64_saturating(entries.len()));
+        Ok(entries)
     }
 
     /// Enumerate and sort by audit priority.
     /// Priority: FfiExport > Main > PublicApi > Test > Bench, then by reachable_count desc.
     pub fn prioritize(&self) -> Result<Vec<EntryPoint>> {
+        let _linkscope_prioritize = linkscope::phase("audit.enumerator.prioritize");
         let mut entries = self.enumerate()?;
         entries.sort_by(|a, b| {
             let weight_cmp = b.kind.priority_weight().cmp(&a.kind.priority_weight());
@@ -72,8 +77,16 @@ impl<G: GraphQuery> SourceEnumerator<G> {
             }
             b.reachable_count.cmp(&a.reachable_count)
         });
+        linkscope::record_items(
+            "audit.entrypoints.prioritized",
+            usize_to_u64_saturating(entries.len()),
+        );
         Ok(entries)
     }
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]

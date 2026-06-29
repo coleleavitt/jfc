@@ -8,6 +8,7 @@ publish.workspace = true
 [dependencies]
 async-trait.workspace = true
 futures.workspace = true
+linkscope = { workspace = true }
 reqwest = { workspace = true, features = ["cookies"] }
 serde = { workspace = true }
 serde_json = { workspace = true }

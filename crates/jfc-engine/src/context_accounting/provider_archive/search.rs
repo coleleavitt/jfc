@@ -1,4 +1,5 @@
 use super::{load_archives, render::archive_text};
+use std::path::Path;
 
 const MAX_SNIPPET_CHARS: usize = 900;
 const MAX_RECALL_BLOCK_CHARS: usize = 6_000;
@@ -42,18 +43,26 @@ pub(crate) fn search_provider_history_archives(
     query: &str,
     limit: usize,
 ) -> Vec<ProviderHistoryArchiveHit> {
+    let Ok(root) = std::env::current_dir() else {
+        return Vec::new();
+    };
+    search_provider_history_archives_in(&root, query, limit)
+}
+
+pub(crate) fn search_provider_history_archives_in(
+    root: &Path,
+    query: &str,
+    limit: usize,
+) -> Vec<ProviderHistoryArchiveHit> {
     let needle = query.trim().to_lowercase();
     if needle.is_empty() {
         return Vec::new();
     }
     let terms = query_terms(&needle);
-    let Ok(root) = std::env::current_dir() else {
-        return Vec::new();
-    };
 
     let mut exact = Vec::new();
     let mut soft = Vec::new();
-    for archive in load_archives(&root) {
+    for archive in load_archives(root) {
         let text = archive_text(&archive);
         let text_lc = text.to_lowercase();
         let hit = ProviderHistoryArchiveHit {

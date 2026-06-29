@@ -88,6 +88,8 @@ pub async fn request_device_code(
     client: &reqwest::Client,
     config: &DeviceFlowConfig,
 ) -> Result<DeviceAuthResponse, DeviceFlowError> {
+    let _linkscope_device = linkscope::phase("auth.device.request_code");
+    linkscope::record_items("auth.device.request_code", 1);
     let mut params = vec![("client_id", config.client_id.as_str())];
     let scope_str = config.scopes.join(" ");
     if !scope_str.is_empty() {
@@ -104,6 +106,7 @@ pub async fn request_device_code(
         .json::<DeviceAuthResponse>()
         .await?;
 
+    linkscope::record_items("auth.device.request_code.ok", 1);
     Ok(resp)
 }
 
@@ -116,13 +119,16 @@ pub async fn poll_for_token(
     interval: u64,
     expires_in: u64,
 ) -> Result<TokenResponse, DeviceFlowError> {
+    let _linkscope_poll = linkscope::phase("auth.device.poll_token");
     let poll_interval = Duration::from_secs(interval);
     let deadline = tokio::time::Instant::now() + Duration::from_secs(expires_in);
 
     loop {
+        linkscope::record_items("auth.device.poll_attempt", 1);
         tokio::time::sleep(poll_interval).await;
 
         if tokio::time::Instant::now() >= deadline {
+            linkscope::record_items("auth.device.poll_expired", 1);
             return Err(DeviceFlowError::Expired);
         }
 
@@ -145,31 +151,39 @@ pub async fn poll_for_token(
         if status.is_success()
             && let Ok(token) = serde_json::from_str::<TokenResponse>(&body)
         {
+            linkscope::record_items("auth.device.poll_ok", 1);
             return Ok(token);
         }
 
         // Check for expected polling errors
         if let Ok(err) = serde_json::from_str::<PollErrorResponse>(&body) {
             match err.error.as_str() {
-                "authorization_pending" => continue,
+                "authorization_pending" => {
+                    linkscope::record_items("auth.device.poll_pending", 1);
+                    continue;
+                }
                 "slow_down" => {
+                    linkscope::record_items("auth.device.poll_slow_down", 1);
                     // Back off by adding 5 seconds
                     tokio::time::sleep(Duration::from_secs(5)).await;
                     continue;
                 }
                 "access_denied" => {
+                    linkscope::record_items("auth.device.poll_denied", 1);
                     return Err(match err.error_description {
                         Some(description) => DeviceFlowError::TokenError(description),
                         None => DeviceFlowError::AccessDenied,
                     });
                 }
                 "expired_token" => {
+                    linkscope::record_items("auth.device.poll_expired_token", 1);
                     return Err(match err.error_description {
                         Some(description) => DeviceFlowError::TokenError(description),
                         None => DeviceFlowError::Expired,
                     });
                 }
                 other => {
+                    linkscope::record_items("auth.device.poll_token_error", 1);
                     return Err(DeviceFlowError::TokenError(
                         err.error_description.unwrap_or_else(|| other.to_string()),
                     ));
@@ -186,13 +200,16 @@ pub async fn poll_for_token(
 /// (CS-JFC-001). If a legacy repo-local `.jfc/credentials.json` exists it is
 /// migrated (deleted) so a poisoned project file cannot shadow the real token.
 pub fn store_token(token: &TokenResponse) -> std::io::Result<()> {
+    let _linkscope_store = linkscope::phase("auth.device.store_token");
     write_token_file(token, &credentials_path())?;
     // Migrate away from the legacy repo-local store so stale or attacker-planted
     // credentials in a checkout cannot be picked up by `load_token`.
     let legacy = legacy_repo_credentials_path();
     if legacy.exists() {
         let _ = std::fs::remove_file(&legacy);
+        linkscope::record_items("auth.device.legacy_token_removed", 1);
     }
+    linkscope::record_items("auth.device.store_token.ok", 1);
     Ok(())
 }
 
@@ -215,24 +232,42 @@ fn write_token_file(token: &TokenResponse, path: &std::path::Path) -> std::io::R
 /// Load a previously stored token from the user-scoped store, falling back to a
 /// legacy repo-local `.jfc/credentials.json` only for read-time migration.
 pub fn load_token() -> Option<TokenResponse> {
+    let _linkscope_load = linkscope::phase("auth.device.load_token");
     let user = credentials_path();
     if let Some(token) = std::fs::read_to_string(&user)
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
     {
+        linkscope::record_items("auth.device.load_token.user", 1);
         return Some(token);
     }
     let legacy = legacy_repo_credentials_path();
-    std::fs::read_to_string(&legacy)
+    let token = std::fs::read_to_string(&legacy)
         .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
+        .and_then(|s| serde_json::from_str(&s).ok());
+    if token.is_some() {
+        linkscope::record_items("auth.device.load_token.legacy", 1);
+    } else {
+        linkscope::record_items("auth.device.load_token.miss", 1);
+    }
+    token
 }
 
 /// Remove every device-flow credential store (user-scoped and legacy
 /// repo-local). Returns the paths that were actually removed so `/logout` can
 /// report exactly which credential files it cleared.
 pub fn clear_token() -> Vec<PathBuf> {
-    remove_existing_files(&[credentials_path(), legacy_repo_credentials_path()])
+    let _linkscope_clear = linkscope::phase("auth.device.clear_token");
+    let removed = remove_existing_files(&[credentials_path(), legacy_repo_credentials_path()]);
+    linkscope::record_items(
+        "auth.device.clear_token.removed",
+        usize_to_u64_saturating(removed.len()),
+    );
+    removed
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 /// Remove each path that exists, returning the ones actually deleted. Path-driven

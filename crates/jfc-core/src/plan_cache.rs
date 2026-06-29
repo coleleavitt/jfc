@@ -32,6 +32,11 @@ pub struct CachedPlan {
 /// drops bare-number tokens (ids, counts) that vary between otherwise
 /// identical tasks. Returns the space-joined remaining tokens.
 pub fn normalize_signature(text: &str) -> String {
+    let _linkscope_normalize = linkscope::phase("plan_cache.normalize_signature");
+    linkscope::record_bytes(
+        "plan_cache.description_bytes",
+        u64::try_from(text.len()).unwrap_or(u64::MAX),
+    );
     let mut tokens: Vec<String> = Vec::new();
     for raw in text.split(|c: char| !c.is_alphanumeric()) {
         if raw.is_empty() {
@@ -44,6 +49,10 @@ pub fn normalize_signature(text: &str) -> String {
         }
         tokens.push(lower);
     }
+    linkscope::record_items(
+        "plan_cache.normalized_tokens",
+        u64::try_from(tokens.len()).unwrap_or(u64::MAX),
+    );
     tokens.join(" ")
 }
 
@@ -82,6 +91,14 @@ pub struct PlanCache {
 impl PlanCache {
     /// New cache holding at most `capacity` plans (minimum 1).
     pub fn new(capacity: usize) -> Self {
+        let _linkscope_new = linkscope::phase("plan_cache.new");
+        linkscope::event_fields(
+            "plan_cache.new",
+            [linkscope::TraceField::count(
+                "capacity",
+                u64::try_from(capacity.max(1)).unwrap_or(u64::MAX),
+            )],
+        );
         Self {
             capacity: capacity.max(1),
             tick: 0,
@@ -105,6 +122,8 @@ impl PlanCache {
     /// Insert (or overwrite) the plan for `description`. Evicts the
     /// least-recently-used entry if at capacity and the key is new.
     pub fn insert(&mut self, description: &str, steps: Vec<String>) {
+        let _linkscope_insert = linkscope::phase("plan_cache.insert");
+        let before = self.entries.len();
         let key = normalize_signature(description);
         let used = self.next_tick();
         let entry = Entry {
@@ -115,13 +134,29 @@ impl PlanCache {
             },
             last_used: used,
         };
+        let step_count = entry.plan.steps.len();
         if !self.entries.contains_key(&key) && self.entries.len() >= self.capacity {
             self.evict_lru();
         }
         self.entries.insert(key, entry);
+        linkscope::event_fields(
+            "plan_cache.insert.result",
+            [
+                linkscope::TraceField::count("before", u64::try_from(before).unwrap_or(u64::MAX)),
+                linkscope::TraceField::count(
+                    "after",
+                    u64::try_from(self.entries.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::count(
+                    "steps",
+                    u64::try_from(step_count).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
     }
 
     fn evict_lru(&mut self) {
+        let _linkscope_evict = linkscope::phase("plan_cache.evict_lru");
         if let Some(victim) = self
             .entries
             .iter()
@@ -129,18 +164,37 @@ impl PlanCache {
             .map(|(k, _)| k.clone())
         {
             self.entries.remove(&victim);
+            linkscope::event_fields(
+                "plan_cache.evict_lru.result",
+                [linkscope::TraceField::text("signature", victim)],
+            );
         }
     }
 
     /// Exact lookup by normalized signature. Marks the entry as recently used.
     pub fn get(&mut self, description: &str) -> Option<&CachedPlan> {
+        let _linkscope_get = linkscope::phase("plan_cache.get");
         let key = normalize_signature(description);
         if !self.entries.contains_key(&key) {
+            linkscope::event_fields(
+                "plan_cache.get.result",
+                [linkscope::TraceField::count("hit", 0)],
+            );
             return None;
         }
         let used = self.next_tick();
         let entry = self.entries.get_mut(&key)?;
         entry.last_used = used;
+        linkscope::event_fields(
+            "plan_cache.get.result",
+            [
+                linkscope::TraceField::count("hit", 1),
+                linkscope::TraceField::count(
+                    "steps",
+                    u64::try_from(entry.plan.steps.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         Some(&entry.plan)
     }
 
@@ -148,6 +202,7 @@ impl PlanCache {
     /// with `description` is at least `min_jaccard` (0.0–1.0). Falls back from
     /// an exact match. Marks the chosen entry as recently used.
     pub fn get_similar(&mut self, description: &str, min_jaccard: f64) -> Option<&CachedPlan> {
+        let _linkscope_get = linkscope::phase("plan_cache.get_similar");
         let sig = normalize_signature(description);
         let best = self
             .entries
@@ -159,6 +214,16 @@ impl PlanCache {
         let used = self.next_tick();
         let entry = self.entries.get_mut(&best)?;
         entry.last_used = used;
+        linkscope::event_fields(
+            "plan_cache.get_similar.result",
+            [
+                linkscope::TraceField::count("hit", 1),
+                linkscope::TraceField::count(
+                    "steps",
+                    u64::try_from(entry.plan.steps.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         Some(&entry.plan)
     }
 }

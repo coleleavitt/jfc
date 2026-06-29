@@ -7,6 +7,7 @@ publish.workspace = true
 description = "Unified agent primitives: identity, state, registry, and message bus shared by all execution backends"
 
 [dependencies]
+linkscope = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

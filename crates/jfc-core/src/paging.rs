@@ -49,15 +49,33 @@ pub struct PageStore {
 /// Estimate tokens for a string as `ceil(chars / 4)` — the rough rule of thumb
 /// for English text, intentionally cheap and dependency-free.
 pub fn estimate_tokens(s: &str) -> u64 {
-    (s.chars().count() as u64).div_ceil(4)
+    linkscope::detail_event_fields(
+        "paging.estimate_tokens",
+        [linkscope::TraceField::bytes(
+            "input_bytes",
+            u64::try_from(s.len()).unwrap_or(u64::MAX),
+        )],
+    );
+    u64::try_from(s.chars().count())
+        .unwrap_or(u64::MAX)
+        .div_ceil(4)
 }
 
 impl PageStore {
     /// New store over a `window_tokens` budget. `warn_frac` and `flush_frac` are
     /// clamped to `[0, 1]` and ordered so `warn <= flush`.
     pub fn new(window_tokens: u64, warn_frac: f64, flush_frac: f64) -> Self {
+        let _linkscope_new = linkscope::phase("paging.store.new");
         let warn = warn_frac.clamp(0.0, 1.0);
         let flush = flush_frac.clamp(0.0, 1.0);
+        linkscope::event_fields(
+            "paging.store.new",
+            [
+                linkscope::TraceField::count("window_tokens", window_tokens),
+                linkscope::TraceField::text("warn_frac", format!("{warn:.3}")),
+                linkscope::TraceField::text("flush_frac", format!("{flush:.3}")),
+            ],
+        );
         Self {
             recursive_summary: String::new(),
             fifo: VecDeque::new(),
@@ -69,14 +87,38 @@ impl PageStore {
 
     /// Push an item, estimating its tokens with [`estimate_tokens`].
     pub fn push(&mut self, item: impl Into<String>) {
+        let _linkscope_push = linkscope::phase("paging.store.push");
         let s = item.into();
         let t = estimate_tokens(&s);
         self.fifo.push_back((s, t));
+        linkscope::event_fields(
+            "paging.store.push.result",
+            [
+                linkscope::TraceField::count("tokens", t),
+                linkscope::TraceField::count(
+                    "items",
+                    u64::try_from(self.fifo.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::count("used_tokens", self.used_tokens()),
+            ],
+        );
     }
 
     /// Push an item with an explicit token count (e.g. from a real tokenizer).
     pub fn push_with_tokens(&mut self, item: impl Into<String>, tokens: u64) {
+        let _linkscope_push = linkscope::phase("paging.store.push_with_tokens");
         self.fifo.push_back((item.into(), tokens));
+        linkscope::event_fields(
+            "paging.store.push_with_tokens.result",
+            [
+                linkscope::TraceField::count("tokens", tokens),
+                linkscope::TraceField::count(
+                    "items",
+                    u64::try_from(self.fifo.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::count("used_tokens", self.used_tokens()),
+            ],
+        );
     }
 
     /// Current token usage: the recursive summary plus every FIFO item.
@@ -100,17 +142,32 @@ impl PageStore {
 
     /// Current memory pressure relative to the configured thresholds.
     pub fn pressure(&self) -> Pressure {
+        let _linkscope_pressure = linkscope::phase("paging.store.pressure");
         if self.window_tokens == 0 {
+            linkscope::event_fields(
+                "paging.store.pressure.result",
+                [linkscope::TraceField::text("pressure", "Flush")],
+            );
             return Pressure::Flush;
         }
         let frac = self.used_tokens() as f64 / self.window_tokens as f64;
-        if frac >= self.flush_frac {
+        let pressure = if frac >= self.flush_frac {
             Pressure::Flush
         } else if frac >= self.warn_frac {
             Pressure::Warn
         } else {
             Pressure::Ok
-        }
+        };
+        linkscope::event_fields(
+            "paging.store.pressure.result",
+            [
+                linkscope::TraceField::text("pressure", format!("{pressure:?}")),
+                linkscope::TraceField::text("frac", format!("{frac:.3}")),
+                linkscope::TraceField::count("used_tokens", self.used_tokens()),
+                linkscope::TraceField::count("window_tokens", self.window_tokens),
+            ],
+        );
+        pressure
     }
 
     /// Evict the oldest ~50% of FIFO items (rounding up so a non-empty queue
@@ -122,7 +179,12 @@ impl PageStore {
     /// job if they want a true rolling fold — here we prepend so the newest
     /// fold sits closest to the live FIFO, matching MemGPT's head placement.
     pub fn flush(&mut self, summarize: impl Fn(&[String]) -> String) -> usize {
+        let _linkscope_flush = linkscope::phase("paging.store.flush");
         if self.fifo.is_empty() {
+            linkscope::event_fields(
+                "paging.store.flush.result",
+                [linkscope::TraceField::count("evicted", 0)],
+            );
             return 0;
         }
         let evict = self.fifo.len().div_ceil(2);
@@ -133,6 +195,23 @@ impl PageStore {
         } else if !fold.is_empty() {
             self.recursive_summary = format!("{fold}\n{}", self.recursive_summary);
         }
+        linkscope::event_fields(
+            "paging.store.flush.result",
+            [
+                linkscope::TraceField::count(
+                    "evicted",
+                    u64::try_from(drained.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::count(
+                    "remaining",
+                    u64::try_from(self.fifo.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::bytes(
+                    "summary_bytes",
+                    u64::try_from(self.recursive_summary.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         drained.len()
     }
 }

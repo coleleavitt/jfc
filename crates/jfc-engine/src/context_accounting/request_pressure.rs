@@ -1,5 +1,10 @@
 use jfc_core::context_budget::ContextBudget;
 
+use crate::compact::{
+    CompactLevel, blocked_threshold_with_output, compact_level_with_output,
+    compact_threshold_with_output,
+};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RequestContextPressure {
     pub(crate) budget: ContextBudget,
@@ -11,11 +16,39 @@ pub(crate) struct RequestContextPressure {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContextPressureNudgeKind {
+    ChannelOne,
+    ChannelTwo,
+    Emergency,
+}
+
+impl ContextPressureNudgeKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::ChannelOne => "channel_one",
+            Self::ChannelTwo => "channel_two",
+            Self::Emergency => "emergency",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ContextPressureNudge {
+    pub kind: ContextPressureNudgeKind,
+    pub level: CompactLevel,
+    pub raw_tokens: u64,
+    pub effective_tokens: u64,
+    pub window_tokens: usize,
+    pub threshold_tokens: usize,
+    pub reclaim_floor_tokens: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RequestContextOverflow {
     pub(crate) raw_tokens: u64,
     pub(crate) effective_tokens: u64,
     pub(crate) window_tokens: usize,
-    pub(crate) level: crate::compact::CompactLevel,
+    pub(crate) level: CompactLevel,
 }
 
 fn clamp_u64_to_usize(tokens: u64) -> usize {
@@ -49,74 +82,61 @@ impl RequestContextPressure {
 
     pub(crate) fn preflight_overflow(self) -> Option<RequestContextOverflow> {
         let window_tokens = self.window_tokens?;
-        let raw_tokens = clamp_u64_to_usize(self.raw_tokens);
-        let level = crate::compact::compact_level_with_output(
-            raw_tokens,
+        let level = self.compact_level()?;
+        matches!(level, CompactLevel::Compact | CompactLevel::Blocked).then_some(
+            RequestContextOverflow {
+                raw_tokens: self.raw_tokens,
+                effective_tokens: self.effective_tokens,
+                window_tokens,
+                level,
+            },
+        )
+    }
+
+    pub(crate) fn compact_level(self) -> Option<CompactLevel> {
+        let window_tokens = self.window_tokens?;
+        Some(compact_level_with_output(
+            clamp_u64_to_usize(self.raw_tokens),
             window_tokens,
             self.max_output_tokens,
-        );
-        matches!(
+        ))
+    }
+
+    pub(crate) fn context_pressure_nudge(self) -> Option<ContextPressureNudge> {
+        let window_tokens = self.window_tokens?;
+        let level = self.compact_level()?;
+        let (kind, threshold_tokens) = match level {
+            CompactLevel::Ok | CompactLevel::Precompute => return None,
+            CompactLevel::Warn => (
+                ContextPressureNudgeKind::ChannelOne,
+                compact_threshold_with_output(window_tokens, self.max_output_tokens)
+                    .saturating_sub(20_000),
+            ),
+            CompactLevel::Compact => (
+                ContextPressureNudgeKind::ChannelTwo,
+                compact_threshold_with_output(window_tokens, self.max_output_tokens),
+            ),
+            CompactLevel::Blocked => (
+                ContextPressureNudgeKind::Emergency,
+                blocked_threshold_with_output(window_tokens, self.max_output_tokens),
+            ),
+        };
+        let reclaim_floor_tokens = self
+            .raw_tokens
+            .saturating_sub(threshold_tokens as u64)
+            .saturating_add(1);
+        Some(ContextPressureNudge {
+            kind,
             level,
-            crate::compact::CompactLevel::Compact | crate::compact::CompactLevel::Blocked
-        )
-        .then_some(RequestContextOverflow {
             raw_tokens: self.raw_tokens,
             effective_tokens: self.effective_tokens,
             window_tokens,
-            level,
+            threshold_tokens,
+            reclaim_floor_tokens,
         })
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use jfc_core::context_budget::ContextBudget;
-
-    fn budget_with_replay_tokens(user_message_tokens: u64) -> ContextBudget {
-        ContextBudget {
-            system_prompt_tokens: 10_000,
-            tool_definition_tokens: 12_000,
-            memory_tokens: 0,
-            project_instructions_tokens: 0,
-            user_message_tokens,
-        }
-    }
-
-    #[test]
-    fn preflight_overflow_blocks_huge_prepared_request_regression() {
-        let pressure = RequestContextPressure::new(
-            budget_with_replay_tokens(8_000_000),
-            Some(200_000),
-            Some(8_192),
-        );
-
-        let overflow = pressure
-            .preflight_overflow()
-            .expect("huge prepared request should be caught before provider call");
-
-        assert_eq!(overflow.raw_tokens, pressure.raw_tokens);
-        assert_eq!(overflow.effective_tokens, pressure.effective_tokens);
-        assert_eq!(overflow.window_tokens, 200_000);
-        assert_eq!(overflow.level, crate::compact::CompactLevel::Blocked);
-    }
-
-    #[test]
-    fn preflight_overflow_waits_when_window_unknown_normal() {
-        let pressure =
-            RequestContextPressure::new(budget_with_replay_tokens(8_000_000), None, Some(8_192));
-
-        assert_eq!(pressure.preflight_overflow(), None);
-    }
-
-    #[test]
-    fn preflight_overflow_allows_small_prepared_request_normal() {
-        let pressure = RequestContextPressure::new(
-            budget_with_replay_tokens(2_000),
-            Some(200_000),
-            Some(8_192),
-        );
-
-        assert_eq!(pressure.preflight_overflow(), None);
-    }
-}
+#[path = "request_pressure_tests.rs"]
+mod tests;

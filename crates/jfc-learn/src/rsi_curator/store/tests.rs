@@ -1,3 +1,4 @@
+use crate::rsi_curator::ApplyToStore;
 use crate::rsi_curator::{
     CandidateChange, CandidateEval, CandidateKind, CandidateStatus, CandidateTarget,
     ExperienceGraph, RsiCurator, RsiCuratorConfig, RsiCuratorReport, RsiOutcome,

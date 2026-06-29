@@ -62,6 +62,14 @@ pub struct Daemon {
 impl Daemon {
     /// Open (or create) a daemon at the given config directory.
     pub fn new(config_dir: &Path) -> std::io::Result<Self> {
+        let _linkscope_new = linkscope::phase("daemon.new");
+        linkscope::event_fields(
+            "daemon.new.start",
+            [linkscope::TraceField::text(
+                "config_dir",
+                config_dir.display().to_string(),
+            )],
+        );
         let paths = DaemonPaths::new(config_dir);
         paths.ensure_dirs()?;
 
@@ -73,6 +81,27 @@ impl Daemon {
             state.started_at = SystemTime::now();
         }
 
+        linkscope::event_fields(
+            "daemon.new.state",
+            [
+                linkscope::TraceField::count(
+                    "sessions",
+                    usize_to_u64_saturating(state.sessions.len()),
+                ),
+                linkscope::TraceField::count(
+                    "cron_jobs",
+                    usize_to_u64_saturating(state.cron_jobs.len()),
+                ),
+                linkscope::TraceField::count(
+                    "wakeups",
+                    usize_to_u64_saturating(state.wakeups.len()),
+                ),
+                linkscope::TraceField::count(
+                    "background_agents",
+                    usize_to_u64_saturating(state.background_agents.len()),
+                ),
+            ],
+        );
         Ok(Self {
             paths,
             state,
@@ -83,11 +112,33 @@ impl Daemon {
 
     /// Persist current state to disk (best-effort).
     pub fn persist(&self) {
+        let _linkscope_persist = linkscope::phase("daemon.persist");
+        linkscope::detail_event_fields(
+            "daemon.persist.start",
+            [
+                linkscope::TraceField::count(
+                    "sessions",
+                    usize_to_u64_saturating(self.state.sessions.len()),
+                ),
+                linkscope::TraceField::count(
+                    "cron_jobs",
+                    usize_to_u64_saturating(self.state.cron_jobs.len()),
+                ),
+                linkscope::TraceField::count(
+                    "wakeups",
+                    usize_to_u64_saturating(self.state.wakeups.len()),
+                ),
+                linkscope::TraceField::count(
+                    "background_agents",
+                    usize_to_u64_saturating(self.state.background_agents.len()),
+                ),
+            ],
+        );
         // Merge + save under the state lock so we don't race a detached
         // worker's read-modify-write and clobber its background_agents
         // subtree. Skip the save entirely if the on-disk state is corrupt
         // rather than overwriting it with our in-memory copy.
-        let _ = with_state_lock(&self.paths, || -> std::io::Result<()> {
+        let result = with_state_lock(&self.paths, || -> std::io::Result<()> {
             let mut state = self.state.clone();
             let current = load_state_for_update(&self.paths)?;
             // Background workers update their roster/log metadata out-of-process.
@@ -96,6 +147,13 @@ impl Daemon {
             state.background_agents = current.background_agents;
             save_state(&self.paths, &state)
         });
+        linkscope::detail_event_fields(
+            "daemon.persist.result",
+            [linkscope::TraceField::text(
+                "status",
+                if result.is_ok() { "ok" } else { "error" },
+            )],
+        );
     }
 
     /// Register a new headless session.
@@ -106,8 +164,21 @@ impl Daemon {
         model: Option<String>,
         _working_dir: &Path,
     ) -> SessionId {
+        let _linkscope_session = linkscope::phase("daemon.session.start");
         let id = SessionId::new(format!("session-{}", uuid_short()));
         let log_path = self.paths.log_dir.join(format!("{id}.log"));
+        linkscope::event_fields(
+            "daemon.session.start",
+            [
+                linkscope::TraceField::text("id", id.to_string()),
+                linkscope::TraceField::count("has_model", u64::from(model.is_some())),
+                linkscope::TraceField::bytes(
+                    "description_bytes",
+                    usize_to_u64_saturating(description.len()),
+                ),
+                linkscope::TraceField::text("log_path", log_path.display().to_string()),
+            ],
+        );
 
         let info = SessionInfo {
             id: id.clone(),
@@ -129,10 +200,27 @@ impl Daemon {
     /// Update session status.
     #[allow(dead_code)] // public API surface — used by daemon CLI consumers
     pub fn update_session_status(&mut self, id: &str, status: SessionStatus) {
+        let _linkscope_status = linkscope::phase("daemon.session.update_status");
+        let status_name = format!("{status:?}");
         if let Some(session) = self.state.sessions.get_mut(id) {
             session.status = status;
             session.last_activity = SystemTime::now();
+            linkscope::event_fields(
+                "daemon.session.update_status",
+                [
+                    linkscope::TraceField::text("id", id.to_owned()),
+                    linkscope::TraceField::text("status", status_name),
+                ],
+            );
             self.persist();
+        } else {
+            linkscope::event_fields(
+                "daemon.session.update_status",
+                [
+                    linkscope::TraceField::text("id", id.to_owned()),
+                    linkscope::TraceField::text("status", "missing"),
+                ],
+            );
         }
     }
 
@@ -143,7 +231,23 @@ impl Daemon {
         description: &str,
         command: &str,
     ) -> String {
+        let _linkscope_cron = linkscope::phase("daemon.cron.add");
         let id = format!("cron-{}", uuid_short());
+        linkscope::event_fields(
+            "daemon.cron.add",
+            [
+                linkscope::TraceField::text("id", id.clone()),
+                linkscope::TraceField::text("schedule", describe_schedule(&schedule)),
+                linkscope::TraceField::bytes(
+                    "description_bytes",
+                    usize_to_u64_saturating(description.len()),
+                ),
+                linkscope::TraceField::bytes(
+                    "command_bytes",
+                    usize_to_u64_saturating(command.len()),
+                ),
+            ],
+        );
         let job = CronJob {
             id: id.clone(),
             schedule,
@@ -160,9 +264,22 @@ impl Daemon {
 
     /// Remove a cron job by ID. Returns whether anything was removed.
     pub fn remove_cron_job(&mut self, id: &str) -> bool {
+        let _linkscope_cron = linkscope::phase("daemon.cron.remove");
         let before = self.state.cron_jobs.len();
         self.state.cron_jobs.retain(|j| j.id != id);
         let removed = self.state.cron_jobs.len() < before;
+        linkscope::event_fields(
+            "daemon.cron.remove",
+            [
+                linkscope::TraceField::text("id", id.to_owned()),
+                linkscope::TraceField::count("removed", u64::from(removed)),
+                linkscope::TraceField::count("before", usize_to_u64_saturating(before)),
+                linkscope::TraceField::count(
+                    "after",
+                    usize_to_u64_saturating(self.state.cron_jobs.len()),
+                ),
+            ],
+        );
         if removed {
             self.persist();
         }
@@ -176,8 +293,18 @@ impl Daemon {
 
     /// Schedule a one-shot wakeup. Returns the wakeup id.
     pub fn schedule_wakeup(&mut self, delay: Duration, prompt: &str, reason: &str) -> String {
+        let _linkscope_wakeup = linkscope::phase("daemon.wakeup.schedule");
         let id = format!("wake-{}", uuid_short());
         let now = SystemTime::now();
+        linkscope::event_fields(
+            "daemon.wakeup.schedule",
+            [
+                linkscope::TraceField::text("id", id.clone()),
+                linkscope::TraceField::count("delay_ms", duration_millis_u64(delay)),
+                linkscope::TraceField::bytes("prompt_bytes", usize_to_u64_saturating(prompt.len())),
+                linkscope::TraceField::bytes("reason_bytes", usize_to_u64_saturating(reason.len())),
+            ],
+        );
         let wake = ScheduledWakeup {
             id: id.clone(),
             prompt: prompt.to_string(),
@@ -195,6 +322,8 @@ impl Daemon {
     /// caller can replay them after a daemon restart without losing the
     /// audit trail.
     pub fn drain_due_wakeups(&mut self, now: SystemTime) -> Vec<ScheduledWakeup> {
+        let _linkscope_wakeup = linkscope::phase("daemon.wakeup.drain_due");
+        let pending_before = self.state.wakeups.len();
         let mut due = Vec::new();
         let mut keep = Vec::with_capacity(self.state.wakeups.len());
         for w in std::mem::take(&mut self.state.wakeups) {
@@ -216,6 +345,20 @@ impl Daemon {
             }
             self.persist();
         }
+        linkscope::event_fields(
+            "daemon.wakeup.drain_due",
+            [
+                linkscope::TraceField::count(
+                    "pending_before",
+                    usize_to_u64_saturating(pending_before),
+                ),
+                linkscope::TraceField::count("due", usize_to_u64_saturating(due.len())),
+                linkscope::TraceField::count(
+                    "remaining",
+                    usize_to_u64_saturating(self.state.wakeups.len()),
+                ),
+            ],
+        );
         due
     }
 
@@ -233,7 +376,18 @@ impl Daemon {
         now: SystemTime,
         is_quiet_hours: bool,
     ) -> Vec<String> {
+        let _linkscope_cron = linkscope::phase("daemon.cron.tick");
         if is_quiet_hours {
+            linkscope::event_fields(
+                "daemon.cron.tick",
+                [
+                    linkscope::TraceField::text("status", "quiet_hours"),
+                    linkscope::TraceField::count(
+                        "jobs",
+                        usize_to_u64_saturating(self.state.cron_jobs.len()),
+                    ),
+                ],
+            );
             tracing::debug!(
                 target: "jfc::daemon::cron",
                 "quiet hours active — skipping cron tick"
@@ -253,22 +407,45 @@ impl Daemon {
         if !fired.is_empty() {
             self.persist();
         }
+        if !fired.is_empty() || linkscope::trace_detail_enabled() {
+            linkscope::event_fields(
+                "daemon.cron.tick",
+                [
+                    linkscope::TraceField::text("status", "ok"),
+                    linkscope::TraceField::count(
+                        "jobs",
+                        usize_to_u64_saturating(self.state.cron_jobs.len()),
+                    ),
+                    linkscope::TraceField::count("fired", usize_to_u64_saturating(fired.len())),
+                ],
+            );
+        }
         fired
     }
 
     /// Manually fire a cron job (advance `last_run` and return it).
     /// Returns `None` if the id doesn't match any registered job.
     pub fn fire_cron(&mut self, id: &str, now: SystemTime) -> Option<CronJob> {
+        let _linkscope_cron = linkscope::phase("daemon.cron.fire");
         let job = self.state.cron_jobs.iter_mut().find(|j| j.id == id)?;
         job.last_run = Some(now);
         let snapshot = job.clone();
         self.persist();
+        linkscope::event_fields(
+            "daemon.cron.fire",
+            [
+                linkscope::TraceField::text("id", id.to_owned()),
+                linkscope::TraceField::text("status", "ok"),
+            ],
+        );
         Some(snapshot)
     }
 
     /// Clean up completed sessions older than `max_age`.
     #[allow(dead_code)] // public API surface — used by daemon CLI consumers
     pub fn cleanup_old_sessions(&mut self, max_age: Duration) {
+        let _linkscope_cleanup = linkscope::phase("daemon.session.cleanup_old");
+        let before = self.state.sessions.len();
         let cutoff = SystemTime::now().checked_sub(max_age).unwrap_or(UNIX_EPOCH);
         self.state.sessions.retain(|_, s| {
             if matches!(
@@ -280,6 +457,17 @@ impl Daemon {
                 true
             }
         });
+        linkscope::event_fields(
+            "daemon.session.cleanup_old",
+            [
+                linkscope::TraceField::count("before", usize_to_u64_saturating(before)),
+                linkscope::TraceField::count(
+                    "after",
+                    usize_to_u64_saturating(self.state.sessions.len()),
+                ),
+                linkscope::TraceField::count("max_age_ms", duration_millis_u64(max_age)),
+            ],
+        );
         self.persist();
     }
 
@@ -287,13 +475,32 @@ impl Daemon {
 
     /// Register an active background worker with the daemon.
     pub fn register_worker(&mut self, info: WorkerInfo) {
+        let _linkscope_worker = linkscope::phase("daemon.worker.register");
+        linkscope::event_fields(
+            "daemon.worker.register",
+            [
+                linkscope::TraceField::text("label", info.label.clone()),
+                linkscope::TraceField::count("pid", u64::from(info.pid)),
+                linkscope::TraceField::text("cwd", info.cwd.display().to_string()),
+            ],
+        );
         self.last_activity = Instant::now();
         self.workers.push(info);
     }
 
     /// Deregister a worker by PID. No-op if the PID isn't tracked.
     pub fn deregister_worker(&mut self, pid: u32) {
+        let _linkscope_worker = linkscope::phase("daemon.worker.deregister");
+        let before = self.workers.len();
         self.workers.retain(|w| w.pid != pid);
+        linkscope::event_fields(
+            "daemon.worker.deregister",
+            [
+                linkscope::TraceField::count("pid", u64::from(pid)),
+                linkscope::TraceField::count("before", usize_to_u64_saturating(before)),
+                linkscope::TraceField::count("after", usize_to_u64_saturating(self.workers.len())),
+            ],
+        );
         self.last_activity = Instant::now();
     }
 
@@ -336,6 +543,14 @@ fn idle_timeout() -> Duration {
         .unwrap_or(DEFAULT_IDLE_TIMEOUT)
 }
 
+fn duration_millis_u64(duration: Duration) -> u64 {
+    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
+}
+
 pub(super) fn uuid_short() -> String {
     // If the system clock is set before UNIX_EPOCH (extreme skew or pre-1970
     // hardware clocks), saturate to ZERO. The resulting id collides with
@@ -364,9 +579,21 @@ pub(super) fn uuid_short() -> String {
 /// deployment you'd want each fire to dispatch to a worker pool; that
 /// plumbing isn't in scope for this milestone.
 pub async fn run_daemon(paths: DaemonPaths) -> std::io::Result<()> {
+    let _linkscope_daemon = linkscope::phase("daemon.run");
+    linkscope::event_fields(
+        "daemon.run.start",
+        [
+            linkscope::TraceField::text("base_dir", paths.base_dir.display().to_string()),
+            linkscope::TraceField::text("state_file", paths.state_file.display().to_string()),
+        ],
+    );
     paths.ensure_dirs()?;
 
     if let Some(pid) = is_daemon_running(&paths) {
+        linkscope::event_fields(
+            "daemon.run.already_running",
+            [linkscope::TraceField::count("pid", u64::from(pid))],
+        );
         return Err(std::io::Error::new(
             std::io::ErrorKind::AlreadyExists,
             format!("daemon already running (pid {pid})"),
@@ -412,10 +639,24 @@ pub async fn run_daemon(paths: DaemonPaths) -> std::io::Result<()> {
                 match services.run_tick(&mut daemon, now).await {
                     crate::svcs::TickOutcome::Continue => {}
                     crate::svcs::TickOutcome::Restart => {
+                        linkscope::event_fields(
+                            "daemon.run.tick_outcome",
+                            [linkscope::TraceField::text("outcome", "restart")],
+                        );
                         restart_requested = true;
                         break;
                     }
                     crate::svcs::TickOutcome::IdleExit => {
+                        linkscope::event_fields(
+                            "daemon.run.tick_outcome",
+                            [
+                                linkscope::TraceField::text("outcome", "idle_exit"),
+                                linkscope::TraceField::count(
+                                    "idle_secs",
+                                    daemon.last_activity.elapsed().as_secs(),
+                                ),
+                            ],
+                        );
                         tracing::info!(
                             target: "jfc::daemon",
                             idle_secs = daemon.last_activity.elapsed().as_secs(),
@@ -426,6 +667,10 @@ pub async fn run_daemon(paths: DaemonPaths) -> std::io::Result<()> {
                 }
             }
             _ = &mut shutdown => {
+                linkscope::event_fields(
+                    "daemon.run.shutdown",
+                    [linkscope::TraceField::text("signal", "shutdown")],
+                );
                 tracing::info!(target: "jfc::daemon", "shutdown signal, exiting");
                 break;
             }
@@ -437,6 +682,10 @@ pub async fn run_daemon(paths: DaemonPaths) -> std::io::Result<()> {
     join_worker_reapers();
 
     if restart_requested {
+        linkscope::event_fields(
+            "daemon.run.exit",
+            [linkscope::TraceField::text("reason", "restart_requested")],
+        );
         remove_pid_file(&paths);
         daemon.persist();
         if let Err(err) = spawn_replacement_daemon(&paths, &daemon.state) {
@@ -449,12 +698,17 @@ pub async fn run_daemon(paths: DaemonPaths) -> std::io::Result<()> {
         return Ok(());
     }
 
+    linkscope::event_fields(
+        "daemon.run.exit",
+        [linkscope::TraceField::text("reason", "normal")],
+    );
     remove_pid_file(&paths);
     daemon.persist();
     Ok(())
 }
 
 fn spawn_replacement_daemon(paths: &DaemonPaths, state: &DaemonState) -> std::io::Result<()> {
+    let _linkscope_spawn = linkscope::phase("daemon.spawn_replacement");
     let exe = state
         .runtime
         .worker_exe
@@ -469,6 +723,13 @@ fn spawn_replacement_daemon(paths: &DaemonPaths, state: &DaemonState) -> std::io
             format!("daemon binary does not exist: {}", exe.display()),
         ));
     }
+    linkscope::event_fields(
+        "daemon.spawn_replacement.start",
+        [
+            linkscope::TraceField::text("exe", exe.display().to_string()),
+            linkscope::TraceField::text("state_file", paths.state_file.display().to_string()),
+        ],
+    );
 
     let mut cmd = std::process::Command::new(exe);
     cmd.arg("daemon")
@@ -494,6 +755,10 @@ fn spawn_replacement_daemon(paths: &DaemonPaths, state: &DaemonState) -> std::io
     }
 
     let child = cmd.spawn()?;
+    linkscope::event_fields(
+        "daemon.spawn_replacement.result",
+        [linkscope::TraceField::count("pid", u64::from(child.id()))],
+    );
     tracing::warn!(
         target: "jfc::daemon",
         replacement_pid = child.id(),
@@ -533,6 +798,7 @@ async fn shutdown_signal() {
 /// are registered; previously-tracked workers whose PID vanished or moved
 /// to terminal status are deregistered.
 pub(crate) fn sync_workers_from_state(daemon: &mut Daemon, state: &DaemonState) {
+    let _linkscope_sync = linkscope::phase("daemon.worker.sync_from_state");
     use super::state::BackgroundAgentStatus;
 
     // Collect PIDs that are running per persisted state.
@@ -545,6 +811,7 @@ pub(crate) fn sync_workers_from_state(daemon: &mut Daemon, state: &DaemonState) 
 
     // Remove workers whose PIDs are no longer running in persisted state.
     let had_workers = daemon.has_active_workers();
+    let before = daemon.workers.len();
     daemon.workers.retain(|w| running_pids.contains(&w.pid));
 
     // Register any new running agents we don't already track.
@@ -569,6 +836,18 @@ pub(crate) fn sync_workers_from_state(daemon: &mut Daemon, state: &DaemonState) 
             started_at: Instant::now(),
         });
     }
+    linkscope::event_fields(
+        "daemon.worker.sync_from_state",
+        [
+            linkscope::TraceField::count(
+                "running_pids",
+                usize_to_u64_saturating(running_pids.len()),
+            ),
+            linkscope::TraceField::count("before", usize_to_u64_saturating(before)),
+            linkscope::TraceField::count("after", usize_to_u64_saturating(daemon.workers.len())),
+            linkscope::TraceField::count("had_workers", u64::from(had_workers)),
+        ],
+    );
 
     // If we gained or still have workers, touch activity so idle-exit
     // doesn't fire while work is in progress.
@@ -582,9 +861,14 @@ pub(crate) fn sync_workers_from_state(daemon: &mut Daemon, state: &DaemonState) 
 
 /// `jfc daemon stop` — send SIGTERM to the PID file and clean up.
 pub fn stop_daemon(paths: &DaemonPaths) -> std::io::Result<()> {
+    let _linkscope_stop = linkscope::phase("daemon.stop");
     let pid = match is_daemon_running(paths) {
         Some(p) => p,
         None => {
+            linkscope::event_fields(
+                "daemon.stop.result",
+                [linkscope::TraceField::text("status", "not_running")],
+            );
             // Stale or missing — wipe the file so subsequent starts don't fail.
             remove_pid_file(paths);
             return Err(std::io::Error::new(
@@ -593,6 +877,10 @@ pub fn stop_daemon(paths: &DaemonPaths) -> std::io::Result<()> {
             ));
         }
     };
+    linkscope::event_fields(
+        "daemon.stop.start",
+        [linkscope::TraceField::count("pid", u64::from(pid))],
+    );
 
     #[cfg(unix)]
     {
@@ -607,15 +895,31 @@ pub fn stop_daemon(paths: &DaemonPaths) -> std::io::Result<()> {
         }
     }
 
+    linkscope::event_fields(
+        "daemon.stop.result",
+        [linkscope::TraceField::text("status", "ok")],
+    );
     Ok(())
 }
 
 /// `jfc daemon status` — render a one-paragraph status string.
 pub fn status_string(paths: &DaemonPaths) -> String {
+    let _linkscope_status = linkscope::phase("daemon.status_string");
     use super::state::BackgroundAgentStatus;
 
     let running = is_daemon_running(paths);
     let state = reconcile_background_agents(paths).unwrap_or_default();
+    linkscope::event_fields(
+        "daemon.status_string.state",
+        [
+            linkscope::TraceField::count("running_pid", running.map(u64::from).unwrap_or(0)),
+            linkscope::TraceField::count("sessions", usize_to_u64_saturating(state.sessions.len())),
+            linkscope::TraceField::count(
+                "background_agents",
+                usize_to_u64_saturating(state.background_agents.len()),
+            ),
+        ],
+    );
     let uptime = SystemTime::now()
         .duration_since(state.started_at)
         .unwrap_or_default()
@@ -723,8 +1027,16 @@ pub fn status_string(paths: &DaemonPaths) -> String {
 }
 
 pub(crate) fn refresh_runtime_info(daemon: &mut Daemon) -> std::io::Result<bool> {
+    let _linkscope_refresh = linkscope::phase("daemon.runtime.refresh_info");
     let now = SystemTime::now();
     if daemon.state.runtime.restart_requested {
+        linkscope::event_fields(
+            "daemon.runtime.refresh_info",
+            [linkscope::TraceField::text(
+                "status",
+                "restart_already_requested",
+            )],
+        );
         daemon.persist();
         return Ok(true);
     }
@@ -757,9 +1069,27 @@ pub(crate) fn refresh_runtime_info(daemon: &mut Daemon) -> std::io::Result<bool>
             worker_exe.display()
         ));
         daemon.persist();
+        linkscope::event_fields(
+            "daemon.runtime.refresh_info",
+            [
+                linkscope::TraceField::text("status", "restart_requested"),
+                linkscope::TraceField::text("worker_exe", worker_exe.display().to_string()),
+            ],
+        );
         return Ok(true);
     }
     daemon.persist();
+    linkscope::detail_event_fields(
+        "daemon.runtime.refresh_info",
+        [
+            linkscope::TraceField::text("status", "ok"),
+            linkscope::TraceField::count("changed", u64::from(changed)),
+            linkscope::TraceField::count(
+                "spare_ready",
+                u64::from(daemon.state.runtime.spare_ready),
+            ),
+        ],
+    );
     Ok(false)
 }
 
@@ -767,17 +1097,34 @@ pub(crate) fn maybe_retire_low_memory_worker(
     paths: &DaemonPaths,
     daemon: &mut Daemon,
 ) -> std::io::Result<bool> {
+    let _linkscope_retire = linkscope::phase("daemon.worker.maybe_retire_low_memory");
     let Some(threshold_mb) = std::env::var("JFC_DAEMON_LOW_MEM_RETIRE_MB")
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
         .filter(|v| *v > 0)
     else {
+        linkscope::detail_event_fields(
+            "daemon.worker.maybe_retire_low_memory",
+            [linkscope::TraceField::text("status", "disabled")],
+        );
         return Ok(false);
     };
     let Some(available) = available_memory_mb() else {
+        linkscope::event_fields(
+            "daemon.worker.maybe_retire_low_memory",
+            [linkscope::TraceField::text("status", "meminfo_unavailable")],
+        );
         return Ok(false);
     };
     if available >= threshold_mb {
+        linkscope::detail_event_fields(
+            "daemon.worker.maybe_retire_low_memory",
+            [
+                linkscope::TraceField::text("status", "above_threshold"),
+                linkscope::TraceField::count("available_mb", available),
+                linkscope::TraceField::count("threshold_mb", threshold_mb),
+            ],
+        );
         return Ok(false);
     }
 
@@ -807,6 +1154,15 @@ pub(crate) fn maybe_retire_low_memory_worker(
         Ok(Some((id, log_path)))
     })?;
     if let Some((id, log_path)) = retired {
+        linkscope::event_fields(
+            "daemon.worker.maybe_retire_low_memory",
+            [
+                linkscope::TraceField::text("status", "retired"),
+                linkscope::TraceField::text("id", id.clone()),
+                linkscope::TraceField::count("available_mb", available),
+                linkscope::TraceField::count("threshold_mb", threshold_mb),
+            ],
+        );
         append_log_line(
             &log_path,
             &format!(
@@ -822,6 +1178,14 @@ pub(crate) fn maybe_retire_low_memory_worker(
         );
         return Ok(true);
     }
+    linkscope::event_fields(
+        "daemon.worker.maybe_retire_low_memory",
+        [
+            linkscope::TraceField::text("status", "no_running_agent"),
+            linkscope::TraceField::count("available_mb", available),
+            linkscope::TraceField::count("threshold_mb", threshold_mb),
+        ],
+    );
     Ok(false)
 }
 
@@ -840,7 +1204,22 @@ fn daemon_restart_on_upgrade_enabled() -> bool {
 
 /// `jfc daemon list` — render cron jobs + pending wakeups.
 pub fn list_string(paths: &DaemonPaths) -> String {
+    let _linkscope_list = linkscope::phase("daemon.list_string");
     let state = reconcile_background_agents(paths).unwrap_or_default();
+    linkscope::event_fields(
+        "daemon.list_string.state",
+        [
+            linkscope::TraceField::count(
+                "cron_jobs",
+                usize_to_u64_saturating(state.cron_jobs.len()),
+            ),
+            linkscope::TraceField::count("wakeups", usize_to_u64_saturating(state.wakeups.len())),
+            linkscope::TraceField::count(
+                "background_agents",
+                usize_to_u64_saturating(state.background_agents.len()),
+            ),
+        ],
+    );
     let mut s = String::new();
     s.push_str("cron jobs:\n");
     if state.cron_jobs.is_empty() {
@@ -893,11 +1272,23 @@ pub fn list_string(paths: &DaemonPaths) -> String {
 
 /// `jfc daemon fire <id>` — manually fire a cron job once.
 pub async fn fire_cron_cli(paths: &DaemonPaths, id: &str) -> std::io::Result<String> {
+    let _linkscope_fire = linkscope::phase("daemon.cron.fire_cli");
+    linkscope::event_fields(
+        "daemon.cron.fire_cli.start",
+        [linkscope::TraceField::text("id", id.to_owned())],
+    );
     let mut daemon = Daemon::new(&paths.base_dir)?;
     let now = SystemTime::now();
     let job = daemon.fire_cron(id, now).ok_or_else(|| {
         std::io::Error::new(std::io::ErrorKind::NotFound, format!("no cron job `{id}`"))
     })?;
     run_cron_command(&job).await?;
+    linkscope::event_fields(
+        "daemon.cron.fire_cli.result",
+        [
+            linkscope::TraceField::text("status", "ok"),
+            linkscope::TraceField::text("id", job.id.clone()),
+        ],
+    );
     Ok(format!("fired {} ({})", job.id, job.command))
 }

@@ -9,6 +9,7 @@ description = "Agent economy system for competitive code generation"
 [dependencies]
 jfc-core = { path = "../jfc-core" }
 jfc-agent = { path = "../jfc-agent" }
+linkscope = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }

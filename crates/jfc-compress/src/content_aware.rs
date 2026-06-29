@@ -105,8 +105,11 @@ pub fn compress_tool_output(
     keep_tail: usize,
     query_context: &str,
 ) -> CompressionOutput {
+    let _linkscope_compress = linkscope::phase("compress.tool_output");
+    linkscope::record_bytes("compress.input", usize_to_u64_saturating(text.len()));
     let original_chars = text.chars().count();
     if original_chars <= keep_head + keep_tail {
+        linkscope::record_items("compress.verbatim", 1);
         return CompressionOutput {
             text: text.to_string(),
             method: CompressionMethod::Verbatim,
@@ -133,6 +136,15 @@ pub fn compress_tool_output(
     let (clean, blocks, _protect_stats) = protect_tags(text, true);
 
     let detection = detect_content_type(&clean);
+    if linkscope::is_enabled() {
+        linkscope::event_fields(
+            "compress.detected",
+            [linkscope::TraceField::text(
+                "content_type",
+                format!("{:?}", detection.content_type),
+            )],
+        );
+    }
     let specialized: Option<(String, CompressionMethod)> = match detection.content_type {
         ContentType::BuildOutput => {
             let c = LogCompressor::new(LogCompressorConfig::default());
@@ -183,6 +195,10 @@ pub fn compress_tool_output(
         method,
         original_chars,
     }
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]

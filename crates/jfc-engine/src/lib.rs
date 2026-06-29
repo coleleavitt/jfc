@@ -40,6 +40,7 @@ pub mod compact_archive;
 pub mod config;
 pub mod context;
 pub mod context_accounting;
+mod context_reduction;
 pub mod cost;
 pub mod council;
 pub mod council_directives;
@@ -770,6 +771,84 @@ pub async fn run_self_critique_pass(
 /// pattern independently re-flagged across this many sessions is treated as
 /// proven enough for these conservative, additive, prompt-safe instructions.
 pub const SELF_CRITIQUE_PROMOTE_MIN_RECURRENCE: i64 = 8;
+
+/// The RSI candidate→verified→active funnel, computed from the knowledge store.
+/// Plain owned data so the thin binary can map it onto the dashboard DTO without
+/// itself depending on `jfc-knowledge` (architecture: the bin goes through the
+/// engine). `candidates`/`active` are status tallies; `verified` is the count of
+/// candidates that pass the curator's heavyweight promotion gate; `by_kind` is
+/// the per-kind `(candidates, active)` breakdown.
+#[derive(Debug, Clone, Default)]
+pub struct RsiFunnelData {
+    pub candidates: u64,
+    pub verified: u64,
+    pub active: u64,
+    /// `(kind, candidates, active)` rows, busiest first.
+    pub by_kind: Vec<(String, u64, u64)>,
+}
+
+/// Build the RSI funnel from the knowledge store. Best-effort and synchronous
+/// (the dashboard builder is sync): any store error yields an empty funnel.
+///
+/// `verified` counts the curator's *evidenced* candidates (trust=verified +
+/// fixtures pass + research verified), NOT `self_critique`'s bare
+/// recurrence-gated ones (those promote via [`promote_evidenced_self_critique`],
+/// a separate lighter gate). The two promotion paths are intentionally distinct;
+/// this surfaces only the heavyweight fixtures+research gate so the panel can
+/// distinguish "generating proposals" from "proving them".
+pub fn build_rsi_funnel() -> RsiFunnelData {
+    jfc_knowledge::block_on_knowledge(async {
+        let Ok(store) = jfc_knowledge::KnowledgeStore::open_default().await else {
+            return RsiFunnelData::default();
+        };
+        let Ok(counts) = store.rsi_definition_counts().await else {
+            return RsiFunnelData::default();
+        };
+        let mut funnel = RsiFunnelData::default();
+        let mut by_kind: std::collections::BTreeMap<String, (u64, u64)> =
+            std::collections::BTreeMap::new();
+        for row in &counts {
+            let entry = by_kind.entry(row.kind.clone()).or_default();
+            match row.status.as_str() {
+                "candidate" => {
+                    funnel.candidates += row.count;
+                    entry.0 += row.count;
+                }
+                "active" => {
+                    funnel.active += row.count;
+                    entry.1 += row.count;
+                }
+                _ => {}
+            }
+        }
+        funnel.by_kind = by_kind
+            .into_iter()
+            .filter(|(_, (c, a))| *c > 0 || *a > 0)
+            .map(|(k, (c, a))| (k, c, a))
+            .collect();
+        funnel.by_kind.sort_by(|a, b| (b.1 + b.2).cmp(&(a.1 + a.2)));
+        // `verified`: inspect candidate metadata against the promotion gate.
+        // Cap the scan so a huge candidate pool can't stall the snapshot.
+        for kind in counts
+            .iter()
+            .filter(|c| c.status == "candidate")
+            .map(|c| c.kind.as_str())
+        {
+            let rows = store
+                .list_definitions_for_project_status_any_project(kind, "candidate", 1_000)
+                .await
+                .unwrap_or_default();
+            for row in rows {
+                if let Ok(metadata) = serde_json::from_str::<serde_json::Value>(&row.metadata_json)
+                    && jfc_learn::is_promotable_candidate(&metadata)
+                {
+                    funnel.verified += 1;
+                }
+            }
+        }
+        funnel
+    })
+}
 
 /// Evidence-gated PROMOTION: graduate well-evidenced self-critique candidates to
 /// `Active`, so the request assembler injects them into the LIVE system prompt.

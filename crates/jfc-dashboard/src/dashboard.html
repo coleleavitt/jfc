@@ -53,6 +53,15 @@
   .rsi-spark-label { color: var(--muted); font-size: 11px; margin-bottom: 4px; }
   #rsi-spark svg { width: 320px; height: 42px; display: block; }
   @media (max-width: 720px) { .rsi-spark-wrap { margin-left: 0; align-items: flex-start; } }
+  .rsi-funnel { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border, #2a2a2a); }
+  .rsi-funnel-stage { display: flex; flex-direction: column; min-width: 92px; }
+  .rsi-funnel-stage b { font-size: 20px; font-weight: 600; line-height: 1.15; color: var(--accent2); }
+  .rsi-funnel-stage span { color: var(--muted); font-size: 11px; }
+  .rsi-funnel-arrow { color: var(--muted); font-size: 18px; }
+  .rsi-funnel-bykind { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; max-width: 50%; }
+  .rsi-kind { background: var(--chip, #1d1d1d); border: 1px solid var(--border, #2a2a2a); border-radius: 6px; padding: 2px 7px; font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .rsi-kind b { color: var(--fg, #ddd); font-weight: 600; }
+  .rsi-funnel-note { color: var(--muted); font-size: 11px; margin-top: 10px; font-style: italic; }
   .legend { display: flex; gap: 16px; font-size: 11px; color: var(--muted); margin: 4px 0 10px; }
   .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; }
   .chart svg { width: 100%; height: 170px; display: block; }
@@ -60,6 +69,7 @@
   .summary { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
   .summary b { color: var(--fg); }
   .flag { color: var(--err); font-size: 11px; }
+  .rewrite { color: var(--warn); font-size: 11px; }
   .prompt-cell { max-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   tr.flagged td:first-child { border-left: 2px solid var(--err); padding-left: 6px; }
 </style>
@@ -87,6 +97,21 @@
         <div id="rsi-spark"></div>
       </div>
     </div>
+    <div class="rsi-funnel" id="rsi-funnel">
+      <div class="rsi-funnel-stage">
+        <b id="rsi-fn-candidates">0</b><span>candidates staged</span>
+      </div>
+      <div class="rsi-funnel-arrow">→</div>
+      <div class="rsi-funnel-stage">
+        <b id="rsi-fn-verified">0</b><span>verified (promotable)</span>
+      </div>
+      <div class="rsi-funnel-arrow">→</div>
+      <div class="rsi-funnel-stage">
+        <b id="rsi-fn-active">0</b><span>active (in prompt)</span>
+      </div>
+      <div class="rsi-funnel-bykind" id="rsi-fn-bykind"></div>
+    </div>
+    <div class="rsi-funnel-note" id="rsi-fn-note"></div>
   </section>
 
   <section class="panel chart">
@@ -97,6 +122,7 @@
       <span><i style="background:var(--out)"></i>output</span>
       <span><i style="background:var(--ok)"></i>cost</span>
       <span><i style="background:var(--err)"></i>flagged for review</span>
+      <span><i style="background:var(--warn)"></i>cache rewrite</span>
     </div>
     <div id="tl-chart"></div>
   </section>
@@ -127,7 +153,7 @@
     <section class="panel">
       <h2>Usage by model</h2>
       <table id="usage-table">
-        <thead><tr><th>model</th><th>in</th><th>out</th><th>cache rd</th><th>hit</th><th>cost</th></tr></thead>
+        <thead><tr><th>model</th><th>in</th><th>out</th><th>cache rd</th><th>cache wr</th><th>hit</th><th>cost</th></tr></thead>
         <tbody></tbody>
       </table>
       <h2 style="margin-top:18px">Compartments</h2>
@@ -169,6 +195,7 @@ function render(s) {
 
   document.getElementById("rsi-sections").textContent = fmt(s.rsi_prompt_sections);
   document.getElementById("rsi-rules").textContent = fmt(s.rsi_tool_visibility_rules);
+  renderRsiFunnel(s.rsi_funnel || {});
   renderRsiSpark(s.timeline || []);
 
   renderTimeline(s.timeline || []);
@@ -204,10 +231,11 @@ function render(s) {
     const tr = document.createElement("tr");
     tr.innerHTML = `<td>${esc(u.model)}</td><td class="num">${fmt(u.input_tokens)}</td>` +
       `<td class="num">${fmt(u.output_tokens)}</td><td class="num">${fmt(u.cache_read_tokens)}</td>` +
+      `<td class="num">${fmt(u.cache_write_tokens)}</td>` +
       `<td class="pct">${(u.cache_hit_pct || 0).toFixed(0)}%</td><td class="num">${cur(u.cost_usd)}</td>`;
     ut.appendChild(tr);
   });
-  if (!(s.usage_by_model || []).length) ut.innerHTML = `<tr><td colspan="6" class="pct">no requests yet</td></tr>`;
+  if (!(s.usage_by_model || []).length) ut.innerHTML = `<tr><td colspan="7" class="pct">no requests yet</td></tr>`;
 
   // Compartments
   const c = s.compartments || {};
@@ -230,9 +258,12 @@ function renderTimeline(tl) {
   const tin = tl.reduce((a, x) => a + x.input_delta, 0);
   const tout = tl.reduce((a, x) => a + x.output_delta, 0);
   const tcost = tl.reduce((a, x) => a + x.cost_delta_usd, 0);
-  const flagged = tl.filter(x => (x.flags || []).length).length;
+  const flagged = tl.filter(x => (x.flags || []).some(f => f !== "cache_rewrite")).length;
+  const rewrites = tl.filter(x => (x.flags || []).includes("cache_rewrite")).length;
   sum.innerHTML = `<b>${tl.length}</b> requests · <b>${fmt(tin)}</b> in · <b>${fmt(tout)}</b> out · ` +
-    `<b>${cur(tcost)}</b>` + (flagged ? ` · <span class="flag">${flagged} flagged</span>` : "");
+    `<b>${cur(tcost)}</b>` +
+    (flagged ? ` · <span class="flag">${flagged} flagged</span>` : "") +
+    (rewrites ? ` · <span class="rewrite">${rewrites} cache rewrite</span>` : "");
 
   const W = 1000, H = 170, padB = 16, padT = 8;
   const n = tl.length, bw = Math.max(1, Math.min(28, W / n));
@@ -246,17 +277,20 @@ function renderTimeline(tl) {
     const cx = i * bw, inner = Math.max(0, bw - 1);
     const ih = (x.input_delta / maxTok) * usable;
     const oh = (x.output_delta / maxTok) * usable;
-    const flag = (x.flags || []).length > 0;
+    const flags = x.flags || [];
+    const alarm = flags.some(f => f !== "cache_rewrite");
+    const rewrite = flags.includes("cache_rewrite");
     const tip = `#${i + 1}  ${x.model}\nin ${fmt(x.input_delta)}  out ${fmt(x.output_delta)}  ` +
-      `cache ${fmt(x.cache_read_delta)} (${(x.cache_hit_pct||0).toFixed(0)}% hit)\n${cur(x.cost_delta_usd)}  ` +
-      `ctx ${fmt(x.context_used_tokens)}/${fmt(x.context_window_tokens)}\n` +
+      `cache rd ${fmt(x.cache_read_delta)} / wr ${fmt(x.cache_write_delta)} (${(x.cache_hit_pct||0).toFixed(0)}% hit)\n` +
+      `${cur(x.cost_delta_usd)}  ctx ${fmt(x.context_used_tokens)}/${fmt(x.context_window_tokens)}\n` +
       `RSI ${fmt(x.rsi_prompt_sections)} sections / ${fmt(x.rsi_tool_visibility_rules)} rules` +
-      (flag ? `\n⚑ ${(x.flags||[]).join(", ")}` : "") + (x.prompt ? `\n“${x.prompt}”` : "");
-    const inColor = flag ? "var(--err)" : "var(--in)";
+      (flags.length ? `\n⚑ ${flags.join(", ")}` : "") + (x.prompt ? `\n“${x.prompt}”` : "");
+    const inColor = alarm ? "var(--err)" : "var(--in)";
+    const marker = alarm ? "var(--err)" : (rewrite ? "var(--warn)" : null);
     bars += `<g><title>${esc(tip)}</title>` +
       `<rect x="${cx}" y="${padT + usable - ih}" width="${inner}" height="${ih}" fill="${inColor}"/>` +
       `<rect x="${cx}" y="${padT + usable - ih - oh}" width="${inner}" height="${oh}" fill="var(--out)"/>` +
-      (flag ? `<rect x="${cx}" y="${padT - 6}" width="${inner}" height="4" fill="var(--err)"/>` : "") +
+      (marker ? `<rect x="${cx}" y="${padT - 6}" width="${inner}" height="4" fill="${marker}"/>` : "") +
       `</g>`;
     costPts.push(`${cx + inner / 2},${padT + usable - (x.cost_delta_usd / maxCost) * usable}`);
   });
@@ -290,13 +324,36 @@ function renderPrompts(tl) {
   });
   groups.reverse().forEach(g => {
     const tr = document.createElement("tr");
-    if (g.flags.size) tr.className = "flagged";
+    if ([...g.flags].some(f => f !== "cache_rewrite")) tr.className = "flagged";
     const hit = (g.in + g.cache) > 0 ? (100 * g.cache / (g.in + g.cache)).toFixed(0) + "%" : "—";
     tr.innerHTML = `<td class="prompt-cell" title="${esc(g.key)}">${esc(g.key)}</td>` +
       `<td class="num">${g.reqs}</td><td class="num">${fmt(g.in)}</td><td class="num">${fmt(g.out)}</td>` +
       `<td class="pct">${hit}</td><td class="num">${cur(g.cost)}</td>`;
     body.appendChild(tr);
   });
+}
+
+function renderRsiFunnel(f) {
+  const c = f.candidates || 0, v = f.verified || 0, a = f.active || 0;
+  document.getElementById("rsi-fn-candidates").textContent = fmt(c);
+  document.getElementById("rsi-fn-verified").textContent = fmt(v);
+  document.getElementById("rsi-fn-active").textContent = fmt(a);
+  const host = document.getElementById("rsi-fn-bykind");
+  host.innerHTML = (f.by_kind || []).map(k =>
+    `<span class="rsi-kind">${esc(k.kind)} <b>${fmt(k.candidates)}</b>` +
+    (k.active ? `/<b style="color:var(--accent2)">${fmt(k.active)}</b>` : "") + `</span>`
+  ).join("");
+  // Diagnostic note: name the stuck state so the panel explains itself.
+  const note = document.getElementById("rsi-fn-note");
+  if (c === 0 && a === 0) {
+    note.textContent = "No self-improvement candidates staged yet — run a few sessions or /dream to generate proposals.";
+  } else if (c > 0 && v === 0 && a === 0) {
+    note.textContent = `${fmt(c)} candidates staged but 0 verified and 0 active — the loop is generating proposals but the curator hasn't proven any (run the dreamer/curator to attach fixture+research evidence).`;
+  } else if (a > 0) {
+    note.textContent = `${fmt(a)} self-improvement${a === 1 ? "" : "s"} live in the prompt — RSI is closing the loop.`;
+  } else {
+    note.textContent = `${fmt(v)} candidate${v === 1 ? "" : "s"} verified and awaiting promotion.`;
+  }
 }
 
 function renderRsiSpark(tl) {

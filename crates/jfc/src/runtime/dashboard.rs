@@ -95,8 +95,32 @@ fn build_snapshot(app: &App) -> DashboardSnapshot {
             .as_ref()
             .map(|metadata| metadata.rsi_tool_visibility_rules as u64)
             .unwrap_or(0),
+        rsi_funnel: rsi_funnel(),
         timeline: app.timeline.iter().cloned().collect(),
         profile: profile_phases(),
+    }
+}
+
+/// Build the DB-sourced RSI candidate→verified→active funnel. The engine reads
+/// the knowledge store (the per-request `rsi_*` counts are 0 between turns), so
+/// the panel shows the *standing* self-improvement state. The bin stays thin:
+/// it only maps the engine's owned funnel data onto the dashboard DTO.
+fn rsi_funnel() -> jfc_dashboard::RsiFunnel {
+    use jfc_dashboard::{RsiFunnel, RsiKindCount};
+    let data = jfc_engine::build_rsi_funnel();
+    RsiFunnel {
+        candidates: data.candidates,
+        verified: data.verified,
+        active: data.active,
+        by_kind: data
+            .by_kind
+            .into_iter()
+            .map(|(kind, candidates, active)| RsiKindCount {
+                kind,
+                candidates,
+                active,
+            })
+            .collect(),
     }
 }
 

@@ -11,6 +11,7 @@ jfc-config = { path = "../jfc-config" }
 jfc-knowledge = { path = "../jfc-knowledge" }
 jfc-plugin-host = { path = "../jfc-plugin-host" }
 jfc-plugin-sdk = { path = "../jfc-plugin-sdk" }
+linkscope = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }

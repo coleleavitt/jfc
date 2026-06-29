@@ -97,16 +97,26 @@ impl ApiKind {
 /// Public detection entry point. Walks the parsed body for the given API
 /// shape and returns up to [`MAX_FINDINGS_PER_REQUEST`] findings.
 pub fn detect_volatile_content(body: &Value, kind: ApiKind) -> Vec<VolatileFinding> {
+    let _linkscope_detect = linkscope::phase("compress.volatile.detect");
     let mut findings: Vec<VolatileFinding> = Vec::new();
     match kind {
         ApiKind::Anthropic => walk_anthropic(body, &mut findings),
         ApiKind::OpenAi => walk_openai(body, &mut findings),
     }
+    linkscope::record_items(
+        "compress.volatile.findings",
+        usize_to_u64_saturating(findings.len()),
+    );
     findings
 }
 
 /// Emit one `tracing::warn!` per finding with a stable structured shape.
 pub fn emit_volatile_warnings(findings: &[VolatileFinding], request_id: &str) {
+    let _linkscope_emit = linkscope::phase("compress.volatile.emit_warnings");
+    linkscope::record_items(
+        "compress.volatile.warnings",
+        usize_to_u64_saturating(findings.len()),
+    );
     for finding in findings {
         tracing::warn!(
             target: "jfc::cache",
@@ -120,6 +130,10 @@ pub fn emit_volatile_warnings(findings: &[VolatileFinding], request_id: &str) {
              fields"
         );
     }
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 // ─── Anthropic walker ──────────────────────────────────────────────────

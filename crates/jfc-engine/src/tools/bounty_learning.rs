@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use jfc_learn::rsi_curator::ApplyToStore;
+
 use super::economy::AppliedSolution;
 
 pub(crate) struct BountyLearningContext<'a> {

@@ -4,8 +4,10 @@ use jfc_core::ExecutionResult;
 
 /// Read and render a notebook file.
 pub async fn execute_notebook_read(path_str: &str) -> ExecutionResult {
+    let _linkscope_read = linkscope::phase("tools.notebook.read");
     let path = std::path::PathBuf::from(path_str);
     if !path.is_absolute() {
+        linkscope::record_items("tools.notebook.read.relative_path", 1);
         return ExecutionResult::failure(format!(
             "notebook_read: path must be absolute (got '{path_str}')"
         ));
@@ -13,9 +15,14 @@ pub async fn execute_notebook_read(path_str: &str) -> ExecutionResult {
     let text = match tokio::fs::read_to_string(&path).await {
         Ok(s) => s,
         Err(e) => {
+            linkscope::record_items("tools.notebook.read.error", 1);
             return ExecutionResult::failure(format!("notebook_read: cannot read {path_str}: {e}"));
         }
     };
+    linkscope::record_bytes(
+        "tools.notebook.read.bytes",
+        usize_to_u64_saturating(text.len()),
+    );
     match notebook_read_text(&text) {
         Ok(rendered) => ExecutionResult::success(rendered),
         Err(e) => ExecutionResult::failure(format!("notebook_read: {e}")),
@@ -24,12 +31,14 @@ pub async fn execute_notebook_read(path_str: &str) -> ExecutionResult {
 
 /// Parse a notebook JSON document and emit a human-readable rendering.
 pub fn notebook_read_text(text: &str) -> Result<String, String> {
+    let _linkscope_parse = linkscope::phase("tools.notebook.read_text");
     let v: serde_json::Value =
         serde_json::from_str(text).map_err(|e| format!("invalid notebook JSON: {e}"))?;
     let cells = v
         .get("cells")
         .and_then(|c| c.as_array())
         .ok_or_else(|| "notebook missing `cells` array".to_owned())?;
+    linkscope::record_items("tools.notebook.cells", usize_to_u64_saturating(cells.len()));
     let mut out = String::new();
     out.push_str(&format!("Notebook: {} cells\n", cells.len()));
     for (i, cell) in cells.iter().enumerate() {
@@ -116,8 +125,10 @@ pub async fn execute_notebook_edit(
     new_source: &str,
     edit_mode: Option<&str>,
 ) -> ExecutionResult {
+    let _linkscope_edit = linkscope::phase("tools.notebook.edit");
     let path = std::path::PathBuf::from(path_str);
     if !path.is_absolute() {
+        linkscope::record_items("tools.notebook.edit.relative_path", 1);
         return ExecutionResult::failure(format!(
             "notebook_edit: path must be absolute (got '{path_str}')"
         ));
@@ -125,6 +136,7 @@ pub async fn execute_notebook_edit(
     let text = match tokio::fs::read_to_string(&path).await {
         Ok(s) => s,
         Err(e) => {
+            linkscope::record_items("tools.notebook.edit.read_error", 1);
             return ExecutionResult::failure(format!("notebook_edit: cannot read {path_str}: {e}"));
         }
     };
@@ -136,6 +148,7 @@ pub async fn execute_notebook_edit(
                 new_text.len()
             )),
             Err(e) => {
+                linkscope::record_items("tools.notebook.edit.write_error", 1);
                 ExecutionResult::failure(format!("notebook_edit: write to {path_str} failed: {e}"))
             }
         },
@@ -150,7 +163,9 @@ pub fn notebook_edit_text(
     new_source: &str,
     edit_mode: &str,
 ) -> Result<String, String> {
+    let _linkscope_edit = linkscope::phase("tools.notebook.edit_text");
     if !matches!(edit_mode, "replace" | "insert" | "delete") {
+        linkscope::record_items("tools.notebook.edit.invalid_mode", 1);
         return Err(format!(
             "invalid edit_mode '{edit_mode}'. Must be one of: replace | insert | delete"
         ));
@@ -161,6 +176,10 @@ pub fn notebook_edit_text(
         .get_mut("cells")
         .and_then(|c| c.as_array_mut())
         .ok_or_else(|| "notebook missing `cells` array".to_owned())?;
+    linkscope::record_items(
+        "tools.notebook.edit.cells",
+        usize_to_u64_saturating(cells.len()),
+    );
 
     let idx = cells
         .iter()
@@ -174,6 +193,7 @@ pub fn notebook_edit_text(
 
     match edit_mode {
         "replace" => {
+            linkscope::record_items("tools.notebook.edit.replace", 1);
             if let Some(obj) = cells[idx].as_object_mut() {
                 obj.insert(
                     "source".into(),
@@ -188,6 +208,7 @@ pub fn notebook_edit_text(
             }
         }
         "insert" => {
+            linkscope::record_items("tools.notebook.edit.insert", 1);
             let new_id = format!("{cell_id}-new-{}", uuid::Uuid::new_v4().simple());
             let new_cell = serde_json::json!({
                 "cell_type": "code",
@@ -200,12 +221,17 @@ pub fn notebook_edit_text(
             cells.insert(idx + 1, new_cell);
         }
         "delete" => {
+            linkscope::record_items("tools.notebook.edit.delete", 1);
             cells.remove(idx);
         }
         _ => unreachable!(),
     }
 
     serde_json::to_string_pretty(&v).map_err(|e| format!("re-serialize failed: {e}"))
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]

@@ -9,6 +9,7 @@
 //! | `core`          | `save_session`, `load_session`, `set_session_title`   |
 
 mod compaction;
+mod context_reduction_state;
 mod core;
 mod deserialize;
 mod entry_log;
@@ -19,6 +20,7 @@ mod store;
 #[cfg(test)]
 mod serialization_tests;
 
+pub use context_reduction_state::{load_context_reduction_queue, save_context_reduction_queue};
 pub use core::{
     load_session, load_session_with_model, save_session, set_post_save_hook, set_session_title,
 };

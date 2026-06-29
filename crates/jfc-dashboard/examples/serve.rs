@@ -20,7 +20,8 @@ fn sample(
     prompt: &str,
     input: u64,
     output: u64,
-    cache: u64,
+    cache_read: u64,
+    cache_write: u64,
     cost: f64,
     used: u64,
     rsi_sections: u64,
@@ -33,9 +34,10 @@ fn sample(
         prompt: Some(prompt.into()),
         input_delta: input,
         output_delta: output,
-        cache_read_delta: cache,
-        cache_hit_pct: if input > 0 {
-            (cache as f64 / input as f64 * 100.0).min(100.0)
+        cache_read_delta: cache_read,
+        cache_write_delta: cache_write,
+        cache_hit_pct: if input + cache_read > 0 {
+            cache_read as f64 / (input + cache_read) as f64 * 100.0
         } else {
             0.0
         },
@@ -88,19 +90,140 @@ fn main() {
         total_cost_usd: 71.21,
         rsi_prompt_sections: 4,
         rsi_tool_visibility_rules: 2,
-        // RSI grows 1 → 4 sections across the session — the "improving" story.
+        // The candidate→verified→active funnel: lots staged, a few proven, some
+        // live — the "improving over time" story the per-request counts can't tell.
+        rsi_funnel: jfc_dashboard::RsiFunnel {
+            candidates: 43,
+            verified: 6,
+            active: 4,
+            by_kind: vec![
+                jfc_dashboard::RsiKindCount {
+                    kind: "system_prompt".into(),
+                    candidates: 30,
+                    active: 3,
+                },
+                jfc_dashboard::RsiKindCount {
+                    kind: "reasoning_policy".into(),
+                    candidates: 13,
+                    active: 1,
+                },
+            ],
+        },
+        // Mostly cache-heavy steady requests; one write-heavy turn (amber
+        // `cache_rewrite`, NOT a red false cost_spike) and one genuine input/cost
+        // spike (red). RSI grows 1 → 4 sections (the "improving" story).
         timeline: vec![
-            sample(1_782_699_100, "wire the compartments in", 2_100, 1_800, 0, 0.30, 18_400, 1, 0, &[]),
-            sample(1_782_699_200, "wire the compartments in", 28_400, 2_300, 24_000, 0.55, 47_657, 1, 1, &["input_spike"]),
-            sample(1_782_699_350, "add the token timeline", 31_200, 3_900, 152_551, 0.42, 61_300, 2, 1, &[]),
-            sample(1_782_699_500, "add the token timeline", 9_800, 1_200, 9_800, 0.18, 64_100, 2, 2, &["cache_hit_drop"]),
-            sample(1_782_699_700, "extract rsi-rs", 42_700, 4_100, 12_000, 1.10, 92_000, 3, 2, &["input_spike", "cost_spike", "context_near_window"]),
-            sample(1_782_699_900, "extract rsi-rs", 15_300, 2_900, 14_900, 0.34, 103_087, 4, 2, &[]),
+            sample(
+                1_782_699_100,
+                "update my origin to miasin labs",
+                2,
+                120,
+                50_000,
+                0,
+                0.40,
+                38_400,
+                1,
+                0,
+                &[],
+            ),
+            sample(
+                1_782_699_200,
+                "update my origin to miasin labs",
+                2,
+                90,
+                0,
+                120_000,
+                1.86,
+                47_657,
+                1,
+                1,
+                &["cache_rewrite"],
+            ),
+            sample(
+                1_782_699_350,
+                "<system-reminder> Continue the remaining work",
+                2,
+                220,
+                60_000,
+                0,
+                0.35,
+                61_300,
+                2,
+                1,
+                &[],
+            ),
+            sample(
+                1_782_699_500,
+                "<system-reminder> Continue the remaining work",
+                2,
+                180,
+                58_000,
+                0,
+                0.33,
+                64_100,
+                2,
+                2,
+                &[],
+            ),
+            sample(
+                1_782_699_650,
+                "<system-reminder> Continue the remaining work",
+                2,
+                160,
+                56_000,
+                0,
+                0.31,
+                70_400,
+                3,
+                2,
+                &[],
+            ),
+            sample(
+                1_782_699_750,
+                "<system-reminder> Continue the remaining work",
+                9_400,
+                320,
+                50_000,
+                0,
+                1.20,
+                92_000,
+                3,
+                2,
+                &["input_spike", "cost_spike"],
+            ),
+            sample(
+                1_782_699_900,
+                "<system-reminder> Continue the remaining work",
+                2,
+                150,
+                55_000,
+                0,
+                0.30,
+                103_087,
+                4,
+                2,
+                &[],
+            ),
         ],
         profile: vec![
-            ProfilePhase { name: "turn.submit".into(), ms: 48_201.4, spans: 6, ..Default::default() },
-            ProfilePhase { name: "turn.compact".into(), ms: 3_127.9, spans: 1, ..Default::default() },
-            ProfilePhase { name: "stream_context_budget".into(), ms: 12.6, spans: 6, ..Default::default() },
+            ProfilePhase {
+                name: "turn.submit".into(),
+                ms: 48_201.4,
+                spans: 6,
+                ..Default::default()
+            },
+            ProfilePhase {
+                name: "turn.compact".into(),
+                ms: 3_127.9,
+                spans: 1,
+                ..Default::default()
+            },
+            ProfilePhase {
+                name: "stream_context_budget".into(),
+                ms: 12.6,
+                spans: 6,
+                ..Default::default()
+            },
         ],
         ..Default::default()
     };

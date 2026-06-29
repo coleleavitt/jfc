@@ -11,6 +11,7 @@ tokio = { workspace = true, features = ["sync", "rt", "macros", "time", "net", "
 tokio-tungstenite = "0.24"
 futures-util = { workspace = true }
 hmac = { workspace = true }
+linkscope = { workspace = true }
 sha2 = { workspace = true }
 rand = "0.8"
 base64 = { workspace = true }

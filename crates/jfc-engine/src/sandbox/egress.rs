@@ -46,6 +46,7 @@ pub struct EgressPolicy {
 impl EgressPolicy {
     /// Block-everything policy (the safe default for an untrusted agentic run).
     pub fn block_all() -> Self {
+        let _linkscope_policy = linkscope::phase("engine.sandbox.egress.block_all");
         Self {
             outbound_enabled: false,
             allowed: Vec::new(),
@@ -57,6 +58,21 @@ impl EgressPolicy {
     /// enabled when there is at least one allowed domain (mirrors the existing
     /// `--unshare-net` heuristic: an empty allowlist means no network).
     pub fn from_network_config(cfg: &NetworkSandboxConfig) -> Self {
+        let _linkscope_policy = linkscope::phase("engine.sandbox.egress.from_network_config");
+        linkscope::event_fields(
+            "engine.sandbox.egress.from_network_config",
+            [
+                linkscope::TraceField::count(
+                    "allowed",
+                    u64::try_from(cfg.allowed_domains.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::count(
+                    "denied",
+                    u64::try_from(cfg.denied_domains.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::count("has_proxy", u64::from(cfg.has_egress_proxy())),
+            ],
+        );
         Self {
             outbound_enabled: !cfg.allowed_domains.is_empty(),
             allowed: cfg.allowed_domains.clone(),
@@ -67,19 +83,52 @@ impl EgressPolicy {
     /// Decide whether egress to `host` is permitted. `host` is a bare hostname
     /// (e.g. `files.pypi.org`); a leading scheme/port is not expected.
     pub fn decide(&self, host: &str) -> EgressDecision {
+        let _linkscope_decide = linkscope::phase("engine.sandbox.egress.decide");
         if !self.outbound_enabled {
+            linkscope::detail_event_fields(
+                "engine.sandbox.egress.decision",
+                [
+                    linkscope::TraceField::text("host", host.to_owned()),
+                    linkscope::TraceField::text("decision", "deny_disabled"),
+                ],
+            );
             return EgressDecision::Deny;
         }
         let host = normalize_host(host);
         if host.is_empty() {
+            linkscope::detail_event_fields(
+                "engine.sandbox.egress.decision",
+                [linkscope::TraceField::text("decision", "deny_empty_host")],
+            );
             return EgressDecision::Deny;
         }
         if self.denied.iter().any(|p| matches_domain(p, host)) {
+            linkscope::detail_event_fields(
+                "engine.sandbox.egress.decision",
+                [
+                    linkscope::TraceField::text("host", host.to_owned()),
+                    linkscope::TraceField::text("decision", "deny_pattern"),
+                ],
+            );
             return EgressDecision::Deny;
         }
         if self.allowed.iter().any(|p| matches_domain(p, host)) {
+            linkscope::detail_event_fields(
+                "engine.sandbox.egress.decision",
+                [
+                    linkscope::TraceField::text("host", host.to_owned()),
+                    linkscope::TraceField::text("decision", "allow"),
+                ],
+            );
             return EgressDecision::Allow;
         }
+        linkscope::detail_event_fields(
+            "engine.sandbox.egress.decision",
+            [
+                linkscope::TraceField::text("host", host.to_owned()),
+                linkscope::TraceField::text("decision", "deny_default"),
+            ],
+        );
         EgressDecision::Deny
     }
 
@@ -90,6 +139,14 @@ impl EgressPolicy {
     /// Decide for a URL by extracting its host component. A URL we can't parse a
     /// host from is denied.
     pub fn decide_url(&self, url: &str) -> EgressDecision {
+        let _linkscope_url = linkscope::phase("engine.sandbox.egress.decide_url");
+        linkscope::detail_event_fields(
+            "engine.sandbox.egress.decide_url",
+            [linkscope::TraceField::bytes(
+                "url_bytes",
+                u64::try_from(url.len()).unwrap_or(u64::MAX),
+            )],
+        );
         match host_from_url(url) {
             Some(host) => self.decide(&host),
             None => EgressDecision::Deny,

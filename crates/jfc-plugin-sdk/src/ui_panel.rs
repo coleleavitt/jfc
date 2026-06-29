@@ -21,9 +21,18 @@ pub struct UiPanelRefreshDescriptor {
 
 impl UiPanelRefreshDescriptor {
     pub fn process_bridge(handler: impl Into<String>) -> Self {
+        let _linkscope_refresh = linkscope::phase("plugin_sdk.ui_panel.refresh.process_bridge");
+        let handler = handler.into();
+        linkscope::detail_event_fields(
+            "plugin_sdk.ui_panel.refresh.process_bridge",
+            [linkscope::TraceField::bytes(
+                "handler_bytes",
+                u64::try_from(handler.len()).unwrap_or(u64::MAX),
+            )],
+        );
         Self {
             kind: UiPanelRefreshKind::ProcessBridge,
-            handler: handler.into(),
+            handler,
             min_interval_ms: None,
             auto_refresh_ms: None,
         }
@@ -64,11 +73,26 @@ impl UiPanelDescriptor {
         id: impl Into<String>,
         title: impl Into<String>,
     ) -> Self {
+        let _linkscope_panel = linkscope::phase("plugin_sdk.ui_panel.new");
+        let id = id.into();
+        let title = title.into();
+        linkscope::event_fields(
+            "plugin_sdk.ui_panel.new",
+            [
+                linkscope::TraceField::text("plugin_id", plugin_id.as_str().to_owned()),
+                linkscope::TraceField::text("scope", format!("{scope:?}")),
+                linkscope::TraceField::text("id", id.clone()),
+                linkscope::TraceField::bytes(
+                    "title_bytes",
+                    u64::try_from(title.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         Self {
             plugin_id,
             scope,
-            id: id.into(),
-            title: title.into(),
+            id,
+            title,
             body: None,
             runtime_action_id: None,
             refresh: None,
@@ -114,8 +138,17 @@ pub struct BridgeUiPanelRefreshRequest {
 
 impl BridgeUiPanelRefreshRequest {
     pub fn new(panel_id: impl Into<String>, scope: UiMutationScope) -> Self {
+        let _linkscope_request = linkscope::phase("plugin_sdk.ui_panel.refresh_request.new");
+        let panel_id = panel_id.into();
+        linkscope::event_fields(
+            "plugin_sdk.ui_panel.refresh_request.new",
+            [
+                linkscope::TraceField::text("panel_id", panel_id.clone()),
+                linkscope::TraceField::text("scope", format!("{scope:?}")),
+            ],
+        );
         Self {
-            panel_id: panel_id.into(),
+            panel_id,
             scope,
             state: None,
         }
@@ -138,8 +171,17 @@ pub struct BridgeUiPanelRefreshResult {
 
 impl BridgeUiPanelRefreshResult {
     pub fn body(body: impl Into<String>) -> Self {
+        let _linkscope_result = linkscope::phase("plugin_sdk.ui_panel.refresh_result.body");
+        let body = body.into();
+        linkscope::event_fields(
+            "plugin_sdk.ui_panel.refresh_result.body",
+            [linkscope::TraceField::bytes(
+                "body_bytes",
+                u64::try_from(body.len()).unwrap_or(u64::MAX),
+            )],
+        );
         Self {
-            body: Some(body.into()),
+            body: Some(body),
             state: None,
         }
     }

@@ -960,6 +960,12 @@ pub struct StreamOptions {
     /// server can return narration summaries for connector/user-message
     /// flows. Mirrors Claude Code 2.1.159's `narration_summaries` rollout.
     pub narration_summaries: bool,
+    /// When true, request Anthropic SERVER-side compaction (`compact_20260112`
+    /// context-management edit) so old turns are reduced API-side before they
+    /// reach the model — the non-blocking primary compaction path (no
+    /// client-side concurrency, never stalls the input stream). Defaults on;
+    /// the engine clears it from config (`server_side_compaction_enabled`).
+    pub server_side_compaction: bool,
 }
 
 impl StreamOptions {
@@ -990,6 +996,7 @@ impl StreamOptions {
             session_id: None,
             advisor_model: None,
             narration_summaries: false,
+            server_side_compaction: true,
         }
     }
 

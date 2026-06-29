@@ -508,8 +508,9 @@ impl McpRegistry {
             // rejected so a configured server can't expose a hidden, schema-less
             // tool to the model. An explicit opt-in restores the old behavior
             // for transcript-compat with previously-advertised dynamic tools.
-            let in_catalog = server.tools.iter().any(|tool| tool.name == tool_key);
-            if in_catalog || raw_mcp_dispatch_allowed() {
+            let can_report_connection_state = server.status != McpServerStatus::Connected
+                || server.tools.iter().any(|tool| tool.name == tool_key);
+            if can_report_connection_state || raw_mcp_dispatch_allowed() {
                 return Ok((Arc::clone(server), tool_key.to_owned()));
             }
             return Err(DispatchError::UnknownTool(advertised_name.to_owned()));

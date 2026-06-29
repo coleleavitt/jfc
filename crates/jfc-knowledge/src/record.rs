@@ -210,13 +210,32 @@ impl KnowledgeRecord {
         title: impl Into<String>,
         body: impl Into<String>,
     ) -> Self {
+        let _linkscope_record = linkscope::phase("knowledge.record.new");
+        let title = title.into();
+        let body = body.into();
+        linkscope::event_fields(
+            "knowledge.record.new",
+            [
+                linkscope::TraceField::text("kind", kind.slug()),
+                linkscope::TraceField::text("scope", scope.slug()),
+                linkscope::TraceField::count("has_project_key", u64::from(project_key.is_some())),
+                linkscope::TraceField::bytes(
+                    "title_bytes",
+                    u64::try_from(title.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::bytes(
+                    "body_bytes",
+                    u64::try_from(body.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         Self {
             id: uuid::Uuid::new_v4().simple().to_string(),
             kind,
             scope,
             project_key,
-            title: title.into(),
-            body: body.into(),
+            title,
+            body,
             tags: String::new(),
             source: None,
             confidence: 0.5,

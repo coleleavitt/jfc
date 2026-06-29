@@ -27,9 +27,23 @@ pub struct TimelineBaseline {
 
 // Anomaly heuristics — flagged "for review", not "error" (these are candidates
 // for human inspection, not measured truths). Tunable.
+//
+// Baselines are a ROLLING MEDIAN over the last `ROLLING_WINDOW` requests, not the
+// single previous request: in cache-heavy sessions, per-request cost/cache
+// oscillates wildly (a turn writes a big context to cache → spike, the next just
+// reads it cheaply → drop), so comparing to one neighbor produces false
+// positives. The median smooths that out.
+const ROLLING_WINDOW: usize = 8;
 const INPUT_SPIKE_RATIO: f64 = 1.5;
 const INPUT_SPIKE_ABS: u64 = 4_000;
 const COST_SPIKE_RATIO: f64 = 2.0;
+/// A request must cost at least this much to be a "spike" — avoids flagging
+/// cheap requests that merely doubled a near-zero neighbor.
+const COST_SPIKE_FLOOR_USD: f64 = 0.10;
+/// Cache-write tokens above this, when writes exceed reads, mark a `cache_rewrite`
+/// (a fresh / re-cached context). It explains a cost spike *without* the request
+/// being "wrong", so it suppresses the `cost_spike` alarm for that sample.
+const CACHE_REWRITE_ABS: u64 = 8_000;
 const CACHE_DROP_PTS: f64 = 20.0;
 const CACHE_DROP_FLOOR: f64 = 40.0;
 const CONTEXT_HIGH_WATER: f64 = 0.85;
@@ -98,7 +112,7 @@ impl App {
                 .map(|metadata| metadata.rsi_tool_visibility_rules as u64)
                 .unwrap_or(0),
         };
-        sample.flags = anomaly_flags(&sample, self.timeline.back());
+        sample.flags = anomaly_flags(&sample, &self.timeline);
 
         if self.timeline.len() >= TIMELINE_CAP {
             self.timeline.pop_front();
@@ -125,7 +139,10 @@ fn now_unix() -> u64 {
 /// The most recent user-role message's text, truncated — the prompt the current
 /// turn is answering.
 fn last_user_prompt(messages: &[jfc_core::ChatMessage]) -> Option<String> {
-    let message = messages.iter().rev().find(|message| message.role_is_user())?;
+    let message = messages
+        .iter()
+        .rev()
+        .find(|message| message.role_is_user())?;
     let text: String = message
         .parts
         .iter()
@@ -150,13 +167,30 @@ fn truncate(text: &str, max_chars: usize) -> String {
     format!("{head}…")
 }
 
-/// Compare a fresh sample to the previous one and tag review-worthy anomalies.
+/// Median of a set of values (0.0 when empty).
+fn median(mut values: Vec<f64>) -> f64 {
+    if values.is_empty() {
+        return 0.0;
+    }
+    values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let mid = values.len() / 2;
+    if values.len().is_multiple_of(2) {
+        (values[mid - 1] + values[mid]) / 2.0
+    } else {
+        values[mid]
+    }
+}
+
+/// Tag review-worthy anomalies on a fresh sample, judged against a rolling median
+/// of the recent requests (`recent`, newest at the back) rather than a single
+/// neighbor — see the constants above for why.
 fn anomaly_flags(
     sample: &jfc_dashboard::TimelineSample,
-    prev: Option<&jfc_dashboard::TimelineSample>,
+    recent: &std::collections::VecDeque<jfc_dashboard::TimelineSample>,
 ) -> Vec<String> {
     let mut flags = Vec::new();
 
+    // Context pressure — absolute, needs no baseline.
     if sample.context_window_tokens > 0 {
         let occupancy = sample.context_used_tokens as f64 / sample.context_window_tokens as f64;
         if occupancy >= CONTEXT_HIGH_WATER {
@@ -164,27 +198,120 @@ fn anomaly_flags(
         }
     }
 
-    if let Some(prev) = prev {
-        // Input ballooned vs the prior request (context bloat / fat tool result).
-        if prev.input_delta > 0
-            && sample.input_delta > prev.input_delta.saturating_add(INPUT_SPIKE_ABS)
-            && sample.input_delta as f64 > prev.input_delta as f64 * INPUT_SPIKE_RATIO
-        {
-            flags.push("input_spike".to_owned());
-        }
-        // Cost jumped — the dollar-side confirmation.
-        if prev.cost_delta_usd > 0.0 && sample.cost_delta_usd > prev.cost_delta_usd * COST_SPIKE_RATIO
-        {
-            flags.push("cost_spike".to_owned());
-        }
-        // Prompt-cache reuse fell off (drives input cost up).
-        if sample.input_delta > 0
-            && prev.cache_hit_pct >= CACHE_DROP_FLOOR
-            && sample.cache_hit_pct < prev.cache_hit_pct - CACHE_DROP_PTS
-        {
-            flags.push("cache_hit_drop".to_owned());
-        }
+    // Cache rewrite: this request wrote far more cache than it read — a fresh or
+    // re-cached context. It's the normal cost of caching (not a problem), and it
+    // explains a cost spike, so we surface it as informational AND suppress the
+    // `cost_spike` alarm below.
+    let cache_rewrite = sample.cache_write_delta >= CACHE_REWRITE_ABS
+        && sample.cache_write_delta > sample.cache_read_delta;
+    if cache_rewrite {
+        flags.push("cache_rewrite".to_owned());
+    }
+
+    let window: Vec<&jfc_dashboard::TimelineSample> =
+        recent.iter().rev().take(ROLLING_WINDOW).collect();
+    if window.is_empty() {
+        return flags; // first request — no baseline to compare against.
+    }
+    let median_cost = median(window.iter().map(|s| s.cost_delta_usd).collect());
+    let median_input = median(window.iter().map(|s| s.input_delta as f64).collect());
+
+    // Input ballooned vs the rolling median (context bloat / fat tool result).
+    if median_input > 0.0
+        && sample.input_delta as f64 > median_input * INPUT_SPIKE_RATIO
+        && sample.input_delta as f64 > median_input + INPUT_SPIKE_ABS as f64
+    {
+        flags.push("input_spike".to_owned());
+    }
+
+    // Genuine cost spike: above the rolling median by the ratio AND above an
+    // absolute floor AND not already explained by a cache rewrite.
+    if !cache_rewrite
+        && sample.cost_delta_usd >= COST_SPIKE_FLOOR_USD
+        && median_cost > 0.0
+        && sample.cost_delta_usd > median_cost * COST_SPIKE_RATIO
+    {
+        flags.push("cost_spike".to_owned());
+    }
+
+    // Prompt-cache reuse fell off vs the most recent request (lost cache → cost up).
+    if let Some(prev) = window.first()
+        && sample.input_delta > 0
+        && prev.cache_hit_pct >= CACHE_DROP_FLOOR
+        && sample.cache_hit_pct < prev.cache_hit_pct - CACHE_DROP_PTS
+    {
+        flags.push("cache_hit_drop".to_owned());
     }
 
     flags
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::VecDeque;
+
+    fn sample(
+        cost: f64,
+        input: u64,
+        cache_read: u64,
+        cache_write: u64,
+    ) -> jfc_dashboard::TimelineSample {
+        jfc_dashboard::TimelineSample {
+            cost_delta_usd: cost,
+            input_delta: input,
+            cache_read_delta: cache_read,
+            cache_write_delta: cache_write,
+            context_window_tokens: 1_000_000,
+            ..Default::default()
+        }
+    }
+
+    fn steady(cost: f64, input: u64, cache_read: u64) -> VecDeque<jfc_dashboard::TimelineSample> {
+        let mut recent = VecDeque::new();
+        for _ in 0..6 {
+            recent.push_back(sample(cost, input, cache_read, 0));
+        }
+        recent
+    }
+
+    #[test]
+    fn cache_write_spike_is_not_flagged_as_cost_spike_robust() {
+        // Steady ~$0.40 requests, then a $2 request that is all cache-write — the
+        // exact false positive from a cache-heavy session.
+        let recent = steady(0.40, 2, 50_000);
+        let write_heavy = sample(2.00, 2, 0, 120_000);
+        let flags = anomaly_flags(&write_heavy, &recent);
+        assert!(flags.contains(&"cache_rewrite".to_owned()));
+        assert!(
+            !flags.contains(&"cost_spike".to_owned()),
+            "cache-write cost must not trip cost_spike"
+        );
+    }
+
+    #[test]
+    fn genuine_cost_and_input_spike_fires_normal() {
+        let recent = steady(0.20, 100, 50_000);
+        // Big uncached input, no cache write → real spike.
+        let expensive = sample(1.50, 8_000, 50_000, 0);
+        let flags = anomaly_flags(&expensive, &recent);
+        assert!(flags.contains(&"cost_spike".to_owned()));
+        assert!(flags.contains(&"input_spike".to_owned()));
+        assert!(!flags.contains(&"cache_rewrite".to_owned()));
+    }
+
+    #[test]
+    fn first_request_has_no_baseline_flags_normal() {
+        let flags = anomaly_flags(&sample(5.0, 9_999, 0, 0), &VecDeque::new());
+        assert!(!flags.contains(&"cost_spike".to_owned()));
+        assert!(!flags.contains(&"input_spike".to_owned()));
+    }
+
+    #[test]
+    fn cheap_request_doubling_a_near_zero_neighbor_is_not_a_spike_robust() {
+        // Median cost ~$0.01; a $0.05 request is 5× but below the absolute floor.
+        let recent = steady(0.01, 2, 1_000);
+        let flags = anomaly_flags(&sample(0.05, 2, 1_000, 0), &recent);
+        assert!(!flags.contains(&"cost_spike".to_owned()));
+    }
 }

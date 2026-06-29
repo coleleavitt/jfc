@@ -34,40 +34,135 @@ const HAIKU: ModelPricing = ModelPricing {
 
 /// Look up rates for a model id by case-insensitive substring match.
 pub fn pricing_for(model_id: &str) -> Option<ModelPricing> {
+    let _linkscope_pricing = linkscope::phase("provider.cost.pricing_for");
     let id = model_id.to_ascii_lowercase();
-    // fable-5 / mythos-5 (Claude Code 2.1.170) bill at Opus rates — they share
-    // Opus 4.8's pricing group in the cli.
-    if id.contains("opus") || id.contains("fable") || id.contains("mythos") {
-        Some(OPUS)
+    let result = if id.contains("opus") || id.contains("fable") || id.contains("mythos") {
+        Some(("opus", OPUS))
     } else if id.contains("sonnet") {
-        Some(SONNET)
+        Some(("sonnet", SONNET))
     } else if id.contains("haiku") {
-        Some(HAIKU)
+        Some(("haiku", HAIKU))
     } else {
         None
-    }
+    };
+    trace_pricing_lookup(model_id, result.map(|(label, _)| label));
+    result.map(|(_, pricing)| pricing)
 }
 
 /// Dollar cost for a single model's accumulated usage.
 ///
 /// Returns `0.0` for unknown models.
 pub fn cost_for(model_id: &str, usage: &ModelUsage) -> f64 {
+    let _linkscope_cost = linkscope::phase("provider.cost.cost_for");
     let Some(p) = pricing_for(model_id) else {
+        linkscope::record_items("provider.cost.unknown_model", 1);
+        trace_cost(model_id, usage, 0.0, "unknown");
         return 0.0;
     };
     let m = 1_000_000.0;
-    (usage.input_tokens as f64 / m) * p.input_per_mtok
+    let cost = (usage.input_tokens as f64 / m) * p.input_per_mtok
         + (usage.output_tokens as f64 / m) * p.output_per_mtok
         + (usage.cache_read_tokens as f64 / m) * p.cache_read_per_mtok
-        + (usage.cache_write_tokens as f64 / m) * p.cache_write_per_mtok
+        + (usage.cache_write_tokens as f64 / m) * p.cache_write_per_mtok;
+    linkscope::record_items("provider.cost.known_model", 1);
+    trace_cost(model_id, usage, cost, pricing_label(p));
+    cost
 }
 
 /// Sum of `cost_for` across every model in the session usage map.
 pub fn total_cost(usage_by_model: &std::collections::HashMap<String, ModelUsage>) -> f64 {
-    usage_by_model
+    let _linkscope_total = linkscope::phase("provider.cost.total_cost");
+    linkscope::record_items(
+        "provider.cost.total.models",
+        usize_to_u64_saturating(usage_by_model.len()),
+    );
+    let total = usage_by_model
         .iter()
         .map(|(model, usage)| cost_for(model, usage))
-        .sum()
+        .sum();
+    trace_total_cost(usage_by_model.len(), total);
+    total
+}
+
+fn pricing_label(pricing: ModelPricing) -> &'static str {
+    if pricing == OPUS {
+        "opus"
+    } else if pricing == SONNET {
+        "sonnet"
+    } else if pricing == HAIKU {
+        "haiku"
+    } else {
+        "custom"
+    }
+}
+
+fn trace_pricing_lookup(model_id: &str, pricing: Option<&'static str>) {
+    linkscope::record_items(
+        if pricing.is_some() {
+            "provider.cost.pricing.hit"
+        } else {
+            "provider.cost.pricing.miss"
+        },
+        1,
+    );
+    if !linkscope::trace_detail_enabled() {
+        return;
+    }
+    linkscope::detail_event_fields(
+        "provider.cost.pricing.detail",
+        [
+            linkscope::TraceField::bytes("model_id_bytes", usize_to_u64_saturating(model_id.len())),
+            linkscope::TraceField::text("pricing", pricing.unwrap_or("unknown")),
+        ],
+    );
+}
+
+fn trace_cost(model_id: &str, usage: &ModelUsage, cost: f64, pricing: &'static str) {
+    if !linkscope::trace_detail_enabled() {
+        return;
+    }
+    linkscope::detail_event_fields(
+        "provider.cost.cost.detail",
+        [
+            linkscope::TraceField::bytes("model_id_bytes", usize_to_u64_saturating(model_id.len())),
+            linkscope::TraceField::text("pricing", pricing),
+            linkscope::TraceField::count("input_tokens", usage.input_tokens),
+            linkscope::TraceField::count("output_tokens", usage.output_tokens),
+            linkscope::TraceField::count("thinking_tokens", usage.thinking_tokens),
+            linkscope::TraceField::count("cache_read_tokens", usage.cache_read_tokens),
+            linkscope::TraceField::count("cache_write_tokens", usage.cache_write_tokens),
+            linkscope::TraceField::count("estimated_micro_usd", dollars_to_micro_usd(cost)),
+        ],
+    );
+}
+
+fn trace_total_cost(models: usize, total: f64) {
+    if !linkscope::trace_detail_enabled() {
+        return;
+    }
+    linkscope::detail_event_fields(
+        "provider.cost.total.detail",
+        [
+            linkscope::TraceField::count("models", usize_to_u64_saturating(models)),
+            linkscope::TraceField::count("estimated_micro_usd", dollars_to_micro_usd(total)),
+        ],
+    );
+}
+
+fn dollars_to_micro_usd(value: f64) -> u64 {
+    if !value.is_finite() || value <= 0.0 {
+        return 0;
+    }
+    let scaled = value * 1_000_000.0;
+    if scaled >= 18_446_744_073_709_551_615.0 {
+        u64::MAX
+    } else {
+        format!("{:.0}", scaled.round()).parse().unwrap_or(u64::MAX)
+    }
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]
@@ -108,5 +203,27 @@ mod tests {
         };
         let dollars = cost_for("gpt-4o", &usage);
         assert_eq!(dollars, 0.0);
+    }
+
+    #[test]
+    fn cost_trace_records_shape_without_model_payload_normal() {
+        linkscope::trace_detail_enable();
+        let usage = ModelUsage {
+            input_tokens: 1_000,
+            output_tokens: 200,
+            thinking_tokens: 50,
+            cache_read_tokens: 25,
+            cache_write_tokens: 5,
+            cost_usd: None,
+        };
+        let dollars = cost_for("private-model-opus-name", &usage);
+        assert!(dollars > 0.0);
+
+        let snapshot = linkscope::snapshot();
+        let rendered = format!("{snapshot:?}");
+        assert!(rendered.contains("provider.cost.pricing.detail"));
+        assert!(rendered.contains("provider.cost.cost.detail"));
+        assert!(rendered.contains("model_id_bytes"));
+        assert!(!rendered.contains("private-model-opus-name"));
     }
 }

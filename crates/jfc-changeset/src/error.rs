@@ -2,6 +2,10 @@ use std::io;
 
 use crate::state::ChangeState;
 
+fn len_to_u64(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
+}
+
 /// Top-level error type for the jfc-changeset crate.
 #[derive(Debug, thiserror::Error)]
 pub enum ChangeSetError {
@@ -38,17 +42,27 @@ pub enum ChangeSetError {
 
 impl ChangeSetError {
     pub(crate) fn io(source: io::Error, context: impl Into<String>) -> Self {
-        Self::Io {
-            source,
-            context: context.into(),
-        }
+        let context = context.into();
+        linkscope::event_fields(
+            "changeset.error.io",
+            [
+                linkscope::TraceField::text("kind", source.kind().to_string()),
+                linkscope::TraceField::bytes("context_bytes", len_to_u64(context.len())),
+            ],
+        );
+        Self::Io { source, context }
     }
 
     pub(crate) fn serde(source: serde_json::Error, context: impl Into<String>) -> Self {
-        Self::Serde {
-            source,
-            context: context.into(),
-        }
+        let context = context.into();
+        linkscope::event_fields(
+            "changeset.error.serde",
+            [
+                linkscope::TraceField::text("category", format!("{:?}", source.classify())),
+                linkscope::TraceField::bytes("context_bytes", len_to_u64(context.len())),
+            ],
+        );
+        Self::Serde { source, context }
     }
 }
 

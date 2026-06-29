@@ -15,6 +15,11 @@ pub struct AgentStats {
 
 impl AgentStats {
     pub fn new() -> Self {
+        let _linkscope_stats = linkscope::phase("economy.collusion.agent_stats.new");
+        linkscope::detail_event_fields(
+            "economy.collusion.agent_stats.new",
+            [linkscope::TraceField::count("total_validations", 0)],
+        );
         Self {
             total_validations: 0,
             approvals: 0,
@@ -57,6 +62,15 @@ pub struct CollusionDetector {
 
 impl CollusionDetector {
     pub fn new() -> Self {
+        let _linkscope_detector = linkscope::phase("economy.collusion.detector.new");
+        linkscope::event_fields(
+            "economy.collusion.detector.new",
+            [
+                linkscope::TraceField::text("rubber_stamp_threshold", "0.900"),
+                linkscope::TraceField::text("griefing_threshold", "0.800"),
+                linkscope::TraceField::count("min_samples", 5),
+            ],
+        );
         Self {
             stats: HashMap::new(),
             rubber_stamp_threshold: 0.9,
@@ -67,6 +81,7 @@ impl CollusionDetector {
 
     /// Record a validation outcome for an agent.
     pub fn record(&mut self, validator_id: &AgentId, verdict: ValidationVerdict) {
+        let _linkscope_record = linkscope::phase("economy.collusion.record");
         let stats = self.stats.entry(validator_id.clone()).or_default();
         stats.total_validations += 1;
         match verdict {
@@ -76,6 +91,16 @@ impl CollusionDetector {
             ValidationVerdict::FlawUpheld => stats.rejections += 1,
             ValidationVerdict::FlawDismissed => stats.dismissals += 1,
         }
+        linkscope::event_fields(
+            "economy.collusion.record",
+            [
+                linkscope::TraceField::text("validator_id", validator_id.to_string()),
+                linkscope::TraceField::text("verdict", format!("{verdict:?}")),
+                linkscope::TraceField::count("total", u64::from(stats.total_validations)),
+                linkscope::TraceField::count("approvals", u64::from(stats.approvals)),
+                linkscope::TraceField::count("rejections", u64::from(stats.rejections)),
+            ],
+        );
     }
 
     /// Check if agent is rubber-stamping (always approving without finding flaws).
@@ -102,6 +127,7 @@ impl CollusionDetector {
 
     /// Get all flagged agents with their violation type.
     pub fn flagged_agents(&self) -> Vec<(&AgentId, &str)> {
+        let _linkscope_flagged = linkscope::phase("economy.collusion.flagged_agents");
         let mut flagged = Vec::new();
         for (id, stats) in &self.stats {
             if stats.total_validations >= self.min_samples {
@@ -113,6 +139,19 @@ impl CollusionDetector {
                 }
             }
         }
+        linkscope::event_fields(
+            "economy.collusion.flagged_agents",
+            [
+                linkscope::TraceField::count(
+                    "agents",
+                    u64::try_from(self.stats.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::count(
+                    "flagged",
+                    u64::try_from(flagged.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         flagged
     }
 

@@ -631,6 +631,7 @@ pub struct EngineState {
     /// user typed a slash command (v126's `isMeta: true`) — those run
     /// locally on drain instead of going to the API.
     pub queued_prompts: MessageQueue,
+    pub context_reduction_queue: jfc_context::ContextReductionQueue,
     /// Cached count of agent-isolated worktrees (excludes the primary
     /// checkout). Refreshed by the Tick handler at most every
     /// `WORKTREE_REFRESH_MS` so the status-bar badge stays accurate
@@ -1224,6 +1225,7 @@ impl EngineState {
             active_tool_calls: Vec::new(),
             tool_use_summaries: VecDeque::with_capacity(TOOL_USE_SUMMARIES_CAP),
             queued_prompts: MessageQueue::new(),
+            context_reduction_queue: jfc_context::ContextReductionQueue::default(),
             worktree_count: 0,
             worktree_count_last_refresh: None,
             git_branch: None,
@@ -1852,6 +1854,7 @@ impl EngineState {
             );
         }
         self.current_session_id = Some(new_id.clone());
+        self.context_reduction_queue = jfc_context::ContextReductionQueue::default();
         self.clear_active_stream_scope();
         // Mirror the constructor's store choice: inside a git repo the
         // project-level DB store survives across ALL sessions; only fall back

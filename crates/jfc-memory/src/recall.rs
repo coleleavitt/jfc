@@ -280,7 +280,20 @@ pub async fn select_relevant_memories(
     provider: Arc<dyn Provider>,
     model: ModelId,
 ) -> Result<Vec<String>> {
+    let _linkscope_select = linkscope::phase("memory.recall.select");
+    if linkscope::is_enabled() {
+        linkscope::event_fields(
+            "memory.recall.select.start",
+            [
+                linkscope::TraceField::text("provider", provider.name().to_owned()),
+                linkscope::TraceField::text("model", model.to_string()),
+                linkscope::TraceField::bytes("query_bytes", usize_to_u64_saturating(query.len())),
+                linkscope::TraceField::count("available", usize_to_u64_saturating(available.len())),
+            ],
+        );
+    }
     if available.is_empty() {
+        linkscope::record_items("memory.recall.select.empty", 1);
         tracing::debug!(target: "jfc::memory_recall", "no memories available — skipping select");
         return Ok(Vec::new());
     }
@@ -304,6 +317,7 @@ pub async fn select_relevant_memories(
     let resp = match call_provider(&*provider, messages, &opts).await {
         Ok(r) => r,
         Err(e) => {
+            linkscope::record_items("memory.recall.select.error", 1);
             tracing::warn!(
                 target: "jfc::memory_recall",
                 error = %e,
@@ -314,6 +328,10 @@ pub async fn select_relevant_memories(
     };
 
     let selected = parse_selection(&resp).unwrap_or_default();
+    linkscope::record_items(
+        "memory.recall.select.raw",
+        usize_to_u64_saturating(selected.len()),
+    );
 
     // Validate: every returned name must exist in `available`. The model
     // sometimes adds a `.md` we already had or hallucinates plausible-looking
@@ -335,6 +353,10 @@ pub async fn select_relevant_memories(
         "select pass complete"
     );
 
+    linkscope::record_items(
+        "memory.recall.select.filtered",
+        usize_to_u64_saturating(filtered.len()),
+    );
     Ok(filtered)
 }
 
@@ -389,7 +411,20 @@ pub async fn synthesize_memories(
     provider: Arc<dyn Provider>,
     model: ModelId,
 ) -> Result<Option<String>> {
+    let _linkscope_synthesize = linkscope::phase("memory.recall.synthesize");
+    if linkscope::is_enabled() {
+        linkscope::event_fields(
+            "memory.recall.synthesize.start",
+            [
+                linkscope::TraceField::text("provider", provider.name().to_owned()),
+                linkscope::TraceField::text("model", model.to_string()),
+                linkscope::TraceField::bytes("query_bytes", usize_to_u64_saturating(query.len())),
+                linkscope::TraceField::count("selected", usize_to_u64_saturating(selected.len())),
+            ],
+        );
+    }
     if selected.is_empty() {
+        linkscope::record_items("memory.recall.synthesize.empty", 1);
         return Ok(None);
     }
 
@@ -412,6 +447,7 @@ pub async fn synthesize_memories(
     let resp = match call_provider(&*provider, messages, &opts).await {
         Ok(r) => r,
         Err(e) => {
+            linkscope::record_items("memory.recall.synthesize.error", 1);
             tracing::warn!(
                 target: "jfc::memory_recall",
                 error = %e,
@@ -424,6 +460,7 @@ pub async fn synthesize_memories(
     let facts = match parse_facts(&resp) {
         Some(f) if !f.is_empty() => f,
         _ => {
+            linkscope::record_items("memory.recall.synthesize.no_facts", 1);
             tracing::debug!(
                 target: "jfc::memory_recall",
                 "synthesize pass returned no usable facts"
@@ -432,6 +469,7 @@ pub async fn synthesize_memories(
         }
     };
 
+    linkscope::record_items("memory.recall.facts", usize_to_u64_saturating(facts.len()));
     Ok(Some(format_recall_block(&facts)))
 }
 
@@ -534,13 +572,33 @@ async fn call_provider(
 ) -> Result<String> {
     use futures::StreamExt;
 
+    let _linkscope_provider = linkscope::phase("memory.recall.provider_call");
+    if linkscope::is_enabled() {
+        linkscope::event_fields(
+            "memory.recall.provider_call.start",
+            [
+                linkscope::TraceField::text("provider", provider.name().to_owned()),
+                linkscope::TraceField::text("model", options.model.to_string()),
+                linkscope::TraceField::count("messages", usize_to_u64_saturating(messages.len())),
+            ],
+        );
+    }
     match provider.complete(messages.clone(), options).await {
-        Ok(resp) => Ok(resp.content),
+        Ok(resp) => {
+            linkscope::record_items("memory.recall.complete.ok", 1);
+            linkscope::record_bytes(
+                "memory.recall.complete.response",
+                usize_to_u64_saturating(resp.content.len()),
+            );
+            Ok(resp.content)
+        }
         Err(e) => {
             let err_msg = e.to_string().to_lowercase();
             if !(err_msg.contains("not support") || err_msg.contains("unsupported")) {
+                linkscope::record_items("memory.recall.complete.error", 1);
                 return Err(e);
             }
+            linkscope::record_items("memory.recall.complete.unsupported", 1);
             tracing::debug!(
                 target: "jfc::memory_recall",
                 "provider.complete() unsupported — falling back to streaming"
@@ -549,18 +607,32 @@ async fn call_provider(
             let mut text = String::new();
             let mut tool_input = String::new();
             while let Some(event) = stream.next().await {
+                linkscope::record_items("memory.recall.stream.event", 1);
                 match event? {
                     jfc_provider::StreamEvent::TextDelta { delta, .. } => {
+                        linkscope::record_bytes(
+                            "memory.recall.stream.text",
+                            usize_to_u64_saturating(delta.len()),
+                        );
                         text.push_str(&delta);
                     }
                     jfc_provider::StreamEvent::ToolDelta { delta, .. } => {
+                        linkscope::record_bytes(
+                            "memory.recall.stream.tool_delta",
+                            usize_to_u64_saturating(delta.len()),
+                        );
                         tool_input.push_str(&delta);
                     }
                     jfc_provider::StreamEvent::ToolDone { input_json, .. } => {
+                        linkscope::record_bytes(
+                            "memory.recall.stream.tool_done",
+                            usize_to_u64_saturating(input_json.len()),
+                        );
                         tool_input = input_json;
                     }
                     jfc_provider::StreamEvent::Done { .. } => break,
                     jfc_provider::StreamEvent::Error { message } => {
+                        linkscope::record_items("memory.recall.stream.error", 1);
                         anyhow::bail!("{message}");
                     }
                     _ => {}
@@ -568,8 +640,10 @@ async fn call_provider(
             }
             // Prefer the structured tool input when we got it.
             if !tool_input.is_empty() {
+                linkscope::record_items("memory.recall.stream.tool_result", 1);
                 Ok(tool_input)
             } else {
+                linkscope::record_items("memory.recall.stream.text_result", 1);
                 Ok(text)
             }
         }
@@ -671,14 +745,22 @@ pub async fn run_recall_excluding_visible(
     provider: Arc<dyn Provider>,
     model: ModelId,
 ) -> Option<String> {
+    let _linkscope_recall = linkscope::phase("memory.recall.run");
+    linkscope::record_items("memory.recall.run", 1);
     if let Some(cached) = cached_recall(query) {
+        linkscope::record_items("memory.recall.cache_hit", 1);
         tracing::debug!(target: "jfc::memory_recall", "recall cache hit");
         return cached;
     }
+    linkscope::record_items("memory.recall.cache_miss", 1);
 
     // Visible-context dedup: a memory already in the prompt costs tokens twice.
     let visible_filtered = filter_visible(available, visible_context);
     if visible_filtered.len() < available.len() {
+        linkscope::record_items(
+            "memory.recall.visible_dropped",
+            usize_to_u64_saturating(available.len() - visible_filtered.len()),
+        );
         tracing::debug!(
             target: "jfc::memory_recall",
             dropped = available.len() - visible_filtered.len(),
@@ -689,6 +771,7 @@ pub async fn run_recall_excluding_visible(
     let available = available.as_slice();
 
     if available.is_empty() {
+        linkscope::record_items("memory.recall.no_available", 1);
         cache_recall(query, None);
         return None;
     }
@@ -697,10 +780,12 @@ pub async fn run_recall_excluding_visible(
         match select_relevant_memories(query, available, provider.clone(), model.clone()).await {
             Ok(names) if !names.is_empty() => names,
             Ok(_) => {
+                linkscope::record_items("memory.recall.no_selection", 1);
                 cache_recall(query, None);
                 return None;
             }
             Err(e) => {
+                linkscope::record_items("memory.recall.select_failed", 1);
                 tracing::warn!(
                     target: "jfc::memory_recall",
                     error = %e,
@@ -716,10 +801,15 @@ pub async fn run_recall_excluding_visible(
         .filter(|m| selected_names.iter().any(|n| n == m.source_name().as_ref()))
         .cloned()
         .collect();
+    linkscope::record_items(
+        "memory.recall.selected",
+        usize_to_u64_saturating(selected.len()),
+    );
 
     let block = match synthesize_memories(query, &selected, provider, model).await {
         Ok(b) => b,
         Err(e) => {
+            linkscope::record_items("memory.recall.synthesize_failed", 1);
             tracing::warn!(
                 target: "jfc::memory_recall",
                 error = %e,
@@ -729,8 +819,17 @@ pub async fn run_recall_excluding_visible(
         }
     };
 
+    if block.is_some() {
+        linkscope::record_items("memory.recall.block", 1);
+    } else {
+        linkscope::record_items("memory.recall.no_block", 1);
+    }
     cache_recall(query, block.clone());
     block
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 // ─── Tests (DO-178B normal/robust pairs) ────────────────────────────────────

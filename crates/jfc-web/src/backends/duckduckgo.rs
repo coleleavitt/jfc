@@ -2,6 +2,8 @@ use crate::backend::{BackendId, BackendResult, SearchBackend, SearchResult};
 use async_trait::async_trait;
 use reqwest::header::{ACCEPT, USER_AGENT};
 
+use super::trace::{self, BackendResultTrace, BackendStart};
+
 const DUCKDUCKGO_HTML_URL: &str = "https://html.duckduckgo.com/html/";
 const DUCKDUCKGO_USER_AGENT: &str =
     "Mozilla/5.0 (compatible; jfc-web/1.0; +https://github.com/coleleavitt/jfc)";
@@ -19,9 +21,25 @@ impl SearchBackend for DuckDuckGoBackend {
     }
 
     async fn search(&self, query: &str, max_results: usize) -> BackendResult {
+        let _linkscope_search = linkscope::phase("web.backend.duckduckgo.search");
+        trace::backend_start(BackendStart {
+            backend: "duckduckgo",
+            query,
+            max_results,
+        });
         match search_duckduckgo_html(query, max_results).await {
-            Ok(results) if !results.is_empty() => Ok(results),
-            Ok(_) => crate::search_duckduckgo_structured(query, max_results).await,
+            Ok(results) if !results.is_empty() => {
+                trace::backend_result(BackendResultTrace {
+                    backend: "duckduckgo",
+                    status: "html_ok",
+                    results: results.len(),
+                });
+                Ok(results)
+            }
+            Ok(_) => {
+                linkscope::record_items("web.backend.duckduckgo.html_empty", 1);
+                crate::search_duckduckgo_structured(query, max_results).await
+            }
             Err(html_err) => match crate::search_duckduckgo_structured(query, max_results).await {
                 Ok(results) => Ok(results),
                 Err(instant_err) => Err(format!(
@@ -33,6 +51,7 @@ impl SearchBackend for DuckDuckGoBackend {
 }
 
 async fn search_duckduckgo_html(query: &str, max_results: usize) -> BackendResult {
+    let _linkscope_html = linkscope::phase("web.backend.duckduckgo.html");
     let client = crate::http_client()?;
     let resp = client
         .get(DUCKDUCKGO_HTML_URL)
@@ -44,6 +63,7 @@ async fn search_duckduckgo_html(query: &str, max_results: usize) -> BackendResul
         .map_err(|e| format!("DuckDuckGo HTML request failed: {e}"))?;
 
     let status = resp.status();
+    linkscope::record_items("web.backend.duckduckgo.http", u64::from(status.as_u16()));
     let body = resp
         .text()
         .await
@@ -52,7 +72,14 @@ async fn search_duckduckgo_html(query: &str, max_results: usize) -> BackendResul
         return Err(format!("DuckDuckGo HTML returned HTTP {status}"));
     }
 
-    Ok(parse_duckduckgo_html_results(&body, max_results))
+    trace::bytes("web.backend.duckduckgo.body", body.len());
+    let results = parse_duckduckgo_html_results(&body, max_results);
+    trace::backend_result(BackendResultTrace {
+        backend: "duckduckgo",
+        status: "html_parsed",
+        results: results.len(),
+    });
+    Ok(results)
 }
 
 fn parse_duckduckgo_html_results(html: &str, max_results: usize) -> Vec<SearchResult> {

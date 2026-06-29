@@ -280,6 +280,7 @@ struct TaskStoreInner {
 impl TaskStore {
     /// Open or create the task store for the given session id.
     pub fn open(session_id: &str) -> Arc<Self> {
+        let _linkscope_open = linkscope::phase("task_store.open");
         tracing::info!(
             target: "jfc::tasks",
             session_id,
@@ -299,6 +300,7 @@ impl TaskStore {
 
     /// Open the task store shared by a swarm team.
     pub fn open_team(team_name: &str) -> Arc<Self> {
+        let _linkscope_open = linkscope::phase("task_store.open_team");
         let path = team_task_store_path(team_name);
         let db_id = task_store_db_id_for_path(&path);
         tracing::info!(
@@ -347,6 +349,7 @@ impl TaskStore {
     /// per-session stores, every `jfc` instance in the same repo shares this
     /// store. Falls back to `./.jfc/tasks.json` if no git root is provided.
     pub fn open_project(git_root: Option<&std::path::Path>) -> Arc<Self> {
+        let _linkscope_open = linkscope::phase("task_store.open_project");
         let path = project_task_store_path(git_root);
         let db_id = task_store_db_id_for_path(&path);
         tracing::info!(
@@ -589,6 +592,7 @@ impl TaskStore {
 
     /// Re-read the backing store when an external process has modified it.
     pub fn reload_if_changed(&self) -> bool {
+        let _linkscope_reload = linkscope::phase("task_store.reload_if_changed");
         if let Some(session_id) = &self.db_session_id {
             let fresh = Self::load_inner_from_db(session_id);
             let Ok(fresh_json) = serde_json::to_string(&fresh) else {
@@ -657,6 +661,7 @@ impl TaskStore {
     }
 
     fn load_inner_from_db(session_id: &str) -> TaskStoreInner {
+        let _linkscope_load = linkscope::phase("task_store.load_db");
         jfc_knowledge::block_on_knowledge(async {
             let Ok(store) = crate::open_default_knowledge_store().await else {
                 return TaskStoreInner::default();
@@ -791,6 +796,11 @@ impl TaskStore {
     /// Persist the store. DB-backed stores write through `session_artifacts`;
     /// the file branch is legacy test/import compatibility.
     fn persist_unlocked(&self, inner: &TaskStoreInner) {
+        let _linkscope_persist = linkscope::phase("task_store.persist");
+        linkscope::record_items(
+            "task_store.tasks",
+            usize_to_u64_saturating(inner.tasks.len()),
+        );
         if let Some(session_id) = &self.db_session_id {
             let mut merged = inner.clone();
             let session_id = session_id.clone();
@@ -865,6 +875,7 @@ impl TaskStore {
     where
         B: Into<TaskId>,
     {
+        let _linkscope_create = linkscope::phase("task_store.create");
         let mut inner = self.inner.lock().unwrap();
         let blocked_by = blocked_by
             .into_iter()
@@ -937,6 +948,7 @@ impl TaskStore {
     }
 
     pub fn get(&self, id: &str) -> Option<Task> {
+        let _linkscope_get = linkscope::phase("task_store.get");
         tracing::trace!(target: "jfc::tasks", id, "TaskStore::get");
         self.inner.lock().unwrap().tasks.get(id).cloned()
     }
@@ -945,6 +957,7 @@ impl TaskStore {
     /// or the update would create an immediate self-cycle. Cascading
     /// `unblock` happens automatically when status flips to `Completed`.
     pub fn update(&self, id: &str, patch: TaskPatch) -> Result<Task, TaskError> {
+        let _linkscope_update = linkscope::phase("task_store.update");
         tracing::debug!(
             target: "jfc::tasks",
             id,
@@ -1046,6 +1059,7 @@ impl TaskStore {
 
     /// Remove a task permanently (sets status: deleted, removes from blockers).
     pub fn delete(&self, id: &str) -> Result<(), TaskError> {
+        let _linkscope_delete = linkscope::phase("task_store.delete");
         tracing::debug!(target: "jfc::tasks", id, "TaskStore::delete");
         let mut inner = self.inner.lock().unwrap();
         if !inner.tasks.contains_key(id) {
@@ -1068,6 +1082,7 @@ impl TaskStore {
     /// All tasks, sorted by priority (lower = higher priority), then creation order.
     /// Excludes Deleted unless asked.
     pub fn list(&self, deleted_filter: DeletedFilter) -> Vec<Task> {
+        let _linkscope_list = linkscope::phase("task_store.list");
         let mut out: Vec<Task> = self
             .inner
             .lock()
@@ -1971,6 +1986,10 @@ fn dependency_path_to(inner: &TaskStoreInner, start: &TaskId, target: &str) -> O
     }
 
     None
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]

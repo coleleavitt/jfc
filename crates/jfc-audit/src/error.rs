@@ -25,6 +25,10 @@ pub enum AuditError {
 
 impl fmt::Display for AuditError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        linkscope::detail_event_fields(
+            "audit.error.display",
+            [linkscope::TraceField::text("kind", self.kind_label())],
+        );
         match self {
             Self::Io { source, context } => write!(f, "I/O error ({context}): {source}"),
             Self::Serde { source, context } => {
@@ -46,6 +50,10 @@ impl fmt::Display for AuditError {
 
 impl std::error::Error for AuditError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        linkscope::detail_event_fields(
+            "audit.error.source",
+            [linkscope::TraceField::text("kind", self.kind_label())],
+        );
         match self {
             Self::Io { source, .. } => Some(source),
             Self::Serde { source, .. } => Some(source),
@@ -56,6 +64,10 @@ impl std::error::Error for AuditError {
 
 impl From<io::Error> for AuditError {
     fn from(e: io::Error) -> Self {
+        linkscope::event_fields(
+            "audit.error.from_io",
+            [linkscope::TraceField::text("io_kind", e.kind().to_string())],
+        );
         Self::Io {
             source: e,
             context: "unspecified".to_string(),
@@ -65,9 +77,30 @@ impl From<io::Error> for AuditError {
 
 impl From<serde_json::Error> for AuditError {
     fn from(e: serde_json::Error) -> Self {
+        linkscope::event_fields(
+            "audit.error.from_serde",
+            [linkscope::TraceField::text(
+                "category",
+                format!("{:?}", e.classify()),
+            )],
+        );
         Self::Serde {
             source: e,
             context: "unspecified".to_string(),
+        }
+    }
+}
+
+impl AuditError {
+    fn kind_label(&self) -> &'static str {
+        match self {
+            Self::Io { .. } => "io",
+            Self::Serde { .. } => "serde",
+            Self::StoreCorrupt { .. } => "store_corrupt",
+            Self::GraphQuery { .. } => "graph_query",
+            Self::BudgetExhausted { .. } => "budget_exhausted",
+            Self::MalformedTaintSpecs { .. } => "malformed_taint_specs",
+            Self::Internal { .. } => "internal",
         }
     }
 }

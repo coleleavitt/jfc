@@ -14,8 +14,10 @@ pub async fn read_file(
     offset: Option<u64>,
     limit: Option<u64>,
 ) -> ExecutionResult {
+    let _linkscope_read = linkscope::phase("tools.filesystem.read");
     let path = Path::new(file_path);
     if !path.is_absolute() {
+        linkscope::record_items("tools.filesystem.read.relative_path", 1);
         return ExecutionResult::failure(format!(
             "read: path must be absolute (got '{file_path}')"
         ));
@@ -23,9 +25,14 @@ pub async fn read_file(
     let content = match tokio::fs::read_to_string(path).await {
         Ok(s) => s,
         Err(e) => {
+            linkscope::record_items("tools.filesystem.read.error", 1);
             return ExecutionResult::failure(format!("read: cannot read {file_path}: {e}"));
         }
     };
+    linkscope::record_bytes(
+        "tools.filesystem.read.bytes",
+        usize_to_u64_saturating(content.len()),
+    );
 
     let lines: Vec<&str> = content.lines().collect();
     let total = lines.len();
@@ -33,6 +40,7 @@ pub async fn read_file(
     let count = limit.unwrap_or(2000) as usize;
 
     if start >= total {
+        linkscope::record_items("tools.filesystem.read.past_end", 1);
         return ExecutionResult::success(format!(
             "(file has {total} lines, offset {start_1} is past end)",
             start_1 = start + 1
@@ -56,8 +64,10 @@ pub async fn read_file(
 
 /// Write content to a file, creating parent directories as needed.
 pub async fn write_file(file_path: &str, content: &str) -> ExecutionResult {
+    let _linkscope_write = linkscope::phase("tools.filesystem.write");
     let path = Path::new(file_path);
     if !path.is_absolute() {
+        linkscope::record_items("tools.filesystem.write.relative_path", 1);
         return ExecutionResult::failure(format!(
             "write: path must be absolute (got '{file_path}')"
         ));
@@ -70,11 +80,20 @@ pub async fn write_file(file_path: &str, content: &str) -> ExecutionResult {
         ));
     }
     match tokio::fs::write(path, content).await {
-        Ok(_) => ExecutionResult::success(format!(
-            "Successfully wrote {} bytes to {file_path}",
-            content.len()
-        )),
-        Err(e) => ExecutionResult::failure(format!("write: cannot write {file_path}: {e}")),
+        Ok(_) => {
+            linkscope::record_bytes(
+                "tools.filesystem.write.bytes",
+                usize_to_u64_saturating(content.len()),
+            );
+            ExecutionResult::success(format!(
+                "Successfully wrote {} bytes to {file_path}",
+                content.len()
+            ))
+        }
+        Err(e) => {
+            linkscope::record_items("tools.filesystem.write.error", 1);
+            ExecutionResult::failure(format!("write: cannot write {file_path}: {e}"))
+        }
     }
 }
 
@@ -85,8 +104,10 @@ pub async fn edit_file(
     new_string: &str,
     replace_all: bool,
 ) -> ExecutionResult {
+    let _linkscope_edit = linkscope::phase("tools.filesystem.edit");
     let path = Path::new(file_path);
     if !path.is_absolute() {
+        linkscope::record_items("tools.filesystem.edit.relative_path", 1);
         return ExecutionResult::failure(format!(
             "edit: path must be absolute (got '{file_path}')"
         ));
@@ -94,11 +115,13 @@ pub async fn edit_file(
     let content = match tokio::fs::read_to_string(path).await {
         Ok(s) => s,
         Err(e) => {
+            linkscope::record_items("tools.filesystem.edit.read_error", 1);
             return ExecutionResult::failure(format!("edit: cannot read {file_path}: {e}"));
         }
     };
 
     if old_string.is_empty() {
+        linkscope::record_items("tools.filesystem.edit.empty_old_string", 1);
         return ExecutionResult::failure("edit: old_string must not be empty".to_string());
     }
 
@@ -111,9 +134,14 @@ pub async fn edit_file(
         } else {
             content.replacen(old_string, new_string, 1)
         };
+        linkscope::record_items(
+            "tools.filesystem.edit.exact_match",
+            usize_to_u64_saturating(count),
+        );
         return write_edit(path, file_path, &new_content, count.max(1)).await;
     }
     if count > 1 && !replace_all {
+        linkscope::record_items("tools.filesystem.edit.ambiguous_exact", 1);
         return ExecutionResult::failure(format!(
             "edit: old_string appears {count} times in {file_path}. Use replace_all=true for multiple replacements, or provide a more specific match."
         ));
@@ -128,6 +156,7 @@ pub async fn edit_file(
     // fails rather than guessing.
     match locate_whitespace_insensitive(&content, old_string) {
         WsMatch::Unique(range) => {
+            linkscope::record_items("tools.filesystem.edit.ws_match", 1);
             let mut new_content = String::with_capacity(content.len());
             new_content.push_str(&content[..range.start]);
             new_content.push_str(new_string);
@@ -151,11 +180,28 @@ async fn write_edit(
     replacements: usize,
 ) -> ExecutionResult {
     match tokio::fs::write(path, new_content).await {
-        Ok(_) => ExecutionResult::success(format!(
-            "Successfully edited {file_path} ({replacements} replacement(s))"
-        )),
-        Err(e) => ExecutionResult::failure(format!("edit: cannot write {file_path}: {e}")),
+        Ok(_) => {
+            linkscope::record_items(
+                "tools.filesystem.edit.replacements",
+                usize_to_u64_saturating(replacements),
+            );
+            linkscope::record_bytes(
+                "tools.filesystem.edit.bytes",
+                usize_to_u64_saturating(new_content.len()),
+            );
+            ExecutionResult::success(format!(
+                "Successfully edited {file_path} ({replacements} replacement(s))"
+            ))
+        }
+        Err(e) => {
+            linkscope::record_items("tools.filesystem.edit.write_error", 1);
+            ExecutionResult::failure(format!("edit: cannot write {file_path}: {e}"))
+        }
     }
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 /// Outcome of a whitespace-insensitive search for `needle` in `haystack`.

@@ -137,12 +137,23 @@ pub enum ActiveOutputStyle {
 
 impl Default for ActiveOutputStyle {
     fn default() -> Self {
+        linkscope::record_items("output_style.active.default", 1);
         Self::BuiltIn(OutputStyle::Default)
     }
 }
 
 impl ActiveOutputStyle {
     pub fn name(&self) -> String {
+        linkscope::detail_event_fields(
+            "output_style.active.name",
+            [linkscope::TraceField::text(
+                "kind",
+                match self {
+                    Self::BuiltIn(_) => "built_in",
+                    Self::Custom(_) => "custom",
+                },
+            )],
+        );
         match self {
             Self::BuiltIn(style) => style.name().to_owned(),
             Self::Custom(name) => name.clone(),
@@ -163,10 +174,16 @@ fn handle() -> &'static RwLock<ActiveOutputStyle> {
 }
 
 pub fn set_active(style: OutputStyle) {
+    linkscope::event_fields(
+        "output_style.set_active",
+        [linkscope::TraceField::text("name", style.name())],
+    );
     set_active_named(style.name());
 }
 
 pub fn set_active_named(name: &str) {
+    let _linkscope_set = linkscope::phase("output_style.set_active_named");
+    let requested = name.trim().to_owned();
     if let Ok(mut g) = handle().write() {
         let built = OutputStyle::from_str_loose(name);
         *g = if built == OutputStyle::Default && !name.eq_ignore_ascii_case("default") {
@@ -174,19 +191,59 @@ pub fn set_active_named(name: &str) {
         } else {
             ActiveOutputStyle::BuiltIn(built)
         };
+        linkscope::event_fields(
+            "output_style.set_active_named.result",
+            [
+                linkscope::TraceField::text("requested", requested),
+                linkscope::TraceField::text("active", g.name()),
+            ],
+        );
+    } else {
+        linkscope::event_fields(
+            "output_style.set_active_named.result",
+            [
+                linkscope::TraceField::text("requested", requested),
+                linkscope::TraceField::text("status", "lock_error"),
+            ],
+        );
     }
 }
 
 pub fn active() -> ActiveOutputStyle {
-    handle().read().map(|g| g.clone()).unwrap_or_default()
+    let _linkscope_active = linkscope::phase("output_style.active");
+    match handle().read() {
+        Ok(g) => {
+            linkscope::detail_event_fields(
+                "output_style.active.result",
+                [linkscope::TraceField::text("name", g.name())],
+            );
+            g.clone()
+        }
+        Err(_) => {
+            linkscope::record_items("output_style.active.lock_error", 1);
+            ActiveOutputStyle::default()
+        }
+    }
 }
 
 pub fn active_suffix(project_root: &Path) -> Option<String> {
+    let _linkscope_suffix = linkscope::phase("output_style.active_suffix");
     let active = active();
-    find_definition(project_root, &active.name()).and_then(|definition| definition.suffix())
+    let active_name = active.name();
+    let suffix =
+        find_definition(project_root, &active_name).and_then(|definition| definition.suffix());
+    linkscope::event_fields(
+        "output_style.active_suffix.result",
+        [
+            linkscope::TraceField::text("name", active_name),
+            linkscope::TraceField::count("has_suffix", u64::from(suffix.is_some())),
+        ],
+    );
+    suffix
 }
 
 pub fn load_definitions(project_root: &Path) -> Vec<OutputStyleDefinition> {
+    let _linkscope_load = linkscope::phase("output_style.load_definitions");
     let mut out = Vec::new();
     for built in OutputStyle::all() {
         out.push(OutputStyleDefinition {
@@ -221,13 +278,32 @@ pub fn load_definitions(project_root: &Path) -> Vec<OutputStyleDefinition> {
         }
     }
     out.sort_by(|a, b| a.name.cmp(&b.name));
+    linkscope::event_fields(
+        "output_style.load_definitions.result",
+        [
+            linkscope::TraceField::text("project_root", project_root.display().to_string()),
+            linkscope::TraceField::count(
+                "definitions",
+                u64::try_from(out.len()).unwrap_or(u64::MAX),
+            ),
+        ],
+    );
     out
 }
 
 pub fn find_definition(project_root: &Path, name: &str) -> Option<OutputStyleDefinition> {
-    load_definitions(project_root)
+    let _linkscope_find = linkscope::phase("output_style.find_definition");
+    let definition = load_definitions(project_root)
         .into_iter()
-        .find(|definition| definition.name.eq_ignore_ascii_case(name))
+        .find(|definition| definition.name.eq_ignore_ascii_case(name));
+    linkscope::event_fields(
+        "output_style.find_definition.result",
+        [
+            linkscope::TraceField::text("name", name.to_owned()),
+            linkscope::TraceField::count("hit", u64::from(definition.is_some())),
+        ],
+    );
+    definition
 }
 
 fn parse_style_file(path: &Path, raw: &str) -> Option<OutputStyleDefinition> {

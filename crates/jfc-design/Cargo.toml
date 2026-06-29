@@ -25,6 +25,7 @@ server-api = ["dep:async-stream", "dep:axum", "dep:futures-util", "dep:tokio"]
 async-stream = { workspace = true, optional = true }
 axum = { workspace = true, optional = true }
 futures-util = { workspace = true, optional = true }
+linkscope = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

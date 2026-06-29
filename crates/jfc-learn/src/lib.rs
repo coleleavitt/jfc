@@ -67,9 +67,9 @@ pub use rsi_curator::{
     build_experience_graph, build_experiment_dashboard, build_experiment_job_spec,
     build_experiment_loop_plan, build_next_loop_state, build_recent_rsi_job, current_time_ms,
     evaluate_candidate, experiment_loop_due_decision, fixtures_for_candidate,
-    load_experiment_loop_state, load_recent_traces_from_store, load_trace_from_store,
-    promote_rsi_definition, rollback_rsi_definition, run_rsi_worker_file, run_rsi_worker_job,
-    trace_from_messages,
+    is_promotable_candidate, load_experiment_loop_state, load_recent_traces_from_store,
+    load_trace_from_store, promote_rsi_definition, rollback_rsi_definition, run_rsi_worker_file,
+    run_rsi_worker_job, trace_from_messages,
 };
 pub use skill_usage::{CreatedBy, SkillState, SkillUsage, SkillUsageStore, record_skill_use};
 pub use trajectory::{Turn, compress, total_tokens};

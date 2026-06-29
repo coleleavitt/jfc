@@ -29,6 +29,11 @@ pub struct BridgeMailboxPollRequest {
 
 impl BridgeMailboxPollRequest {
     pub fn unread() -> Self {
+        let _linkscope_poll = linkscope::phase("plugin_sdk.teammate.mailbox_poll.unread");
+        linkscope::detail_event_fields(
+            "plugin_sdk.teammate.mailbox_poll.unread",
+            [linkscope::TraceField::count("unread_only", 1)],
+        );
         Self {
             agent_name: None,
             team_name: None,
@@ -70,9 +75,22 @@ pub struct BridgeMailboxSendRequest {
 
 impl BridgeMailboxSendRequest {
     pub fn new(to: impl Into<String>, text: impl Into<String>) -> Self {
+        let _linkscope_send = linkscope::phase("plugin_sdk.teammate.mailbox_send.new");
+        let to = to.into();
+        let text = text.into();
+        linkscope::event_fields(
+            "plugin_sdk.teammate.mailbox_send.new",
+            [
+                linkscope::TraceField::text("to", to.clone()),
+                linkscope::TraceField::bytes(
+                    "text_bytes",
+                    u64::try_from(text.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         Self {
-            to: to.into(),
-            text: text.into(),
+            to,
+            text,
             from: None,
             team_name: None,
             color: None,
@@ -111,6 +129,11 @@ pub struct BridgeTeammateReady {
 
 impl BridgeTeammateReady {
     pub fn new() -> Self {
+        let _linkscope_ready = linkscope::phase("plugin_sdk.teammate.ready.new");
+        linkscope::detail_event_fields(
+            "plugin_sdk.teammate.ready.new",
+            [linkscope::TraceField::text("status", "empty")],
+        );
         Self {
             agent_name: None,
             team_name: None,

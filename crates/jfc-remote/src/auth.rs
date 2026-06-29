@@ -21,9 +21,15 @@ const TOKEN_LEN: usize = 32;
 /// Generate a cryptographically random pairing token, returned as a
 /// base64-encoded string (44 chars for 32 bytes).
 pub fn generate_token() -> String {
+    let _linkscope_token = linkscope::phase("remote.auth.generate_token");
     let mut buf = [0u8; TOKEN_LEN];
     rand::thread_rng().fill(&mut buf);
-    B64.encode(buf)
+    let token = B64.encode(buf);
+    linkscope::record_bytes(
+        "remote.auth.token.bytes",
+        usize_to_u64_saturating(token.len()),
+    );
+    token
 }
 
 /// Compute the HMAC-SHA256 over a frame's canonical signing input.
@@ -31,26 +37,59 @@ pub fn generate_token() -> String {
 /// The signing input is `"{version}.{seq}.{ts_ms}.{payload_json}"`, matching
 /// [`RemoteFrame::signing_input`].
 pub fn sign_frame(token: &str, version: u8, seq: u64, ts_ms: u64, payload_json: &str) -> String {
+    let _linkscope_sign = linkscope::phase("remote.auth.sign_frame");
     let input = RemoteFrame::signing_input(version, seq, ts_ms, payload_json);
-    let key = B64
-        .decode(token)
-        .unwrap_or_else(|_| token.as_bytes().to_vec());
-    let mut mac = HmacSha256::new_from_slice(&key).expect("HMAC accepts any key length");
+    let decoded = B64.decode(token);
+    let (key, key_source) = match decoded {
+        Ok(key) => (key, "base64"),
+        Err(_) => (token.as_bytes().to_vec(), "raw"),
+    };
+    trace_signing_input(SigningTrace {
+        label: "remote.auth.sign_frame.detail",
+        version,
+        seq,
+        payload_bytes: payload_json.len(),
+        key_bytes: key.len(),
+        key_source,
+    });
+    let Ok(mut mac) = HmacSha256::new_from_slice(&key) else {
+        linkscope::record_items("remote.auth.sign_frame.key_error", 1);
+        return String::new();
+    };
     mac.update(input.as_bytes());
-    B64.encode(mac.finalize().into_bytes())
+    let hmac = B64.encode(mac.finalize().into_bytes());
+    linkscope::record_bytes(
+        "remote.auth.hmac.bytes",
+        usize_to_u64_saturating(hmac.len()),
+    );
+    hmac
 }
 
 /// Verify a frame's HMAC. Returns `true` if the signature is valid.
 ///
 /// Uses constant-time comparison internally (via `hmac::Mac::verify`).
 pub fn verify_frame(token: &str, frame: &RemoteFrame) -> bool {
+    let _linkscope_verify = linkscope::phase("remote.auth.verify_frame");
     let payload_json = match serde_json::to_string(&frame.payload) {
         Ok(j) => j,
-        Err(_) => return false,
+        Err(_) => {
+            linkscope::record_items("remote.auth.verify_frame.serialize_error", 1);
+            return false;
+        }
     };
     let expected = sign_frame(token, frame.version, frame.seq, frame.ts_ms, &payload_json);
     // Constant-time comparison: both are base64 strings of the same length.
-    constant_time_eq(expected.as_bytes(), frame.hmac.as_bytes())
+    let ok = constant_time_eq(expected.as_bytes(), frame.hmac.as_bytes());
+    linkscope::record_items(
+        if ok {
+            "remote.auth.verify_frame.ok"
+        } else {
+            "remote.auth.verify_frame.failed"
+        },
+        1,
+    );
+    trace_verify_result(frame, ok);
+    ok
 }
 
 /// Build a signed `RemoteFrame` from a payload.
@@ -59,12 +98,19 @@ pub fn build_signed_frame(
     seq: u64,
     payload: crate::protocol::RemoteEnvelope,
 ) -> RemoteFrame {
-    let ts_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64;
-    let payload_json =
-        serde_json::to_string(&payload).expect("RemoteEnvelope is always serializable");
+    let _linkscope_build = linkscope::phase("remote.auth.build_signed_frame");
+    let ts_ms = millis_to_u64_saturating(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis(),
+    );
+    let payload_json = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_owned());
+    trace_build_frame(BuildFrameTrace {
+        seq,
+        payload_kind: payload.kind(),
+        payload_bytes: payload_json.len(),
+    });
     let hmac = sign_frame(
         token,
         crate::protocol::PROTOCOL_VERSION,
@@ -103,6 +149,7 @@ pub struct SeqTracker {
 
 impl SeqTracker {
     pub fn new() -> Self {
+        linkscope::record_items("remote.auth.seq_tracker.new", 1);
         Self { last_seq: None }
     }
 
@@ -110,7 +157,8 @@ impl SeqTracker {
     /// valid (strictly greater than the last accepted); `false` if it's
     /// a replay or out-of-order.
     pub fn accept(&mut self, seq: u64) -> bool {
-        match self.last_seq {
+        let _linkscope_accept = linkscope::phase("remote.auth.seq_tracker.accept");
+        let accepted = match self.last_seq {
             None => {
                 self.last_seq = Some(seq);
                 true
@@ -120,7 +168,21 @@ impl SeqTracker {
                 true
             }
             _ => false,
-        }
+        };
+        linkscope::record_items(
+            if accepted {
+                "remote.auth.seq_tracker.accepted"
+            } else {
+                "remote.auth.seq_tracker.rejected"
+            },
+            1,
+        );
+        trace_seq_accept(SeqTrace {
+            seq,
+            last_seq: self.last_seq,
+            accepted,
+        });
+        accepted
     }
 
     /// The last accepted sequence number, if any.
@@ -129,85 +191,100 @@ impl SeqTracker {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::protocol::RemoteEnvelope;
-
-    #[test]
-    fn token_generation_is_44_chars() {
-        let t = generate_token();
-        assert_eq!(t.len(), 44); // 32 bytes → 44 base64 chars
-    }
-
-    #[test]
-    fn tokens_are_unique() {
-        let a = generate_token();
-        let b = generate_token();
-        assert_ne!(a, b);
-    }
-
-    #[test]
-    fn sign_and_verify_roundtrip() {
-        let token = generate_token();
-        let payload = RemoteEnvelope::Heartbeat;
-        let frame = build_signed_frame(&token, 1, payload);
-        assert!(verify_frame(&token, &frame));
-    }
-
-    #[test]
-    fn tampered_payload_rejected() {
-        let token = generate_token();
-        let frame = build_signed_frame(&token, 1, RemoteEnvelope::Heartbeat);
-        let mut tampered = frame;
-        tampered.payload = RemoteEnvelope::Ping;
-        assert!(!verify_frame(&token, &tampered));
-    }
-
-    #[test]
-    fn tampered_seq_rejected() {
-        let token = generate_token();
-        let frame = build_signed_frame(&token, 1, RemoteEnvelope::Heartbeat);
-        let mut tampered = frame;
-        tampered.seq = 999;
-        assert!(!verify_frame(&token, &tampered));
-    }
-
-    #[test]
-    fn wrong_token_rejected() {
-        let token_a = generate_token();
-        let token_b = generate_token();
-        let frame = build_signed_frame(&token_a, 1, RemoteEnvelope::Heartbeat);
-        assert!(!verify_frame(&token_b, &frame));
-    }
-
-    #[test]
-    fn seq_tracker_accepts_monotonic() {
-        let mut t = SeqTracker::new();
-        assert!(t.accept(1));
-        assert!(t.accept(2));
-        assert!(t.accept(5));
-    }
-
-    #[test]
-    fn seq_tracker_rejects_replay() {
-        let mut t = SeqTracker::new();
-        assert!(t.accept(1));
-        assert!(!t.accept(1)); // replay
-        assert!(!t.accept(0)); // older
-    }
-
-    #[test]
-    fn seq_tracker_rejects_equal() {
-        let mut t = SeqTracker::new();
-        assert!(t.accept(3));
-        assert!(!t.accept(3));
-    }
-
-    #[test]
-    fn constant_time_eq_works() {
-        assert!(constant_time_eq(b"hello", b"hello"));
-        assert!(!constant_time_eq(b"hello", b"world"));
-        assert!(!constant_time_eq(b"hello", b"hell"));
-    }
+struct SigningTrace<'a> {
+    label: &'static str,
+    version: u8,
+    seq: u64,
+    payload_bytes: usize,
+    key_bytes: usize,
+    key_source: &'a str,
 }
+
+struct BuildFrameTrace {
+    seq: u64,
+    payload_kind: &'static str,
+    payload_bytes: usize,
+}
+
+struct SeqTrace {
+    seq: u64,
+    last_seq: Option<u64>,
+    accepted: bool,
+}
+
+fn trace_signing_input(input: SigningTrace<'_>) {
+    if !linkscope::trace_detail_enabled() {
+        return;
+    }
+    linkscope::detail_event_fields(
+        input.label,
+        [
+            linkscope::TraceField::count("version", u64::from(input.version)),
+            linkscope::TraceField::count("seq", input.seq),
+            linkscope::TraceField::bytes(
+                "payload_bytes",
+                usize_to_u64_saturating(input.payload_bytes),
+            ),
+            linkscope::TraceField::bytes("key_bytes", usize_to_u64_saturating(input.key_bytes)),
+            linkscope::TraceField::text("key_source", input.key_source),
+        ],
+    );
+}
+
+fn trace_verify_result(frame: &RemoteFrame, ok: bool) {
+    if !linkscope::trace_detail_enabled() {
+        return;
+    }
+    linkscope::detail_event_fields(
+        "remote.auth.verify_frame.detail",
+        [
+            linkscope::TraceField::count("version", u64::from(frame.version)),
+            linkscope::TraceField::count("seq", frame.seq),
+            linkscope::TraceField::text("payload_kind", frame.payload.kind()),
+            linkscope::TraceField::count("ok", u64::from(ok)),
+        ],
+    );
+}
+
+fn trace_build_frame(input: BuildFrameTrace) {
+    if !linkscope::trace_detail_enabled() {
+        return;
+    }
+    linkscope::detail_event_fields(
+        "remote.auth.build_signed_frame.detail",
+        [
+            linkscope::TraceField::count("seq", input.seq),
+            linkscope::TraceField::text("payload_kind", input.payload_kind),
+            linkscope::TraceField::bytes(
+                "payload_bytes",
+                usize_to_u64_saturating(input.payload_bytes),
+            ),
+        ],
+    );
+}
+
+fn trace_seq_accept(input: SeqTrace) {
+    if !linkscope::trace_detail_enabled() {
+        return;
+    }
+    linkscope::detail_event_fields(
+        "remote.auth.seq_tracker.detail",
+        [
+            linkscope::TraceField::count("seq", input.seq),
+            linkscope::TraceField::count("last_seq", input.last_seq.unwrap_or_default()),
+            linkscope::TraceField::count("has_last_seq", u64::from(input.last_seq.is_some())),
+            linkscope::TraceField::count("accepted", u64::from(input.accepted)),
+        ],
+    );
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
+}
+
+fn millis_to_u64_saturating(value: u128) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
+}
+
+#[cfg(test)]
+mod tests;

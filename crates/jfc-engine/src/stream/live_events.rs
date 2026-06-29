@@ -105,6 +105,8 @@ pub async fn drain_stream_events(
     interrupt: Arc<std::sync::atomic::AtomicBool>,
     cancel: CancellationToken,
 ) -> DrainOutcome {
+    let _linkscope_drain = linkscope::phase("stream.drain");
+    let _linkscope_drain_trace = linkscope::trace("stream.drain");
     let mut stop_reason = StopReason::EndTurn;
     let mut tool_accum: HashMap<usize, (String, String, String)> = HashMap::new();
     let mut terminal_done_deadline: Option<tokio::time::Instant> = None;
@@ -213,10 +215,23 @@ pub async fn drain_stream_events(
             commits_output = event.commits_output(),
             "stream frame"
         );
+        linkscope::record_items("stream.events", 1);
+        linkscope::detail_event_fields(
+            "stream.event",
+            [
+                linkscope::TraceField::text("category", format!("{:?}", event.category())),
+                linkscope::TraceField::count(
+                    "commits_output",
+                    if event.commits_output() { 1 } else { 0 },
+                ),
+            ],
+        );
 
         match event {
             StreamEvent::TextDelta { delta, .. } => {
                 committed_output = true;
+                linkscope::record_items("stream.text_delta", 1);
+                linkscope::record_bytes("stream.text_delta", usize_to_u64_saturating(delta.len()));
                 resume.record(&delta);
                 // MUST use blocking send for text — try_send drops data on
                 // backpressure, causing permanent text loss in the assistant
@@ -251,6 +266,11 @@ pub async fn drain_stream_events(
                 ..
             } => {
                 committed_output = true;
+                linkscope::record_items("stream.thinking_delta", 1);
+                linkscope::record_bytes(
+                    "stream.thinking_delta",
+                    usize_to_u64_saturating(delta.len()),
+                );
                 // Same rationale as TextDelta — thinking text is displayed
                 // in the UI and losing chunks creates gaps in the reasoning
                 // trace.
@@ -292,6 +312,8 @@ pub async fn drain_stream_events(
             }
             StreamEvent::ToolDelta { index, delta } => {
                 committed_output = true;
+                linkscope::record_items("stream.tool_delta", 1);
+                linkscope::record_bytes("stream.tool_delta", usize_to_u64_saturating(delta.len()));
                 pending_visible.flush(tx).await;
                 tool_accum.entry(index).or_default().2.push_str(&delta);
                 // MUST use blocking send — `try_send` drops on backpressure,
@@ -330,6 +352,11 @@ pub async fn drain_stream_events(
                 } else {
                     input_json
                 };
+                linkscope::record_items("stream.tool_done", 1);
+                linkscope::record_bytes(
+                    "stream.tool_done",
+                    usize_to_u64_saturating(assembled.len()),
+                );
                 tracing::debug!(
                     target: "jfc::stream",
                     index,
@@ -492,6 +519,7 @@ pub async fn drain_stream_events(
                     .await;
             }
             StreamEvent::Done { stop_reason: r } => {
+                linkscope::event("stream.done", format!("{r:?}"));
                 pending_visible.flush(tx).await;
                 // Never downgrade from ToolUse or PauseTurn to EndTurn.
                 // Some providers emit Done(ToolUse) followed by a final
@@ -568,6 +596,7 @@ pub async fn drain_stream_events(
                 cache_write_tokens,
             } => {
                 pending_visible.flush(tx).await;
+                linkscope::record_items("stream.usage", 1);
                 tracing::info!(
                     target: "jfc::stream",
                     input_tokens, output_tokens,
@@ -632,6 +661,10 @@ pub async fn drain_stream_events(
     }
 
     DrainOutcome::Done(stop_reason)
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]

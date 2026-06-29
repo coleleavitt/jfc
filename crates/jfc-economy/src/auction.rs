@@ -38,6 +38,11 @@ pub struct AuctionEngine {
 
 impl AuctionEngine {
     pub fn new() -> Self {
+        let _linkscope_new = linkscope::phase("economy.auction.new");
+        linkscope::detail_event_fields(
+            "economy.auction.new",
+            [linkscope::TraceField::text("weights", "default")],
+        );
         Self {
             bids: Vec::new(),
             weights: ScoringWeights::default(),
@@ -45,6 +50,18 @@ impl AuctionEngine {
     }
 
     pub fn with_weights(weights: ScoringWeights) -> Self {
+        let _linkscope_new = linkscope::phase("economy.auction.with_weights");
+        linkscope::event_fields(
+            "economy.auction.with_weights",
+            [
+                linkscope::TraceField::text("trust_weight", format!("{:.3}", weights.trust_weight)),
+                linkscope::TraceField::text("price_weight", format!("{:.3}", weights.price_weight)),
+                linkscope::TraceField::text(
+                    "approach_weight",
+                    format!("{:.3}", weights.approach_weight),
+                ),
+            ],
+        );
         Self {
             bids: Vec::new(),
             weights,
@@ -53,6 +70,19 @@ impl AuctionEngine {
 
     /// Submit a sealed bid (bids are independent, no leakage).
     pub fn submit_bid(&mut self, bid: Bid) {
+        let _linkscope_bid = linkscope::phase("economy.auction.submit_bid");
+        linkscope::event_fields(
+            "economy.auction.submit_bid",
+            [
+                linkscope::TraceField::text("agent_id", bid.agent_id.to_string()),
+                linkscope::TraceField::text("bounty_id", bid.bounty_id.clone()),
+                linkscope::TraceField::count("price", bid.price),
+                linkscope::TraceField::count(
+                    "bids_before",
+                    u64::try_from(self.bids.len()).unwrap_or(u64::MAX),
+                ),
+            ],
+        );
         self.bids.push(bid);
     }
 
@@ -66,6 +96,17 @@ impl AuctionEngine {
     /// - price_score = min(1.0, 1000 / price) — lower price is better
     /// - approach_score = 1.0 (v1: all approaches equal)
     pub fn select_winners(&self, max_solvers: u8, trust_registry: &TrustRegistry) -> Vec<&Bid> {
+        let _linkscope_select = linkscope::phase("economy.auction.select_winners");
+        linkscope::event_fields(
+            "economy.auction.select_winners.start",
+            [
+                linkscope::TraceField::count(
+                    "bids",
+                    u64::try_from(self.bids.len()).unwrap_or(u64::MAX),
+                ),
+                linkscope::TraceField::count("max_solvers", u64::from(max_solvers)),
+            ],
+        );
         let mut scored: Vec<(&Bid, f32)> = self
             .bids
             .iter()
@@ -92,11 +133,19 @@ impl AuctionEngine {
             .collect();
 
         scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        scored
+        let winners = scored
             .into_iter()
             .take(max_solvers as usize)
             .map(|(bid, _)| bid)
-            .collect()
+            .collect::<Vec<_>>();
+        linkscope::event_fields(
+            "economy.auction.select_winners.result",
+            [linkscope::TraceField::count(
+                "winners",
+                u64::try_from(winners.len()).unwrap_or(u64::MAX),
+            )],
+        );
+        winners
     }
 
     /// Get all bids (for audit).
@@ -106,6 +155,11 @@ impl AuctionEngine {
 
     /// Clear bids for next round.
     pub fn clear(&mut self) {
+        let _linkscope_clear = linkscope::phase("economy.auction.clear");
+        linkscope::record_items(
+            "economy.auction.clear.bids",
+            u64::try_from(self.bids.len()).unwrap_or(u64::MAX),
+        );
         self.bids.clear();
     }
 

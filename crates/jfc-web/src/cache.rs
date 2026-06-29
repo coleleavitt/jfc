@@ -28,25 +28,48 @@ static CACHE: Mutex<Option<HashMap<String, Entry>>> = Mutex::new(None);
 /// Look up a URL in the cache. Returns the cached body if present and fresh,
 /// `None` otherwise. Stale entries are evicted on access.
 pub fn get(url: &str) -> Option<String> {
+    let _linkscope_get = linkscope::phase("web.cache.get");
     let mut guard = CACHE.lock().ok()?;
     let map = guard.get_or_insert_with(HashMap::new);
+    trace_cache("web.cache.get.start", url.len(), 0, map.len());
     let stale = map
         .get(url)
         .map(|e| e.fetched_at.elapsed() >= TTL)
         .unwrap_or(false);
     if stale {
         map.remove(url);
+        linkscope::record_items("web.cache.stale", 1);
+        trace_cache("web.cache.get.stale", url.len(), 0, map.len());
         return None;
     }
-    map.get(url).map(|e| e.body.clone())
+    let result = map.get(url).map(|e| e.body.clone());
+    if result.is_some() {
+        linkscope::record_items("web.cache.hit", 1);
+    } else {
+        linkscope::record_items("web.cache.miss", 1);
+    }
+    trace_cache(
+        if result.is_some() {
+            "web.cache.get.hit"
+        } else {
+            "web.cache.get.miss"
+        },
+        url.len(),
+        result.as_ref().map(String::len).unwrap_or(0),
+        map.len(),
+    );
+    result
 }
 
 /// Insert or refresh a URL in the cache. Evicts the oldest entry if at cap.
 pub fn put(url: &str, body: String) {
+    let _linkscope_put = linkscope::phase("web.cache.put");
     let Ok(mut guard) = CACHE.lock() else {
+        linkscope::record_items("web.cache.lock_error", 1);
         return;
     };
     let map = guard.get_or_insert_with(HashMap::new);
+    trace_cache("web.cache.put.start", url.len(), body.len(), map.len());
     if map.len() >= MAX_ENTRIES
         && !map.contains_key(url)
         && let Some(oldest_key) = map
@@ -55,13 +78,35 @@ pub fn put(url: &str, body: String) {
             .map(|(k, _)| k.clone())
     {
         map.remove(&oldest_key);
+        linkscope::record_items("web.cache.evicted", 1);
+        trace_cache("web.cache.put.evicted", url.len(), body.len(), map.len());
     }
+    linkscope::record_bytes("web.cache.put.bytes", usize_to_u64_saturating(body.len()));
     map.insert(
         url.to_owned(),
         Entry {
             body,
             fetched_at: Instant::now(),
         },
+    );
+    trace_cache("web.cache.put.done", url.len(), 0, map.len());
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
+}
+
+fn trace_cache(label: &'static str, url_len: usize, body_len: usize, entries: usize) {
+    if !linkscope::trace_detail_enabled() {
+        return;
+    }
+    linkscope::detail_event_fields(
+        label,
+        [
+            linkscope::TraceField::bytes("url_bytes", usize_to_u64_saturating(url_len)),
+            linkscope::TraceField::bytes("body_bytes", usize_to_u64_saturating(body_len)),
+            linkscope::TraceField::count("entries", usize_to_u64_saturating(entries)),
+        ],
     );
 }
 
@@ -120,5 +165,29 @@ mod tests {
         put("https://overflow.example/", "new".to_string());
         assert!(get("https://e0.example/").is_none());
         assert_eq!(get("https://overflow.example/"), Some("new".to_string()));
+    }
+
+    #[test]
+    fn cache_trace_records_sizes_without_url_payload_normal() {
+        let _guard = test_lock().lock().unwrap_or_else(|p| p.into_inner());
+        linkscope::trace_detail_enable();
+        clear();
+
+        put("https://secret.example/private", "body".to_string());
+        let _ = get("https://secret.example/private");
+
+        let snapshot = linkscope::snapshot();
+        let trace = snapshot
+            .traces
+            .iter()
+            .find(|trace| trace.label == "web.cache.get.hit")
+            .expect("cache hit trace should exist");
+        assert!(trace.fields.iter().any(|field| field.name == "url_bytes"));
+        assert!(
+            !trace
+                .fields
+                .iter()
+                .any(|field| field.value == "https://secret.example/private")
+        );
     }
 }

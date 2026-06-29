@@ -297,12 +297,26 @@ pub(crate) async fn handle_tick(
             app.engine.max_output_tokens,
         );
         if matches!(level, jfc_engine::compact::CompactLevel::Precompute) {
+            // Speculatively reclaim context NOW, while idle, so the user's next
+            // submit doesn't pay for it. This is the cheap local tool-result
+            // trim only (no provider call, no async) — safe to run inline on the
+            // single-threaded event loop while not streaming. The heavier
+            // summarizing compaction still waits for the Compact/Blocked bands.
+            let saved = jfc_engine::compact::microcompact_speculative(
+                &mut app.engine.messages,
+                &mut app.engine.tool_ctx.approx_tokens,
+                level,
+            );
             tracing::info!(
                 target: "jfc::compact",
                 est,
+                saved_tokens = saved,
                 max = app.engine.max_context_tokens,
-                "speculative compact: context at ~80% threshold"
+                "speculative compact: context at ~80% threshold (idle microcompaction)"
             );
+            if saved > 0 {
+                needs_draw = true;
+            }
             app.engine.speculative_compact_fired = true;
         }
     }

@@ -140,6 +140,7 @@ impl MemoryBridgeStore {
 
 impl BridgeStore for MemoryBridgeStore {
     fn create_session(&self, req: CreateSessionRequest) -> StoreResult<SessionRecord> {
+        let _linkscope_create = linkscope::phase("bridge.store.create_session");
         let now = now_ms();
         let environment_id = req.environment_id;
         let title = req.title;
@@ -170,14 +171,22 @@ impl BridgeStore for MemoryBridgeStore {
         };
         inner.sessions.insert(record.id.clone(), record.clone());
         self.persist(&inner)?;
+        linkscope::record_items("bridge.store.session.created", 1);
         Ok(record)
     }
 
     fn get_session(&self, session_id: &str) -> StoreResult<Option<SessionRecord>> {
-        Ok(self.read()?.sessions.get(session_id).cloned())
+        let _linkscope_get = linkscope::phase("bridge.store.get_session");
+        let session = self.read()?.sessions.get(session_id).cloned();
+        linkscope::record_items("bridge.store.session.get", 1);
+        if session.is_none() {
+            linkscope::record_items("bridge.store.session.miss", 1);
+        }
+        Ok(session)
     }
 
     fn archive_session(&self, session_id: &str) -> StoreResult<SessionRecord> {
+        let _linkscope_archive = linkscope::phase("bridge.store.archive_session");
         let mut inner = self.write()?;
         let Some(session) = inner.sessions.get_mut(session_id) else {
             return Err(StoreError::SessionNotFound(session_id.to_owned()));
@@ -188,6 +197,7 @@ impl BridgeStore for MemoryBridgeStore {
         session.archived_at_ms = Some(now);
         let session = session.clone();
         self.persist(&inner)?;
+        linkscope::record_items("bridge.store.session.archived", 1);
         Ok(session)
     }
 
@@ -197,6 +207,7 @@ impl BridgeStore for MemoryBridgeStore {
         worker_id: &str,
         req: WorkerUpdateRequest,
     ) -> StoreResult<WorkerRecord> {
+        let _linkscope_upsert = linkscope::phase("bridge.store.upsert_worker");
         let mut inner = self.write()?;
         if !inner.sessions.contains_key(session_id) {
             return Err(StoreError::SessionNotFound(session_id.to_owned()));
@@ -242,11 +253,18 @@ impl BridgeStore for MemoryBridgeStore {
             session.updated_at_ms = now;
         }
         self.persist(&inner)?;
+        linkscope::record_items("bridge.store.worker.upserted", 1);
         Ok(record)
     }
 
     fn get_worker(&self, session_id: &str) -> StoreResult<Option<WorkerRecord>> {
-        Ok(self.read()?.workers.get(session_id).cloned())
+        let _linkscope_get = linkscope::phase("bridge.store.get_worker");
+        let worker = self.read()?.workers.get(session_id).cloned();
+        linkscope::record_items("bridge.store.worker.get", 1);
+        if worker.is_none() {
+            linkscope::record_items("bridge.store.worker.miss", 1);
+        }
+        Ok(worker)
     }
 
     fn heartbeat(
@@ -256,6 +274,7 @@ impl BridgeStore for MemoryBridgeStore {
         worker_epoch: u64,
         status: Option<WorkerStatus>,
     ) -> StoreResult<WorkerRecord> {
+        let _linkscope_heartbeat = linkscope::phase("bridge.store.heartbeat");
         let mut inner = self.write()?;
         let now = now_ms();
         let Some(worker) = inner.workers.get_mut(session_id) else {
@@ -274,6 +293,7 @@ impl BridgeStore for MemoryBridgeStore {
         worker.last_heartbeat_at_ms = now;
         let worker = worker.clone();
         self.persist(&inner)?;
+        linkscope::record_items("bridge.store.worker.heartbeat", 1);
         Ok(worker)
     }
 
@@ -283,6 +303,8 @@ impl BridgeStore for MemoryBridgeStore {
         internal: bool,
         events: Vec<EventUpload>,
     ) -> StoreResult<Vec<BridgeEvent>> {
+        let _linkscope_append = linkscope::phase("bridge.store.append_events");
+        let event_count = events.len();
         let mut inner = self.write()?;
         if !inner.sessions.contains_key(session_id) {
             return Err(StoreError::SessionNotFound(session_id.to_owned()));
@@ -307,6 +329,10 @@ impl BridgeStore for MemoryBridgeStore {
             let _ = self.events_tx.send(event.clone());
         }
         self.persist(&inner)?;
+        linkscope::record_items(
+            "bridge.store.events.appended",
+            usize_to_u64_saturating(event_count),
+        );
         Ok(records)
     }
 
@@ -316,6 +342,7 @@ impl BridgeStore for MemoryBridgeStore {
         internal: bool,
         after: Option<&str>,
     ) -> StoreResult<Vec<BridgeEvent>> {
+        let _linkscope_list = linkscope::phase("bridge.store.list_events");
         if !self.read()?.sessions.contains_key(session_id) {
             return Err(StoreError::SessionNotFound(session_id.to_owned()));
         }
@@ -333,10 +360,15 @@ impl BridgeStore for MemoryBridgeStore {
             }
             out.push(event.clone());
         }
+        linkscope::record_items(
+            "bridge.store.events.listed",
+            usize_to_u64_saturating(out.len()),
+        );
         Ok(out)
     }
 
     fn ack_delivery(&self, session_id: &str, req: DeliveryAckRequest) -> StoreResult<BridgeEvent> {
+        let _linkscope_ack = linkscope::phase("bridge.store.ack_delivery");
         let mut inner = self.write()?;
         let Some(event) = inner
             .events
@@ -348,12 +380,18 @@ impl BridgeStore for MemoryBridgeStore {
         event.delivery_status = Some(req.status);
         let event = event.clone();
         self.persist(&inner)?;
+        linkscope::record_items("bridge.store.delivery.acked", 1);
         Ok(event)
     }
 
     fn subscribe(&self) -> broadcast::Receiver<BridgeEvent> {
+        linkscope::record_items("bridge.store.subscribe", 1);
         self.events_tx.subscribe()
     }
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 impl From<Value> for EventUpload {

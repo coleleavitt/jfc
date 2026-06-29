@@ -7,6 +7,9 @@ use reqwest::{Method, Response, StatusCode};
 use std::sync::Arc;
 use std::time::Duration;
 
+mod trace;
+use trace::{auth_label, trace_request_attempt, trace_request_status};
+
 pub const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
 pub const ANTHROPIC_VERSION: &str = "2023-06-01";
 
@@ -38,6 +41,13 @@ impl Client {
     }
 
     fn build(auth: Auth) -> Self {
+        linkscope::record_items("sdk.client.build", 1);
+        if linkscope::trace_detail_enabled() {
+            linkscope::detail_event_fields(
+                "sdk.client.build.detail",
+                [linkscope::TraceField::text("auth", auth_label(&auth))],
+            );
+        }
         let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(60))
             .build()
@@ -79,6 +89,16 @@ impl Client {
         path: &str,
         beta: Option<&str>,
     ) -> reqwest::RequestBuilder {
+        if linkscope::is_enabled() {
+            linkscope::detail_event_fields(
+                "sdk.request.build",
+                [
+                    linkscope::TraceField::text("method", method.as_str()),
+                    linkscope::TraceField::text("path", path),
+                    linkscope::TraceField::count("has_beta", bool_to_u64(beta.is_some())),
+                ],
+            );
+        }
         let url = format!("{}{}", self.inner.base_url, path);
         self.request_url(method, url, beta)
     }
@@ -89,6 +109,16 @@ impl Client {
         url: impl reqwest::IntoUrl,
         beta: Option<&str>,
     ) -> reqwest::RequestBuilder {
+        if linkscope::trace_detail_enabled() {
+            linkscope::detail_event_fields(
+                "sdk.request.url",
+                [
+                    linkscope::TraceField::text("method", method.as_str()),
+                    linkscope::TraceField::text("auth", auth_label(&self.inner.auth)),
+                    linkscope::TraceField::count("has_beta", bool_to_u64(beta.is_some())),
+                ],
+            );
+        }
         let mut req = self
             .inner
             .http
@@ -112,19 +142,50 @@ impl Client {
         &self,
         build: impl Fn() -> reqwest::RequestBuilder,
     ) -> Result<Response> {
+        let _linkscope_retry = linkscope::phase("sdk.execute_with_retry");
         let mut attempt: u32 = 0;
         loop {
+            linkscope::record_items("sdk.request.attempt", 1);
             let req = build();
-            let resp_result = req.send().await;
+            trace_request_attempt("sdk.request.send.start", attempt);
+            let resp_result = {
+                let _linkscope_send = linkscope::phase("sdk.request.send");
+                req.send().await
+            };
             match resp_result {
-                Ok(resp) if resp.status().is_success() => return Ok(resp),
+                Ok(resp) if resp.status().is_success() => {
+                    trace_request_status("sdk.request.send.ok", attempt, resp.status());
+                    if attempt > 0 {
+                        linkscope::record_items("sdk.request.succeeded_after_retry", 1);
+                    }
+                    return Ok(resp);
+                }
                 Ok(resp) => {
                     let status = resp.status();
+                    trace_request_status("sdk.request.send.status", attempt, status);
+                    if linkscope::is_enabled() {
+                        linkscope::detail_event_fields(
+                            "sdk.request.status",
+                            [
+                                linkscope::TraceField::count("attempt", u64::from(attempt + 1)),
+                                linkscope::TraceField::count("status", u64::from(status.as_u16())),
+                                linkscope::TraceField::count(
+                                    "will_retry",
+                                    bool_to_u64(
+                                        attempt + 1 < retry::MAX_ATTEMPTS
+                                            && retry::should_retry_status(status.as_u16()),
+                                    ),
+                                ),
+                            ],
+                        );
+                    }
                     if attempt + 1 >= retry::MAX_ATTEMPTS
                         || !retry::should_retry_status(status.as_u16())
                     {
+                        linkscope::record_items("sdk.request.api_error", 1);
                         return Err(into_api_error(resp).await);
                     }
+                    linkscope::record_items("sdk.request.retry_status", 1);
                     let delay = retry::parse_retry_after(resp.headers())
                         .unwrap_or_else(|| retry::delay_for(attempt));
                     tracing::debug!(
@@ -138,9 +199,12 @@ impl Client {
                     attempt += 1;
                 }
                 Err(e) => {
+                    trace_request_attempt("sdk.request.send.transport_error", attempt);
                     if attempt + 1 >= retry::MAX_ATTEMPTS {
+                        linkscope::record_items("sdk.request.transport_error", 1);
                         return Err(Error::Transport(e));
                     }
+                    linkscope::record_items("sdk.request.retry_transport_error", 1);
                     let delay = retry::delay_for(attempt);
                     tracing::debug!(
                         target: "jfc_anthropic_sdk::retry",
@@ -155,6 +219,10 @@ impl Client {
             }
         }
     }
+}
+
+fn bool_to_u64(value: bool) -> u64 {
+    if value { 1 } else { 0 }
 }
 
 pub(crate) async fn into_api_error(resp: Response) -> Error {

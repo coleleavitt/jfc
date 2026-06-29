@@ -26,7 +26,7 @@ pub use translate::translate;
 
 pub(crate) use block_lifecycle::{apply_content_delta, start_content_block, stop_content_block};
 pub(crate) use block_state::{append_input_delta, initial_input_json};
-pub(crate) use cache::cap_cache_control_breakpoints;
+pub(crate) use cache::{cap_cache_control_breakpoints, has_cache_control_ttl};
 pub(crate) use stream_log::log_parsed_event;
 pub(crate) use token_estimate::{
     estimate_signature_thinking_tokens, estimate_thinking_text_tokens,

@@ -90,6 +90,7 @@ pub fn router(state: BridgeState) -> Router {
 }
 
 pub async fn serve(addr: SocketAddr, state: BridgeState) -> std::io::Result<()> {
+    let _linkscope_serve = linkscope::phase("bridge.serve");
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!(
         target: "jfc::bridge",
@@ -100,6 +101,7 @@ pub async fn serve(addr: SocketAddr, state: BridgeState) -> std::io::Result<()> 
 }
 
 async fn health() -> Json<serde_json::Value> {
+    linkscope::record_items("bridge.api.health", 1);
     Json(json!({ "ok": true }))
 }
 
@@ -108,6 +110,7 @@ async fn create_bridge(
     headers: HeaderMap,
     Json(req): Json<BridgeRequest>,
 ) -> Result<Json<BridgeResponse>, ApiError> {
+    let _linkscope_bridge = linkscope::phase("bridge.api.create_bridge");
     require_bootstrap(&state, &headers)?;
     validate_bridge_request(&req)?;
     let session = state.store.create_session(CreateSessionRequest {
@@ -146,6 +149,7 @@ async fn create_session(
     headers: HeaderMap,
     Json(req): Json<CreateSessionRequest>,
 ) -> Result<Json<crate::model::SessionRecord>, ApiError> {
+    let _linkscope_session = linkscope::phase("bridge.api.create_session");
     require_bootstrap(&state, &headers)?;
     validate_session_request(&req)?;
     Ok(Json(state.store.create_session(req)?))
@@ -156,6 +160,7 @@ async fn get_session(
     headers: HeaderMap,
     Path(session_id): Path<String>,
 ) -> Result<Json<crate::model::SessionRecord>, ApiError> {
+    let _linkscope_session = linkscope::phase("bridge.api.get_session");
     require_session_access(&state, &headers, &session_id)?;
     let session = state
         .store
@@ -169,6 +174,7 @@ async fn archive_session(
     headers: HeaderMap,
     Path(session_id): Path<String>,
 ) -> Result<Json<crate::model::SessionRecord>, ApiError> {
+    let _linkscope_session = linkscope::phase("bridge.api.archive_session");
     require_session_access(&state, &headers, &session_id)?;
     Ok(Json(state.store.archive_session(&session_id)?))
 }
@@ -177,6 +183,7 @@ async fn get_worker(
     State(state): State<BridgeState>,
     headers: HeaderMap,
 ) -> Result<Json<WorkerRecord>, ApiError> {
+    let _linkscope_worker = linkscope::phase("bridge.api.get_worker");
     let claims = require_worker(&state, &headers)?;
     let worker = state
         .store
@@ -190,6 +197,7 @@ async fn update_worker(
     headers: HeaderMap,
     Json(req): Json<WorkerUpdateRequest>,
 ) -> Result<Json<WorkerRecord>, ApiError> {
+    let _linkscope_worker = linkscope::phase("bridge.api.update_worker");
     let claims = require_worker(&state, &headers)?;
     validate_worker_update_request(&req, &claims.worker_id)?;
     Ok(Json(state.store.upsert_worker(
@@ -204,6 +212,7 @@ async fn worker_heartbeat(
     headers: HeaderMap,
     Json(req): Json<HeartbeatRequest>,
 ) -> Result<Json<WorkerRecord>, ApiError> {
+    let _linkscope_heartbeat = linkscope::phase("bridge.api.worker_heartbeat");
     let claims = require_worker(&state, &headers)?;
     let epoch = if req.worker_epoch == 0 {
         claims_worker_epoch(&state, &claims.session_id)?
@@ -223,6 +232,11 @@ async fn post_worker_events(
     headers: HeaderMap,
     Json(req): Json<EventUploadRequest>,
 ) -> Result<Json<EventList>, ApiError> {
+    let _linkscope_events = linkscope::phase("bridge.api.post_worker_events");
+    linkscope::record_items(
+        "bridge.api.events.uploaded",
+        usize_to_u64_saturating(req.events.len()),
+    );
     let claims = require_worker(&state, &headers)?;
     let events = state
         .store
@@ -235,6 +249,11 @@ async fn post_internal_events(
     headers: HeaderMap,
     Json(req): Json<EventUploadRequest>,
 ) -> Result<Json<EventList>, ApiError> {
+    let _linkscope_events = linkscope::phase("bridge.api.post_internal_events");
+    linkscope::record_items(
+        "bridge.api.events.uploaded",
+        usize_to_u64_saturating(req.events.len()),
+    );
     let claims = require_worker(&state, &headers)?;
     let events = state
         .store
@@ -247,6 +266,7 @@ async fn get_internal_events(
     headers: HeaderMap,
     Query(query): Query<EventQuery>,
 ) -> Result<Json<EventList>, ApiError> {
+    let _linkscope_events = linkscope::phase("bridge.api.get_internal_events");
     let claims = require_worker(&state, &headers)?;
     let events = state
         .store
@@ -259,6 +279,7 @@ async fn post_event_delivery(
     headers: HeaderMap,
     Json(req): Json<DeliveryAckRequest>,
 ) -> Result<Json<crate::model::BridgeEvent>, ApiError> {
+    let _linkscope_delivery = linkscope::phase("bridge.api.post_event_delivery");
     let claims = require_worker(&state, &headers)?;
     Ok(Json(state.store.ack_delivery(&claims.session_id, req)?))
 }
@@ -269,6 +290,7 @@ async fn get_session_events(
     Path(session_id): Path<String>,
     Query(query): Query<EventQuery>,
 ) -> Result<Json<EventList>, ApiError> {
+    let _linkscope_events = linkscope::phase("bridge.api.get_session_events");
     require_session_access(&state, &headers, &session_id)?;
     let events = state
         .store
@@ -281,6 +303,7 @@ async fn stream_session_events(
     headers: HeaderMap,
     Path(session_id): Path<String>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, ApiError> {
+    let _linkscope_stream = linkscope::phase("bridge.api.stream_session_events");
     require_session_access(&state, &headers, &session_id)?;
     let mut rx = state.store.subscribe();
     let stream_session_id = session_id;
@@ -288,14 +311,19 @@ async fn stream_session_events(
         loop {
             match rx.recv().await {
                 Ok(event) if event.session_id == stream_session_id && !event.internal => {
+                    linkscope::record_items("bridge.api.stream.event", 1);
                     let data = serde_json::to_string(&event).unwrap_or_else(|_| "{}".to_owned());
                     yield Ok(Event::default().id(event.id).event(event.kind).data(data));
                 }
                 Ok(_) => {}
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                    linkscope::record_items("bridge.api.stream.lagged", 1);
                     yield Ok(Event::default().event("bridge_lagged").data("{}"));
                 }
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    linkscope::record_items("bridge.api.stream.closed", 1);
+                    break;
+                }
             }
         }
     };
@@ -527,6 +555,7 @@ pub enum ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
+        linkscope::record_items("bridge.api.error", 1);
         let status = match &self {
             Self::Unauthorized | Self::Token(_) => StatusCode::UNAUTHORIZED,
             Self::NotFound(_) | Self::Store(StoreError::SessionNotFound(_)) => {
@@ -545,6 +574,10 @@ impl IntoResponse for ApiError {
         }));
         (status, body).into_response()
     }
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]

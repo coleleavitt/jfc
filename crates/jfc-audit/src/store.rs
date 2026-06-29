@@ -33,6 +33,7 @@ pub struct FindingStore {
 impl FindingStore {
     /// Open (or create) the finding store for a project root.
     pub fn open_project(root: impl AsRef<Path>) -> Result<Self> {
+        let _linkscope_open = linkscope::phase("audit.finding_store.open_project");
         let root = root.as_ref().to_path_buf();
         let audit_dir = root.join(".jfc").join("audit");
         fs::create_dir_all(&audit_dir).map_err(|e| AuditError::Io {
@@ -59,11 +60,16 @@ impl FindingStore {
         };
 
         store.reload()?;
+        linkscope::record_items(
+            "audit.finding_store.opened",
+            usize_to_u64_saturating(store.len()),
+        );
         Ok(store)
     }
 
     /// Reload the in-memory index from the JSONL file.
     fn reload(&mut self) -> Result<()> {
+        let _linkscope_reload = linkscope::phase("audit.finding_store.reload");
         self.index.clear();
         let file = File::open(&self.findings_path).map_err(|e| AuditError::Io {
             source: e,
@@ -85,18 +91,25 @@ impl FindingStore {
                     self.index.insert(finding.id.clone(), finding);
                 }
                 Err(e) => {
+                    linkscope::record_items("audit.finding_store.corrupt_line", 1);
                     warn!(line_num, error = %e, "skipping corrupt finding line");
                 }
             }
         }
+        linkscope::record_items(
+            "audit.finding_store.loaded",
+            usize_to_u64_saturating(self.index.len()),
+        );
         debug!(count = self.index.len(), "loaded findings from store");
         Ok(())
     }
 
     /// Append a finding. Dedup by id — collisions update last_seen_revision.
     pub fn append(&mut self, mut finding: Finding) -> Result<()> {
+        let _linkscope_append = linkscope::phase("audit.finding_store.append");
         // Dedup: if we already have this id, update last_seen and merge verdicts
         if let Some(existing) = self.index.get_mut(&finding.id) {
+            linkscope::record_items("audit.finding_store.dedup", 1);
             existing.last_seen_revision = finding.last_seen_revision;
             // Merge new validator verdicts
             for v in finding.validator_verdicts.drain(..) {
@@ -141,6 +154,10 @@ impl FindingStore {
             })?;
 
         let json = serde_json::to_string(&finding)?;
+        linkscope::record_bytes(
+            "audit.finding_store.append.bytes",
+            usize_to_u64_saturating(json.len()),
+        );
         writeln!(file, "{json}").map_err(|e| AuditError::Io {
             source: e,
             context: "writing finding line".to_string(),
@@ -152,12 +169,15 @@ impl FindingStore {
         })?;
 
         self.index.insert(finding.id.clone(), finding);
+        linkscope::record_items("audit.finding_store.appended", 1);
         Ok(())
     }
 
     /// Query findings matching the filter.
     pub fn query(&self, filter: &FindingFilter) -> Vec<&Finding> {
-        self.index
+        let _linkscope_query = linkscope::phase("audit.finding_store.query");
+        let rows = self
+            .index
             .values()
             .filter(|f| {
                 if let Some(kind) = &filter.kind
@@ -182,16 +202,24 @@ impl FindingStore {
                 }
                 true
             })
-            .collect()
+            .collect::<Vec<_>>();
+        linkscope::record_items(
+            "audit.finding_store.query.rows",
+            usize_to_u64_saturating(rows.len()),
+        );
+        rows
     }
 
     /// Mark a finding as suppressed.
     pub fn mark_suppressed(&mut self, id: &str, reason: SuppressReason) -> Result<()> {
+        let _linkscope_suppress = linkscope::phase("audit.finding_store.mark_suppressed");
         if let Some(finding) = self.index.get_mut(id) {
             finding.suppressed = Some(reason);
             self.flush()?;
+            linkscope::record_items("audit.finding_store.suppressed", 1);
             Ok(())
         } else {
+            linkscope::record_items("audit.finding_store.suppress_miss", 1);
             Err(AuditError::Internal {
                 message: format!("finding {id} not found in store"),
             })
@@ -215,6 +243,7 @@ impl FindingStore {
 
     /// Flush the entire index to the JSONL file (rewrite).
     fn flush(&self) -> Result<()> {
+        let _linkscope_flush = linkscope::phase("audit.finding_store.flush");
         let lock_file = OpenOptions::new()
             .create(true)
             .write(true)
@@ -262,6 +291,10 @@ impl FindingStore {
             context: "releasing lock after flush".to_string(),
         })?;
 
+        linkscope::record_items(
+            "audit.finding_store.persisted",
+            usize_to_u64_saturating(self.index.len()),
+        );
         Ok(())
     }
 
@@ -269,6 +302,10 @@ impl FindingStore {
     pub fn root(&self) -> &Path {
         &self.root
     }
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]

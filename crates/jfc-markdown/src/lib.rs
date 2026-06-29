@@ -255,6 +255,7 @@ pub fn highlight_code(
     inner_width: usize,
     theme: &jfc_theme::Theme,
 ) -> Vec<Line<'static>> {
+    let _linkscope_highlight = linkscope::phase("markdown.highlight_code");
     highlight_code_inner(lang, code, inner_width, theme, true)
 }
 
@@ -264,6 +265,7 @@ pub fn highlight_code_raw(
     inner_width: usize,
     theme: &jfc_theme::Theme,
 ) -> Vec<Line<'static>> {
+    let _linkscope_highlight = linkscope::phase("markdown.highlight_code_raw");
     highlight_code_inner(lang, code, inner_width, theme, false)
 }
 
@@ -464,6 +466,11 @@ fn highlight_code_inner(
     theme: &jfc_theme::Theme,
     with_gutter: bool,
 ) -> Vec<Line<'static>> {
+    let _linkscope_highlight = linkscope::phase("markdown.highlight_inner");
+    linkscope::record_bytes(
+        "markdown.highlight.input",
+        usize_to_u64_saturating(code.len()),
+    );
     use syntect::easy::HighlightLines;
 
     let gutter_style = Style::default().fg(theme.border);
@@ -481,6 +488,7 @@ fn highlight_code_inner(
     };
 
     if syntax_highlighting_disabled() {
+        linkscope::record_items("markdown.highlight.disabled", 1);
         let out = plain_code_lines(code, wrap_w, with_gutter, gutter_style, fallback_style);
         record_line_count(hash_code(code), wrap_w, with_gutter, out.len());
         return out;
@@ -503,9 +511,11 @@ fn highlight_code_inner(
         let gen_now = cache.generation;
         if let Some(entry) = cache.map.get_mut(&cache_key) {
             entry.generation = gen_now;
+            linkscope::record_items("markdown.highlight.cache_hit", 1);
             return entry.lines.clone();
         }
     }
+    linkscope::record_items("markdown.highlight.cache_miss", 1);
 
     let (syntax, active_set) =
         find_syntax_in_sets(lang, &lower, &SYNTAX_SET, EXTRA_SYNTAX_SET.as_ref());
@@ -537,6 +547,7 @@ fn highlight_code_inner(
         let ranges = match highlighter.highlight_line(&sanitized, active_set) {
             Ok(ranges) => ranges,
             Err(_) => {
+                linkscope::record_items("markdown.highlight.line_error", 1);
                 let clean = sanitized.trim_end_matches('\n');
                 for chunk in hard_wrap_str(clean, wrap_w) {
                     let mut spans = Vec::new();
@@ -573,6 +584,7 @@ fn highlight_code_inner(
     {
         let mut cache = HIGHLIGHT_CACHE.lock().expect("highlight cache poisoned");
         if cache.map.len() >= HIGHLIGHT_CACHE_MAX {
+            linkscope::record_items("markdown.highlight.cache_prune", 1);
             let target = HIGHLIGHT_CACHE_MAX * 3 / 4;
             let mut gens: Vec<u64> = cache.map.values().map(|e| e.generation).collect();
             gens.sort_unstable();
@@ -593,6 +605,10 @@ fn highlight_code_inner(
     // Record the line count in the secondary (theme-independent) cache so
     // height queries can avoid rebuilding full styled lines.
     record_line_count(hash_code(code), wrap_w, with_gutter, out.len());
+    linkscope::record_items(
+        "markdown.highlight.lines",
+        usize_to_u64_saturating(out.len()),
+    );
 
     out
 }
@@ -642,6 +658,7 @@ pub fn highlight_code_line_count(
     theme: &jfc_theme::Theme,
     with_gutter: bool,
 ) -> usize {
+    let _linkscope_count = linkscope::phase("markdown.highlight_line_count");
     let wrap_w = if inner_width == 0 {
         0
     } else {
@@ -649,13 +666,16 @@ pub fn highlight_code_line_count(
     };
     let code_hash = hash_code(code);
     if let Some(cached) = highlight_line_count_cached(code_hash, wrap_w, with_gutter) {
+        linkscope::record_items("markdown.highlight_line_count.cache_hit", 1);
         return cached;
     }
+    linkscope::record_items("markdown.highlight_line_count.cache_miss", 1);
     highlight_code_inner(lang, code, inner_width, theme, with_gutter).len()
 }
 
 /// Persist the line-count cache to a JSON file.
 pub fn persist_highlight_line_counts(path: &std::path::Path) {
+    let _linkscope_persist = linkscope::phase("markdown.highlight_counts.persist");
     let Ok(cache) = HIGHLIGHT_LINE_COUNT_CACHE.lock() else {
         return;
     };
@@ -669,11 +689,17 @@ pub fn persist_highlight_line_counts(path: &std::path::Path) {
     };
     let _ = std::fs::create_dir_all(path.parent().unwrap_or(std::path::Path::new(".")));
     let _ = std::fs::write(path, json);
+    linkscope::record_items(
+        "markdown.highlight_counts.persisted",
+        usize_to_u64_saturating(entries.len()),
+    );
 }
 
 /// Load a previously-persisted line-count cache. Returns entries loaded.
 pub fn load_highlight_line_counts(path: &std::path::Path) -> usize {
+    let _linkscope_load = linkscope::phase("markdown.highlight_counts.load");
     let Ok(bytes) = std::fs::read(path) else {
+        linkscope::record_items("markdown.highlight_counts.missing", 1);
         return 0;
     };
     let Ok(entries): Result<Vec<(u64, usize, u8, usize)>, _> = serde_json::from_slice(&bytes)
@@ -690,6 +716,10 @@ pub fn load_highlight_line_counts(path: &std::path::Path) -> usize {
             count
         });
     }
+    linkscope::record_items(
+        "markdown.highlight_counts.loaded",
+        usize_to_u64_saturating(loaded),
+    );
     loaded
 }
 
@@ -807,6 +837,11 @@ pub fn speakable_prose(md: &str) -> String {
 }
 
 pub fn to_lines(text: &str, theme: &Theme, width: usize) -> Vec<Line<'static>> {
+    let _linkscope_render = linkscope::phase("markdown.to_lines");
+    linkscope::record_bytes(
+        "markdown.to_lines.input",
+        usize_to_u64_saturating(text.len()),
+    );
     let cleaned = strip_inline_tool_xml(text);
     // v126 disables strikethrough because the GFM `~~text~~` syntax collides
     // with `~~~` fenced code blocks: a stray paragraph containing `~~~` would
@@ -819,6 +854,10 @@ pub fn to_lines(text: &str, theme: &Theme, width: usize) -> Vec<Line<'static>> {
     let mut w = MdWriter::new(parser, theme);
     w.code_wrap_width = width;
     w.run();
+    linkscope::record_items(
+        "markdown.to_lines.lines",
+        usize_to_u64_saturating(w.text.lines.len()),
+    );
     w.text.lines
 }
 
@@ -836,6 +875,11 @@ pub fn to_lines(text: &str, theme: &Theme, width: usize) -> Vec<Line<'static>> {
 /// `StreamDone` fires, the caller switches to `to_lines` for the final render
 /// which applies full syntax highlighting.
 pub fn to_lines_streaming(text: &str, theme: &Theme, width: usize) -> Vec<Line<'static>> {
+    let _linkscope_render = linkscope::phase("markdown.to_lines_streaming");
+    linkscope::record_bytes(
+        "markdown.to_lines_streaming.input",
+        usize_to_u64_saturating(text.len()),
+    );
     let cleaned = strip_inline_tool_xml(text);
     let mut opts = ParseOptions::empty();
     opts.insert(ParseOptions::ENABLE_TASKLISTS);
@@ -846,7 +890,15 @@ pub fn to_lines_streaming(text: &str, theme: &Theme, width: usize) -> Vec<Line<'
     w.code_wrap_width = width;
     w.skip_syntect = true;
     w.run();
+    linkscope::record_items(
+        "markdown.to_lines_streaming.lines",
+        usize_to_u64_saturating(w.text.lines.len()),
+    );
     w.text.lines
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]

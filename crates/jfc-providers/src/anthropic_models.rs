@@ -312,6 +312,55 @@ pub fn model_supports_temperature(model_id: &str) -> bool {
     }
 }
 
+/// Whether `context-management-2025-06-27` and the server-side
+/// `compact_20260112` edit are safe to send to `model_id`.
+///
+/// Haiku 4.5 is intentionally excluded even though Claude Code 2.1.195's
+/// catalog marked it `context_management`: Anthropic rejects API-side
+/// `compact_20260112` for `claude-haiku-4-5-20251001`, and sending the broader
+/// context-management beta can trigger that server compaction path on large
+/// requests. Deny unknown and legacy 3.x-family ids by default; missing
+/// server-side compaction is safer than a request-wide 400.
+pub fn model_supports_context_management(model_id: &str) -> bool {
+    match AnthropicModelKind::from_model_id(model_id) {
+        AnthropicModelKind::Fable5
+        | AnthropicModelKind::Mythos5
+        | AnthropicModelKind::Opus48
+        | AnthropicModelKind::Opus47
+        | AnthropicModelKind::Opus46
+        | AnthropicModelKind::Opus45
+        | AnthropicModelKind::Opus41
+        | AnthropicModelKind::Opus4
+        | AnthropicModelKind::Sonnet46
+        | AnthropicModelKind::Sonnet45
+        | AnthropicModelKind::Sonnet4 => true,
+        AnthropicModelKind::Sonnet37
+        | AnthropicModelKind::Haiku45
+        | AnthropicModelKind::Haiku35
+        | AnthropicModelKind::Unknown => false,
+    }
+}
+
+pub fn model_supports_long_context_beta(model_id: &str) -> bool {
+    match AnthropicModelKind::from_model_id(model_id) {
+        AnthropicModelKind::Fable5
+        | AnthropicModelKind::Mythos5
+        | AnthropicModelKind::Opus48
+        | AnthropicModelKind::Opus47
+        | AnthropicModelKind::Opus46
+        | AnthropicModelKind::Sonnet46 => true,
+        AnthropicModelKind::Opus45
+        | AnthropicModelKind::Opus41
+        | AnthropicModelKind::Opus4
+        | AnthropicModelKind::Sonnet45
+        | AnthropicModelKind::Sonnet4
+        | AnthropicModelKind::Sonnet37
+        | AnthropicModelKind::Haiku45
+        | AnthropicModelKind::Haiku35
+        | AnthropicModelKind::Unknown => false,
+    }
+}
+
 /// Resolve the effort value actually safe to send for `model_id`, given the
 /// caller's `requested` effort. Returns `None` when effort must be omitted
 /// entirely (model doesn't support the parameter — CC's `delete $.effort`),
@@ -414,6 +463,68 @@ mod tests {
             "unknown-model",
         ] {
             assert!(!model_supports_temperature(denied), "{denied}");
+        }
+    }
+
+    #[test]
+    fn context_management_support_excludes_haiku_compaction_regression() {
+        for allowed in [
+            "claude-fable-5",
+            "claude-mythos-5",
+            "claude-opus-4-8",
+            "claude-opus-4-7",
+            "claude-opus-4-6",
+            "claude-opus-4-5-20251101",
+            "claude-opus-4-1-20250805",
+            "claude-opus-4-20250514",
+            "claude-sonnet-4-6",
+            "claude-sonnet-4-5-20250929",
+            "claude-sonnet-4-20250514",
+        ] {
+            assert!(model_supports_context_management(allowed), "{allowed}");
+        }
+
+        for denied in [
+            "claude-haiku-4-5",
+            "claude-haiku-4-5-20251001",
+            "claude-3-5-haiku-20241022",
+            "claude-3-7-sonnet-20250219",
+            "some-unknown-model",
+        ] {
+            assert!(
+                !model_supports_context_management(denied),
+                "{denied} must not receive context-management/compact betas"
+            );
+        }
+    }
+
+    #[test]
+    fn long_context_beta_support_excludes_haiku_regression() {
+        for allowed in [
+            "claude-fable-5",
+            "claude-mythos-5",
+            "claude-opus-4-8",
+            "claude-opus-4-7",
+            "claude-opus-4-6",
+            "claude-sonnet-4-6",
+        ] {
+            assert!(model_supports_long_context_beta(allowed), "{allowed}");
+        }
+
+        for denied in [
+            "claude-haiku-4-5",
+            "claude-haiku-4-5-20251001",
+            "claude-opus-4-5-20251101",
+            "claude-opus-4-1-20250805",
+            "claude-sonnet-4-5-20250929",
+            "claude-sonnet-4-20250514",
+            "claude-3-7-sonnet-20250219",
+            "some-unknown-model",
+        ] {
+            assert!(
+                !model_supports_long_context_beta(denied),
+                "{denied} must not receive context-1m"
+            );
         }
     }
 

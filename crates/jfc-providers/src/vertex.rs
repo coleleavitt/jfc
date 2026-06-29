@@ -74,6 +74,7 @@ pub fn default_config_path() -> PathBuf {
 }
 
 pub fn load_config(path: &PathBuf) -> anyhow::Result<Option<VertexConfig>> {
+    let _linkscope_load = linkscope::phase("provider.vertex.load_config");
     let raw = match std::fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -85,6 +86,7 @@ pub fn load_config(path: &PathBuf) -> anyhow::Result<Option<VertexConfig>> {
 
 #[allow(dead_code)]
 pub fn save_config(path: &PathBuf, cfg: &VertexConfig) -> anyhow::Result<()> {
+    let _linkscope_save = linkscope::phase("provider.vertex.save_config");
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -281,6 +283,21 @@ impl Provider for VertexProvider {
         messages: Vec<ProviderMessage>,
         options: &StreamOptions,
     ) -> anyhow::Result<EventStream> {
+        let message_count = usize_to_u64_saturating(messages.len());
+        let _linkscope_stream = linkscope::phase("provider.vertex.stream");
+        if linkscope::is_enabled() {
+            linkscope::event_fields(
+                "provider.vertex.stream.start",
+                [
+                    linkscope::TraceField::text("model", options.model.to_string()),
+                    linkscope::TraceField::count("messages", message_count),
+                    linkscope::TraceField::count(
+                        "tools",
+                        usize_to_u64_saturating(options.tools.len()),
+                    ),
+                ],
+            );
+        }
         let token = self.access_token().await?;
         let url = self.endpoint_url(options.model.as_str())?;
 
@@ -399,6 +416,7 @@ pub fn fetch_gcloud_token() -> anyhow::Result<String> {
 }
 
 pub async fn fetch_google_auth_token() -> anyhow::Result<String> {
+    let _linkscope_token = linkscope::phase("provider.vertex.fetch_google_auth_token");
     let provider = gcp_auth::provider().await?;
     let token = provider.token(&[CLOUD_PLATFORM_SCOPE]).await?;
     let token = token.as_str().trim();
@@ -406,6 +424,10 @@ pub async fn fetch_google_auth_token() -> anyhow::Result<String> {
         anyhow::bail!("Google auth provider returned an empty access token");
     }
     Ok(token.to_owned())
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 /// Read the active gcloud project (`gcloud config get-value project`). Used

@@ -2166,6 +2166,7 @@ mod stream_done_lifecycle_tests {
             tool_choice: crate::runtime::StreamToolChoice::Auto,
             resolved_model: None,
             context_budget: None,
+            context_pressure_nudge: None,
             provider_history_archive_recall_ids: Vec::new(),
             rsi_prompt_sections: 0,
             rsi_tool_visibility_rules: 0,

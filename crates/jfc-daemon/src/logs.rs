@@ -17,10 +17,29 @@ use super::state::DaemonPaths;
 /// missing rather than erroring — the daemon log dir may legitimately
 /// not contain a file for a session that never wrote one.
 pub fn read_last_lines(path: &Path, n: usize) -> Vec<String> {
+    let _linkscope_read = linkscope::phase("daemon.logs.read_last_lines");
+    linkscope::event_fields(
+        "daemon.logs.read_last_lines.start",
+        [
+            linkscope::TraceField::text("path", path.display().to_string()),
+            linkscope::TraceField::count("requested_lines", usize_to_u64_saturating(n)),
+        ],
+    );
     let Ok(content) = std::fs::read_to_string(path) else {
+        linkscope::event_fields(
+            "daemon.logs.read_last_lines.result",
+            [
+                linkscope::TraceField::text("status", "missing_or_unreadable"),
+                linkscope::TraceField::text("path", path.display().to_string()),
+            ],
+        );
         return vec!["(log file not found)".to_string()];
     };
-    content
+    linkscope::record_bytes(
+        "daemon.logs.read_last_lines.input",
+        usize_to_u64_saturating(content.len()),
+    );
+    let lines = content
         .lines()
         .rev()
         .take(n)
@@ -28,14 +47,34 @@ pub fn read_last_lines(path: &Path, n: usize) -> Vec<String> {
         .collect::<Vec<_>>()
         .into_iter()
         .rev()
-        .collect()
+        .collect::<Vec<_>>();
+    linkscope::event_fields(
+        "daemon.logs.read_last_lines.result",
+        [
+            linkscope::TraceField::text("status", "ok"),
+            linkscope::TraceField::count("returned_lines", usize_to_u64_saturating(lines.len())),
+        ],
+    );
+    lines
 }
 
 pub fn append_log_line(path: &Path, line: &str) {
+    let _linkscope_append = linkscope::phase("daemon.logs.append_line");
+    linkscope::record_bytes(
+        "daemon.logs.append_line.input",
+        usize_to_u64_saturating(line.len()),
+    );
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
     let needs_leading_newline = last_byte_is_not_newline(path);
+    linkscope::detail_event_fields(
+        "daemon.logs.append_line.open",
+        [
+            linkscope::TraceField::text("path", path.display().to_string()),
+            linkscope::TraceField::count("leading_newline", u64::from(needs_leading_newline)),
+        ],
+    );
     if let Ok(mut file) = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -46,6 +85,18 @@ pub fn append_log_line(path: &Path, line: &str) {
             let _ = writeln!(file);
         }
         let _ = writeln!(file, "{line}");
+        linkscope::event_fields(
+            "daemon.logs.append_line.result",
+            [linkscope::TraceField::text("status", "ok")],
+        );
+    } else {
+        linkscope::event_fields(
+            "daemon.logs.append_line.result",
+            [
+                linkscope::TraceField::text("status", "open_failed"),
+                linkscope::TraceField::text("path", path.display().to_string()),
+            ],
+        );
     }
 }
 
@@ -54,7 +105,14 @@ pub fn append_log_line(path: &Path, line: &str) {
 /// so a per-chunk `writeln!` turns prose into a column of fragments. The
 /// model's own `\n` bytes (paragraph breaks, code fences) survive untouched.
 pub(super) fn append_chunk_raw(path: &Path, text: &str) {
+    let _linkscope_append = linkscope::phase("daemon.logs.append_chunk_raw");
+    let bytes = usize_to_u64_saturating(text.len());
+    linkscope::record_bytes("daemon.logs.append_chunk_raw.input", bytes);
     if text.is_empty() {
+        linkscope::detail_event_fields(
+            "daemon.logs.append_chunk_raw.skip",
+            [linkscope::TraceField::text("reason", "empty")],
+        );
         return;
     }
     if let Some(parent) = path.parent() {
@@ -67,6 +125,23 @@ pub(super) fn append_chunk_raw(path: &Path, text: &str) {
     {
         use std::io::Write;
         let _ = file.write_all(text.as_bytes());
+        linkscope::detail_event_fields(
+            "daemon.logs.append_chunk_raw.result",
+            [
+                linkscope::TraceField::text("status", "ok"),
+                linkscope::TraceField::text("path", path.display().to_string()),
+                linkscope::TraceField::bytes("bytes", bytes),
+            ],
+        );
+    } else {
+        linkscope::event_fields(
+            "daemon.logs.append_chunk_raw.result",
+            [
+                linkscope::TraceField::text("status", "open_failed"),
+                linkscope::TraceField::text("path", path.display().to_string()),
+                linkscope::TraceField::bytes("bytes", bytes),
+            ],
+        );
     }
 }
 
@@ -111,15 +186,35 @@ fn safe_id_stem(id: &str) -> String {
 }
 
 pub fn background_agent_log_path(paths: &DaemonPaths, id: &str) -> PathBuf {
-    paths
+    let path = paths
         .log_dir
         .join("agents")
-        .join(format!("{}.log", safe_id_stem(id)))
+        .join(format!("{}.log", safe_id_stem(id)));
+    linkscope::detail_event_fields(
+        "daemon.logs.agent_log_path",
+        [
+            linkscope::TraceField::text("id", id.to_owned()),
+            linkscope::TraceField::text("path", path.display().to_string()),
+        ],
+    );
+    path
 }
 
 pub fn background_agent_launch_path(paths: &DaemonPaths, id: &str) -> PathBuf {
-    paths
+    let path = paths
         .log_dir
         .join("agents")
-        .join(format!("{}.launch.json", safe_id_stem(id)))
+        .join(format!("{}.launch.json", safe_id_stem(id)));
+    linkscope::detail_event_fields(
+        "daemon.logs.agent_launch_path",
+        [
+            linkscope::TraceField::text("id", id.to_owned()),
+            linkscope::TraceField::text("path", path.display().to_string()),
+        ],
+    );
+    path
+}
+
+fn usize_to_u64_saturating(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }

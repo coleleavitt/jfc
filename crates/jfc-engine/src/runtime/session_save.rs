@@ -52,6 +52,7 @@ pub fn force_save(state: &mut EngineState) {
     let msgs = state.messages.clone();
     let cwd = state.cwd.clone();
     let model = state.model.clone();
+    let context_reduction_queue = state.context_reduction_queue.clone();
     tokio::spawn(async move {
         let store = session::default_session_store();
         store
@@ -61,6 +62,7 @@ pub fn force_save(state: &mut EngineState) {
                     .with_model(Some(model.as_str())),
             )
             .await;
+        session::save_context_reduction_queue(sid, context_reduction_queue).await;
     });
     state.last_session_save_at = Some(Instant::now());
 }
@@ -85,7 +87,10 @@ pub fn flush_pending_save(state: &mut EngineState) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use jfc_context::{ContextDropRange, ContextDropReplayMode, QueuedContextDrop};
+    use std::ffi::OsString;
     use std::sync::Arc;
+    use std::sync::Mutex;
 
     use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
     use serial_test::serial;
@@ -112,18 +117,25 @@ mod tests {
 
     impl jfc_provider::seal::Sealed for TestProvider {}
 
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
     struct TempSessionEnv {
         _dir: TempDir,
-        prior_config: Option<String>,
-        prior_db: Option<String>,
+        prior_config: Option<OsString>,
+        prior_db: Option<OsString>,
+        _guard: std::sync::MutexGuard<'static, ()>,
     }
 
     impl TempSessionEnv {
         fn new() -> Self {
+            let guard = ENV_LOCK.lock().unwrap_or_else(|err| err.into_inner());
             let dir = TempDir::new().expect("tempdir");
-            let prior_config = std::env::var("XDG_CONFIG_HOME").ok();
-            let prior_db = std::env::var("JFC_KNOWLEDGE_DB").ok();
+            let prior_config = std::env::var_os("XDG_CONFIG_HOME");
+            let prior_db = std::env::var_os("JFC_KNOWLEDGE_DB");
             let db_path = dir.path().join("knowledge.db");
+            // SAFETY: Category 2 - process environment mutation can race readers.
+            // This guard serializes env mutation in this module and the env-dependent
+            // tests using it are marked serial.
             unsafe {
                 std::env::set_var("XDG_CONFIG_HOME", dir.path());
                 std::env::set_var("JFC_KNOWLEDGE_DB", db_path);
@@ -132,12 +144,16 @@ mod tests {
                 _dir: dir,
                 prior_config,
                 prior_db,
+                _guard: guard,
             }
         }
     }
 
     impl Drop for TempSessionEnv {
         fn drop(&mut self) {
+            // SAFETY: Category 2 - restoration is serialized by the same ENV_LOCK
+            // guard acquired in TempSessionEnv::new, so this module cannot restore
+            // while another guarded test mutates the process environment.
             unsafe {
                 match self.prior_config.take() {
                     Some(value) => std::env::set_var("XDG_CONFIG_HOME", value),
@@ -256,5 +272,44 @@ mod tests {
             metadata.cwd.as_deref(),
             Some("/tmp/jfc-session-save-facade")
         );
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn force_save_persists_context_reduction_queue_normal() {
+        let _env = TempSessionEnv::new();
+        let mut state = state_with_session();
+        let session_id = state
+            .current_session_id
+            .clone()
+            .expect("test state has session id");
+        state
+            .context_reduction_queue
+            .extend([QueuedContextDrop::new(
+                ContextDropRange::new(2, 4).expect("valid range"),
+                ContextDropReplayMode::Skeleton,
+            )
+            .expect("valid queued drop")]);
+
+        force_save(&mut state);
+
+        let mut loaded = jfc_context::ContextReductionQueue::default();
+        for _ in 0..20 {
+            loaded = crate::session::load_context_reduction_queue(&session_id).await;
+            if !loaded.is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        assert_eq!(loaded.drops().len(), 1);
+        assert_eq!(
+            loaded.drops()[0].replay_mode(),
+            ContextDropReplayMode::Skeleton
+        );
+
+        let mut restored = state_with_session();
+        crate::runtime::ops::restore_session_context_state(&mut restored, session_id.as_str())
+            .await;
+        assert_eq!(restored.context_reduction_queue.drops(), loaded.drops());
     }
 }

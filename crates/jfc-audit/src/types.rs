@@ -1,5 +1,9 @@
 use serde::{Deserialize, Serialize};
 
+fn len_to_u64(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
+}
+
 /// Severity classification following CVSS-like ordering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Severity {
@@ -102,6 +106,20 @@ pub struct Finding {
 impl Finding {
     /// Compute the canonical ID for a finding.
     pub fn compute_id(kind: FindingKind, location: &SourceSpan, first_path_entry: &str) -> String {
+        let _linkscope_id = linkscope::phase("audit.finding.compute_id");
+        linkscope::event_fields(
+            "audit.finding.compute_id.input",
+            [
+                linkscope::TraceField::text("kind", format!("{kind:?}")),
+                linkscope::TraceField::bytes("file_bytes", len_to_u64(location.file.len())),
+                linkscope::TraceField::count("start_line", u64::from(location.start_line)),
+                linkscope::TraceField::count("end_line", u64::from(location.end_line)),
+                linkscope::TraceField::bytes(
+                    "first_path_entry_bytes",
+                    len_to_u64(first_path_entry.len()),
+                ),
+            ],
+        );
         use sha2::Digest;
         let mut hasher = sha2::Sha256::new();
         hasher.update(format!("{kind:?}"));
@@ -118,6 +136,11 @@ impl Finding {
 // We don't want to add hex as a dep — inline minimal hex encode
 mod hex {
     pub fn encode(bytes: impl AsRef<[u8]>) -> String {
-        bytes.as_ref().iter().map(|b| format!("{b:02x}")).collect()
+        let bytes = bytes.as_ref();
+        linkscope::record_bytes(
+            "audit.finding.hex_encode",
+            u64::try_from(bytes.len()).unwrap_or(u64::MAX),
+        );
+        bytes.iter().map(|b| format!("{b:02x}")).collect()
     }
 }

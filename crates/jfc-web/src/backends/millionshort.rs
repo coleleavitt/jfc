@@ -4,6 +4,7 @@ use serde::Deserialize;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use super::trace::{self, BackendResultTrace, BackendStart};
 use crate::backend::{BackendId, BackendResult, SearchBackend, SearchResult};
 
 const MILLIONSHORT_BASE: &str = "https://millionshort.com";
@@ -23,10 +24,17 @@ impl SearchBackend for MillionShortBackend {
     }
 
     async fn search(&self, query: &str, max_results: usize) -> BackendResult {
+        let _linkscope_search = linkscope::phase("web.backend.millionshort.search");
+        trace::backend_start(BackendStart {
+            backend: "millionshort",
+            query,
+            max_results,
+        });
         search_millionshort_structured(query, max_results).await
     }
 
     fn timeout(&self) -> Duration {
+        trace::timeout("millionshort", Duration::from_secs(15));
         Duration::from_secs(15)
     }
 }
@@ -43,6 +51,7 @@ struct MillionShortCredentials {
 }
 
 pub async fn search_millionshort_structured(query: &str, max_results: usize) -> BackendResult {
+    let _linkscope_search = linkscope::phase("web.backend.millionshort.structured");
     let client = reqwest::Client::builder()
         .user_agent(MILLIONSHORT_USER_AGENT)
         .timeout(Duration::from_secs(15))
@@ -55,6 +64,7 @@ pub async fn search_millionshort_structured(query: &str, max_results: usize) -> 
     );
 
     if let Some(creds) = load_credentials() {
+        linkscope::record_items("web.backend.millionshort.credentials", 1);
         let _ = client
             .post(format!("{MILLIONSHORT_BASE}/_login"))
             .header(ACCEPT, "text/html,application/xhtml+xml")
@@ -75,6 +85,10 @@ pub async fn search_millionshort_structured(query: &str, max_results: usize) -> 
         .await
         .map_err(|e| format!("Million Short request failed: {e}"))?;
     let status = resp.status();
+    linkscope::record_items(
+        "web.backend.millionshort.http_status",
+        u64::from(status.as_u16()),
+    );
     let body = resp
         .text()
         .await
@@ -89,7 +103,14 @@ pub async fn search_millionshort_structured(query: &str, max_results: usize) -> 
         );
     }
 
-    Ok(parse_millionshort_results(&body, max_results))
+    trace::bytes("web.backend.millionshort.body", body.len());
+    let results = parse_millionshort_results(&body, max_results);
+    trace::backend_result(BackendResultTrace {
+        backend: "millionshort",
+        status: "parsed",
+        results: results.len(),
+    });
+    Ok(results)
 }
 
 fn load_credentials() -> Option<MillionShortCredentials> {
